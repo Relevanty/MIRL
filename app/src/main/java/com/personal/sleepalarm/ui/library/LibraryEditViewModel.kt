@@ -1,0 +1,151 @@
+package com.personal.sleepalarm.ui.library
+
+
+import android.app.Application
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.data.db.entity.LibraryItemEntity
+import com.personal.sleepalarm.data.db.entity.LibraryItemType
+import com.personal.sleepalarm.data.repository.LibraryRepository
+import com.personal.sleepalarm.util.CoverHelper
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+/**
+ * Черновик элемента библиотеки (создание / редактирование).
+ */
+data class LibraryEditState(
+    val itemId: Int? = null,
+    val type: LibraryItemType = LibraryItemType.BOOK,
+    val title: String = "",
+    val author: String = "",
+    val coverPath: String? = null,
+    val shortDescription: String = "",
+    val impression: String = "",
+    val thoughts: String = "",
+    val rating: Int = 0,
+    val tags: List<String> = emptyList(),
+    val tagInput: String = ""
+)
+
+/**
+ * ViewModel создания/редактирования элемента библиотеки.
+ */
+class LibraryEditViewModel(
+    application: Application
+) : AndroidViewModel(application) {
+
+    private val context = application.applicationContext
+
+    private val database = AppDatabase.getInstance(context)
+    private val repository = LibraryRepository(database, database.libraryDao())
+
+    private val _state = MutableStateFlow(LibraryEditState())
+    val state: StateFlow<LibraryEditState> = _state
+
+    /** Загружает существующий элемент для редактирования + его теги. */
+    fun load(id: Int) {
+        viewModelScope.launch {
+            val item = repository.observeItem(id).first() ?: return@launch
+            val tags = repository.observeTagsForItem(id).first()
+
+            _state.value = LibraryEditState(
+                itemId = item.id,
+                type = item.type,
+                title = item.title,
+                author = item.author,
+                coverPath = item.coverUri,
+                shortDescription = item.shortDescription,
+                impression = item.impression,
+                thoughts = item.thoughts,
+                rating = item.rating,
+                tags = tags.map { it.name }
+            )
+        }
+    }
+
+    fun setType(type: LibraryItemType) = _state.update { it.copy(type = type) }
+    fun setTitle(v: String) = _state.update { it.copy(title = v) }
+    fun setAuthor(v: String) = _state.update { it.copy(author = v) }
+    fun setShortDescription(v: String) = _state.update { it.copy(shortDescription = v) }
+    fun setImpression(v: String) = _state.update { it.copy(impression = v) }
+    fun setThoughts(v: String) = _state.update { it.copy(thoughts = v) }
+    fun setRating(v: Int) = _state.update { it.copy(rating = v.coerceIn(0, 5)) }
+    fun setTagInput(v: String) = _state.update { it.copy(tagInput = v) }
+
+    /** Выбирает обложку из хранилища и копирует в приватную папку. */
+    fun pickCover(uri: Uri) {
+        viewModelScope.launch {
+            val path = CoverHelper.copyCover(context, uri) ?: return@launch
+            // Удаляем старую обложку, если была.
+            CoverHelper.deleteCover(_state.value.coverPath)
+            _state.update { it.copy(coverPath = path) }
+        }
+    }
+
+    /**
+     * Удаляет текущий редактируемый элемент вместе с обложкой.
+     * Связи элемент-тег чистятся каскадно (FK ON DELETE CASCADE).
+     */
+    fun deleteCurrent() {
+        val id = _state.value.itemId ?: return
+        viewModelScope.launch {
+            val item = repository.observeItem(id).first() ?: return@launch
+            repository.deleteItem(item)
+        }
+    }
+
+
+    fun removeCover() {
+        CoverHelper.deleteCover(_state.value.coverPath)
+        _state.update { it.copy(coverPath = null) }
+    }
+
+    fun addTag() {
+        val name = _state.value.tagInput.trim()
+        if (name.isEmpty()) return
+        _state.update { s ->
+            s.copy(
+                tags = if (name in s.tags) s.tags else s.tags + name,
+                tagInput = ""
+            )
+        }
+    }
+
+    fun removeTag(name: String) {
+        _state.update { s -> s.copy(tags = s.tags - name) }
+    }
+
+    /** Сохраняет элемент. Возвращает true при успехе. */
+    fun save(): Boolean {
+        val s = _state.value
+        if (s.title.isBlank()) return false
+
+        viewModelScope.launch {
+            val existing = s.itemId?.let { repository.observeItem(it).first() }
+
+            repository.saveItem(
+                LibraryItemEntity(
+                    id = s.itemId ?: 0,
+                    type = s.type,
+                    title = s.title.trim(),
+                    author = s.author.trim(),
+                    coverUri = s.coverPath,
+                    shortDescription = s.shortDescription,
+                    impression = s.impression,
+                    thoughts = s.thoughts,
+                    rating = s.rating,
+                    createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                ),
+                s.tags
+            )
+        }
+        return true
+    }
+}

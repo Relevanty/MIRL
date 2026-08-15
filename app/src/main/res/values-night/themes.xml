@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.SleepAlarm" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/night_top</item>
+        <item name="android:statusBarColor">@color/night_top</item>
+        <item name="android:navigationBarColor">@color/night_top</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

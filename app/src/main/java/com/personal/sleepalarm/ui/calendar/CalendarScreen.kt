@@ -1,0 +1,951 @@
+package com.personal.sleepalarm.ui.calendar
+
+import com.personal.sleepalarm.ui.components.CatArt
+import com.personal.sleepalarm.ui.components.CatText
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
+import java.time.LocalTime
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.scale
+import kotlin.math.abs
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.personal.sleepalarm.R
+import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
+import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
+import kotlinx.coroutines.CancellationException
+import java.time.Instant
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
+import kotlinx.coroutines.launch
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CalendarScreen(
+    viewModel: CalendarViewModel = viewModel(),
+    modifier: Modifier = Modifier
+) {
+    val events by viewModel.events.collectAsStateWithLifecycle()
+    val studySessions by viewModel.studySessions.collectAsStateWithLifecycle()
+    val studyByDay = remember(studySessions) {
+        studySessions.groupBy { it.dateKey }
+            .mapValues { (_, v) -> v.sumOf { it.durationMillis } }
+    }
+
+    var month by remember { mutableStateOf(YearMonth.now()) }
+    var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
+    var showEditor by remember { mutableStateOf(false) }
+    var editorDate by remember { mutableStateOf<LocalDate?>(null) }
+    var editingEvent by remember { mutableStateOf<CalendarEventEntity?>(null) }
+
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+
+    if (showEditor) {
+        EventEditor(
+            initial = editingEvent,
+            defaultDate = editorDate,
+            onBack = {
+                showEditor = false
+                editingEvent = null
+            },
+            onSave = { event ->
+                if (editingEvent != null) viewModel.updateEvent(event)
+                else viewModel.addEvent(event)
+                showEditor = false
+                editingEvent = null
+            }
+        )
+        return
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(onClick = { month = month.minusMonths(1) }) {
+                Icon(Icons.Default.ChevronLeft, null, tint = MaterialTheme.colorScheme.primary)
+            }
+            Text(
+                text = month.month.getDisplayName(TextStyle.FULL, Locale.getDefault()) + " " + month.year,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            IconButton(onClick = { month = month.plusMonths(1) }) {
+                Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            listOf(
+                stringResource(R.string.day_mon),
+                stringResource(R.string.day_tue),
+                stringResource(R.string.day_wed),
+                stringResource(R.string.day_thu),
+                stringResource(R.string.day_fri),
+                stringResource(R.string.day_sat),
+                stringResource(R.string.day_sun)
+            ).forEach { d ->
+                Text(
+                    text = d,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val grid = remember(month) { buildMonthGrid(month) }
+        val today = LocalDate.now()
+
+        Column(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            grid.chunked(7).forEach { week ->
+                Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    week.forEach { day ->
+                        DayCell(
+                            modifier = Modifier.weight(1f),
+                            day = day,
+                            isToday = day.date == today,
+                            studyMillis = studyByDay[day.date.toString()] ?: 0L,
+                            events = eventsOn(events, day.date),
+                            onClick = { selectedDate = day.date }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (selectedDate != null) {
+        val date = selectedDate!!
+        ThemedModalBottomSheet(
+            onDismissRequest = { selectedDate = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Text(
+                    text = date.format(DateTimeFormatter.ofPattern("EEE, dd.MM", Locale.getDefault())),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val dayEvents = eventsOn(events, date)
+                if (dayEvents.isEmpty()) {
+                    CatText(
+                        text = CatArt.SLEEP,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    dayEvents.forEach { ev ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (!ev.allDay) {
+                                val time = Instant.ofEpochMilli(ev.startMillis)
+                                    .atZone(ZoneId.systemDefault())
+                                    .format(DateTimeFormatter.ofPattern("HH:mm"))
+                                Text(
+                                    text = time,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Text(
+                                text = ev.title,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        editingEvent = ev
+                                        editorDate = null
+                                        selectedDate = null
+                                        showEditor = true
+                                    },
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            IconButton(onClick = {
+                                clipboard.setText(AnnotatedString(ev.title))
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.calendar_title_copied),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }) {
+                                Icon(Icons.Default.ContentCopy, null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = {
+                                editingEvent = ev
+                                editorDate = null
+                                selectedDate = null
+                                showEditor = true
+                            }) {
+                                Icon(Icons.Default.Edit, null,
+                                    tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { viewModel.deleteEvent(ev.id) }) {
+                                Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        editingEvent = null
+                        editorDate = date          // ← дата из календаря
+                        selectedDate = null
+                        showEditor = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    CatText(CatArt.PLUS, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.calendar_add_event))
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+// =====================================================================
+// Ячейка дня
+// =====================================================================
+
+private data class MonthDay(val date: LocalDate, val inMonth: Boolean)
+
+private fun buildMonthGrid(month: YearMonth): List<MonthDay> {
+    val first = month.atDay(1)
+    val offset = first.dayOfWeek.value - 1
+    var d = first.minusDays(offset.toLong())
+    return List(42) {
+        MonthDay(d, d.month == month.month).also { d = d.plusDays(1) }
+    }
+}
+
+@Composable
+private fun DayCell(
+    modifier: Modifier = Modifier,
+    day: MonthDay,
+    isToday: Boolean,
+    studyMillis: Long,
+    events: List<CalendarEventEntity>,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(
+                    if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = day.date.dayOfMonth.toString(),
+                style = MaterialTheme.typography.bodySmall,
+                color = when {
+                    isToday -> MaterialTheme.colorScheme.onPrimary
+                    day.inMonth -> MaterialTheme.colorScheme.onBackground
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                }
+            )
+        }
+
+        if (studyMillis > 0) {
+            StudyChip(studyMillis)
+        }
+
+        events.take(3).forEach { ev -> EventChip(ev.title) }
+        if (events.size > 3) {
+            Text(
+                "+${events.size - 3}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun StudyChip(millis: Long) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Default.Timer, null,
+            modifier = Modifier.size(9.dp),
+            tint = MaterialTheme.colorScheme.secondary
+        )
+        Spacer(Modifier.width(2.dp))
+        Text(
+            formatDuration(millis),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+            color = MaterialTheme.colorScheme.secondary,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun EventChip(title: String) {
+    Text(
+        text = "ฅ " + title,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+private fun formatDuration(ms: Long): String {
+    val t = ms / 1000
+    val h = t / 3600
+    val m = (t % 3600) / 60
+    return if (h > 0) "%d:%02d".format(h, m) else "%d:%02d".format(m, t % 60)
+}
+
+// =====================================================================
+// Редактор события
+// =====================================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EventEditor(
+    initial: CalendarEventEntity?,
+    defaultDate: LocalDate?,
+    onBack: () -> Unit,
+    onSave: (CalendarEventEntity) -> Unit
+) {
+    val zone = ZoneId.systemDefault()
+    val nowZ = ZonedDateTime.now(zone)
+    // Дата: из события → из выбранного дня календаря → сегодня
+    val baseDate = initial?.let { Instant.ofEpochMilli(it.startMillis).atZone(zone).toLocalDate() }
+        ?: defaultDate
+        ?: nowZ.toLocalDate()
+    val defaultStart = if (baseDate == nowZ.toLocalDate()) roundUpDateTime(nowZ)
+    else baseDate.atTime(9, 0).atZone(zone)
+    var title by remember { mutableStateOf(initial?.title ?: "") }
+    var allDay by remember { mutableStateOf(initial?.allDay ?: false) }
+    var start by remember {
+        mutableStateOf(
+            initial?.let { Instant.ofEpochMilli(it.startMillis).atZone(zone) } ?: defaultStart
+        )
+    }
+    var end by remember {
+        mutableStateOf(
+            initial?.let { Instant.ofEpochMilli(it.endMillis).atZone(zone) }
+                ?: defaultStart.plusHours(1)
+        )
+    }
+    var repeat by remember { mutableStateOf(initial?.repeatRule ?: "none") }
+    // ДЕФОЛТ: 30 минут, если напоминание не задано явно
+    var reminder by remember { mutableStateOf<Int?>(initial?.reminderMinutes ?: 30) }
+
+    var showStart by remember { mutableStateOf(false) }
+    var showEnd by remember { mutableStateOf(false) }
+    var showRepeat by remember { mutableStateOf(false) }
+    var showReminder by remember { mutableStateOf(false) }
+
+    val dtf = DateTimeFormatter.ofPattern("EEE, dd.MM HH:mm", Locale.getDefault())
+    val repeatLabel = when (repeat) {
+        "daily" -> stringResource(R.string.calendar_repeat_daily)
+        "weekly" -> stringResource(R.string.calendar_repeat_weekly)
+        else -> stringResource(R.string.calendar_repeat_none)
+    }
+    val reminderLabel = when (reminder) {
+        null -> stringResource(R.string.calendar_reminder_none)
+        0 -> stringResource(R.string.calendar_reminder_on_time)
+        else -> stringResource(R.string.calendar_reminder_minutes, reminder ?: 0)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, null, tint = MaterialTheme.colorScheme.primary)
+            }
+            Text(
+                stringResource(
+                    if (initial == null) R.string.calendar_new_event else R.string.calendar_edit_event
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(Modifier.weight(1f))
+            TextButton(enabled = title.isNotBlank(), onClick = {
+                val endMillis = if (allDay)
+                    start.toLocalDate().atTime(23, 59).atZone(zone).toInstant().toEpochMilli()
+                else end.toInstant().toEpochMilli()
+                onSave(
+                    CalendarEventEntity(
+                        id = initial?.id ?: 0,
+                        title = title.trim(),
+                        startMillis = start.toInstant().toEpochMilli(),
+                        endMillis = endMillis,
+                        allDay = allDay,
+                        repeatRule = repeat,
+                        reminderMinutes = reminder
+                    )
+                )
+            }) { Text(stringResource(R.string.calendar_save_event)) }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedTextField(
+            placeholder = { Text(stringResource(R.string.calendar_title_placeholder)) },
+            value = title, onValueChange = { title = it },
+            label = { Text(stringResource(R.string.calendar_field_title)) },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        EditorCard {
+            SwitchRow(stringResource(R.string.calendar_all_day), allDay) { allDay = it }
+            EditorDivider()
+            EditorRow(stringResource(R.string.calendar_start), start.format(dtf)) { showStart = true }
+            if (!allDay) {
+                EditorRow(stringResource(R.string.calendar_end), end.format(dtf)) { showEnd = true }
+            }
+            EditorDivider()
+            EditorRow(stringResource(R.string.calendar_repeat), repeatLabel, chevron = true) {
+                showRepeat = true
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        EditorCard {
+            EditorRow(stringResource(R.string.calendar_reminder), reminderLabel, chevron = true) {
+                showReminder = true
+            }
+        }
+    }
+
+    if (showStart) {
+        TimeSheet(initial = start, onApply = { nt ->
+            start = nt
+            if (end.isBefore(nt)) end = nt.plusHours(1)
+        }, onDismiss = { showStart = false })
+    }
+    if (showEnd) {
+        TimeSheet(initial = end, onApply = { end = it }, onDismiss = { showEnd = false })
+    }
+    if (showRepeat) {
+        OptionSheet(stringResource(R.string.calendar_repeat),
+            listOf(
+                "none" to stringResource(R.string.calendar_repeat_none),
+                "daily" to stringResource(R.string.calendar_repeat_daily),
+                "weekly" to stringResource(R.string.calendar_repeat_weekly)
+            ),
+            repeat, { repeat = it; showRepeat = false }, { showRepeat = false })
+    }
+    if (showReminder) {
+        OptionSheet(stringResource(R.string.calendar_reminder),
+            listOf(
+                null to stringResource(R.string.calendar_reminder_none),
+                0 to stringResource(R.string.calendar_reminder_on_time),
+                5 to stringResource(R.string.calendar_reminder_minutes, 5),
+                10 to stringResource(R.string.calendar_reminder_minutes, 10),
+                15 to stringResource(R.string.calendar_reminder_minutes, 15),
+                30 to stringResource(R.string.calendar_reminder_minutes, 30),
+                60 to stringResource(R.string.calendar_reminder_minutes, 60),
+                120 to stringResource(R.string.calendar_reminder_hours, 2)
+            ),
+            reminder, { reminder = it; showReminder = false }, { showReminder = false })
+    }
+}
+
+// =====================================================================
+// Строки-карточки
+// =====================================================================
+
+@Composable
+private fun EditorCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .padding(horizontal = 16.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChecked)
+    }
+}
+
+@Composable
+private fun EditorDivider() {
+    Box(
+        Modifier.fillMaxWidth().height(1.dp)
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+    )
+}
+
+@Composable
+private fun EditorRow(label: String, value: String, chevron: Boolean = false, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f))
+        Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (chevron) {
+            Icon(Icons.Default.ChevronRight, null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+// =====================================================================
+// КОЛЁСИКИ (wheel picker)
+// =====================================================================
+
+
+private const val WHEEL_ITEM_HEIGHT = 52
+private const val WHEEL_VISIBLE_COUNT = 5
+private const val WHEEL_PAD_ITEMS = (WHEEL_VISIBLE_COUNT - 1) / 2 // невидимые распорки
+
+@Composable
+private fun NumberWheel(
+    items: List<String>,
+    externalIndex: Int,
+    onIndexChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val density = LocalDensity.current
+    val itemHeightPx = with(density) { WHEEL_ITEM_HEIGHT.dp.toPx() }
+    val containerHeight = (WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT).dp
+    val containerCenterPx = with(density) { containerHeight.toPx() } / 2f
+
+    val listState = rememberLazyListState()
+    var initialized by remember { mutableStateOf(false) }
+
+    // === Внешняя синхронизация ===
+    // scrollToItem(N) ставит N-й элемент списка СВЕРХУ,
+    // а с учётом распорки N-е реальное значение оказывается В ЦЕНТРЕ.
+    LaunchedEffect(externalIndex) {
+        val target = externalIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+        if (!initialized) {
+            listState.scrollToItem(target)          // мгновенно, без прокрутки с нуля
+            initialized = true
+        } else {
+            listState.animateScrollToItem(target)   // плавно
+        }
+    }
+
+    // === Выбранный = элемент, ближайший к центру контейнера ===
+    val selectedIndex by remember {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo
+                .minByOrNull { abs(it.offset + it.size / 2f - containerCenterPx) }
+                ?.index
+                ?.minus(WHEEL_PAD_ITEMS)
+                ?.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+                ?: 0
+        }
+    }
+
+    // === После отпускания пальца: точный snap в центр + уведомление ===
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (!listState.isScrollInProgress) {
+            val target = selectedIndex
+            try {
+                listState.animateScrollToItem(target)
+            } catch (_: CancellationException) {
+            }
+            onIndexChange(target)
+        }
+    }
+
+    val lineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+
+    Box(
+        modifier = modifier
+            .height(containerHeight),
+        contentAlignment = Alignment.Center
+    ) {
+        // Линии-разделители вокруг среднего ряда
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(WHEEL_ITEM_HEIGHT.dp)
+        ) {
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(lineColor)
+            )
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(lineColor)
+            )
+        }
+
+        LazyColumn(
+            state = listState,
+            flingBehavior = rememberSnapFlingBehavior(listState),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Невидимые распорки сверху и снизу — чтобы крайние значения
+            // могли встать ровно в центр
+            items(WHEEL_PAD_ITEMS) {
+                Spacer(Modifier.height(WHEEL_ITEM_HEIGHT.dp))
+            }
+
+            items(items.size) { index ->
+                val itemInfo = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == index + WHEEL_PAD_ITEMS }
+                val itemCenter = (itemInfo?.offset ?: 0) +
+                        (itemInfo?.size ?: WHEEL_ITEM_HEIGHT) / 2f
+                val fraction = ((itemCenter - containerCenterPx) / itemHeightPx)
+                    .coerceIn(-2f, 2f)
+
+                val scale = (1f - abs(fraction) * 0.15f).coerceIn(0.7f, 1f)
+                // Полностью прозрачно на краях, непрозрачно только в центре
+                val itemAlpha = (1f - abs(fraction) / 1.8f).coerceIn(0f, 1f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(WHEEL_ITEM_HEIGHT.dp)
+                        .graphicsLayer {
+                            rotationX = fraction * 35f
+                            alpha = itemAlpha
+                        }
+                        .scale(scale),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = items[index],
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontSize = 26.sp,
+                            fontWeight = if (abs(fraction) < 0.5f) FontWeight.SemiBold
+                            else FontWeight.Normal
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            items(WHEEL_PAD_ITEMS) {
+                Spacer(Modifier.height(WHEEL_ITEM_HEIGHT.dp))
+            }
+        }
+    }
+}
+
+/**
+
+ * Округляет минуты вверх до ближайшего кратного 5.
+ */
+private fun roundUpTo5(minutes: Int, hour: Int): Pair<Int, Int> {
+    val remainder = minutes % 5
+    val rounded = if (remainder == 0) minutes else minutes + (5 - remainder)
+    return if (rounded >= 60) {
+        0 to (hour + 1)
+    } else {
+        rounded to hour
+    }
+}
+
+private fun roundUpDateTime(dt: ZonedDateTime): ZonedDateTime {
+    val (roundedMin, hourDelta) = roundUpTo5(dt.minute, 0)
+    var result = dt.withMinute(roundedMin).withSecond(0).withNano(0)
+    if (hourDelta > 0) {
+        result = result.plusHours(hourDelta.toLong())
+    }
+    return result
+}
+
+/**
+ * Шторка только со временем (час + минуты).
+ * Дата фиксирована — она уже выбрана в календаре.
+ * Сохранение автоматическое при вращении колёс.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimeSheet(
+    initial: ZonedDateTime,
+    onApply: (ZonedDateTime) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val zone = ZoneId.systemDefault()
+    val now = ZonedDateTime.now(zone)
+    val date = initial.toLocalDate()
+    val isToday = date == now.toLocalDate()
+
+    // Если сегодня — не даём выбрать прошедшее время
+    val safeInitial = if (isToday && initial.isBefore(now)) roundUpDateTime(now) else initial
+
+    var hour by remember { mutableIntStateOf(safeInitial.hour) }
+    var minute by remember { mutableIntStateOf(safeInitial.minute) }
+
+    val minHour = if (isToday) now.hour else 0
+    val isCurrentHour = isToday && hour == now.hour
+    val minMinuteValue = if (isCurrentHour) {
+        val (rounded, _) = roundUpTo5(now.minute, 0)
+        rounded
+    } else 0
+
+    LaunchedEffect(hour) {
+        if (isCurrentHour && minute < minMinuteValue) minute = minMinuteValue
+    }
+
+    val hourRange = minHour..23
+    val minuteRange = (minMinuteValue..55 step 5).toList()
+
+    // Автосохранение при каждом изменении
+    LaunchedEffect(hour, minute) {
+        val m = if (isCurrentHour) minute.coerceAtLeast(minMinuteValue) else minute
+        onApply(ZonedDateTime.of(date, LocalTime.of(hour, m), zone))
+    }
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset = available
+        }
+    }
+
+    ThemedModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        dragHandle = {}
+    ) {
+        Column(
+
+            modifier = Modifier
+
+                .fillMaxWidth()
+                .nestedScroll(nestedScrollConnection)
+                // Гасим вертикальные свайпы в зонах без скролла (между колёсиками),
+                // чтобы шторка не закрывалась. Колёсики крутятся как раньше.
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures { change, _ ->
+                        change.consume()
+                    }
+                }
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "=^..^=",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 28.dp, bottom = 16.dp),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+
+                NumberWheel(
+                    items = hourRange.map { "%02d".format(it) },
+                    externalIndex = (hour - minHour).coerceAtLeast(0),
+                    onIndexChange = { idx -> hour = minHour + idx },
+                    modifier = Modifier.weight(1f)
+                )
+                NumberWheel(
+                    items = minuteRange.map { "%02d".format(it) },
+                    externalIndex = ((minute - minMinuteValue) / 5).coerceAtLeast(0),
+                    onIndexChange = { idx -> minute = minMinuteValue + idx * 5 },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun WheelLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium.copy(
+            fontWeight = FontWeight.Bold
+        ),
+        color = MaterialTheme.colorScheme.onBackground,
+        textAlign = TextAlign.Center
+    )
+}
+
+// =====================================================================
+// Option sheet (для повторения и напоминания)
+// =====================================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> OptionSheet(
+    title: String,
+    options: List<Pair<T, String>>,
+    current: T,
+    onPick: (T) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ThemedModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.height(12.dp))
+            options.forEach { (v, label) ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onPick(v) }.padding(vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(label, color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f))
+                    if (v == current) {
+                        Text("✓", color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}

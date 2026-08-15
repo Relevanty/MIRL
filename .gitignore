@@ -1,0 +1,33 @@
+# Android Studio and local machine state
+*.iml
+.idea/
+.gradle/
+.kotlin/
+local.properties
+
+# Generated build artifacts
+**/build/
+app/release/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.apks
+
+# Signing material and local secrets
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+secrets.properties
+google-services.json
+
+# Stale source copy kept locally until its deletion is confirmed
+/ui/
+
+# OS files
+.DS_Store
+Thumbs.db

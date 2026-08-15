@@ -1,0 +1,932 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- ================================================================== -->
+    <!-- ОСНОВНЫЕ СТРОКИ                                                    -->
+    <!-- ================================================================== -->
+    <string name="app_name">Brainord</string>
+    <string name="action_back">Назад</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_close">Закрыть</string>
+    <string name="action_open_settings">Настроить</string>
+
+
+    <!-- ================================================================== -->
+    <!-- НАВИГАЦИЯ (вкладки нижней панели)                                  -->
+    <!-- ================================================================== -->
+    <string name="tab_home">Сон</string>
+    <string name="tab_tasks">Календарь</string>
+    <string name="tab_pomodoro">Помодоро</string>
+    <string name="tab_misc">Разное</string>
+    <string name="tab_settings">Настройки</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ЭКРАН СНА (главный)                                                -->
+    <!-- Сводка и управление сессией                                        -->
+    <!-- ================================================================== -->
+
+    <!-- Сводка на главном экране -->
+    <string name="home_summary_no_plan">Сначала задайте время на вкладке «Настройки» — расчёт появится здесь.</string>
+    <string name="home_summary_line">Засыпание ~%1$s · Подъём ~%2$s · %3$d циклов</string>
+    <string name="home_summary_cut_by_wake">Ограничено временем подъёма — часть циклов не поместилась.</string>
+    <string name="home_summary_sleep_start">Засыпание</string>
+    <string name="home_summary_wake">Подъём между циклами</string>
+    <string name="home_summary_total">Чистый сон</string>
+    <string name="home_summary_cues_label">Подсказки</string>
+    <string name="home_summary_cues_off">выключены</string>
+    <string name="home_summary_cues_none">не поместились в окно сна</string>
+    <string name="home_summary_cues_count">%1$d сигналов за ночь</string>
+
+    <!-- Расчёт плана сна -->
+    <string name="section_plan">Расчёт</string>
+    <string name="plan_not_ready">План ещё не рассчитан.</string>
+    <string name="plan_sleep_start">Засыпание: %1$s</string>
+    <string name="plan_wake_between_cycles">Подъём между циклами: %1$s</string>
+    <string name="plan_total_sleep">Вы проспите примерно %1$s</string>
+    <string name="plan_total_in_bed">В постели: %1$s</string>
+    <string name="plan_cues_disabled">Подсказки для осознанных снов выключены</string>
+    <string name="plan_cues_none">Подсказки не помещаются в это окно сна</string>
+    <string name="plan_cues_count">Пиипы: %1$d раз</string>
+    <string name="plan_last_cue">Последний пиип в %1$s</string>
+
+    <!-- Альтернативные варианты расчёта -->
+    <string name="section_alternatives">Варианты</string>
+    <string name="alternative_format">%1$d циклов · лечь в %2$s · сон %3$s</string>
+    <string name="info_recommended_cycles">Для этого времени подъёма рекомендуется %1$d циклов.</string>
+    <string name="action_use_recommended">Использовать</string>
+
+    <!-- Запуск и отмена сессии -->
+    <string name="section_start">Запуск</string>
+    <string name="action_go_to_sleep_now">Я ложусь спать сейчас</string>
+    <string name="action_recalculate">Пересчитать</string>
+    <string name="action_cancel_sleep">Отменить сон</string>
+    <string name="active_session_text">Сон активен. Подъём в %1$s</string>
+
+    <!-- Предупреждения о расчёте -->
+    <string name="section_warnings">Предупреждения</string>
+    <string name="warning_too_few_cycles">Выбрано меньше 3 циклов — сон может быть слишком коротким.</string>
+    <string name="warning_too_many_cycles">Выбрано больше 7 циклов — сон может быть слишком длинным.</string>
+    <string name="warning_bed_time_in_past">Рекомендуемое время отхода ко сну уже прошло. Уменьшите число циклов или выберите более позднее время подъёма.</string>
+    <string name="warning_wake_time_in_past">Расчётное время пробуждения уже прошло. Время будет перенесено на следующий день.</string>
+    <string name="warning_total_sleep_too_short">Общая продолжительность сна меньше рекомендуемой.</string>
+    <string name="warning_total_sleep_too_long">Общая продолжительность сна больше рекомендуемой.</string>
+    <string name="warning_cue_invalid_window">Окно сна некорректно: засыпание позже пробуждения.</string>
+    <string name="warning_cue_invalid_settings">Настройки подсказок вне допустимого диапазона и были нормализованы.</string>
+    <string name="warning_cue_too_short">Сон слишком короткий: подсказки не помещаются до финального цикла.</string>
+    <string name="warning_cue_too_frequent">Подсказки слишком частые и могут мешать сну.</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ЭКРАН БУДИЛЬНИКА                                                   -->
+    <!-- Полноэкранный экран при срабатывании будильника                    -->
+    <!-- ================================================================== -->
+
+    <!-- Основная информация -->
+    <string name="alarm_subtitle_between_cycles">Между циклами сна</string>
+    <string name="alarm_session_info">%1$d циклов по %2$d мин · подъём в %3$s</string>
+    <string name="alarm_loading">Загрузка будильника…</string>
+
+    <!-- Математическая задача -->
+    <string name="alarm_solve_to_disable">Решите пример, чтобы выключить будильник</string>
+    <string name="alarm_answer_label">Ответ</string>
+    <string name="alarm_error_empty_answer">Введите число</string>
+    <string name="alarm_wrong_answer">Неправильно. Попробуйте ещё раз.</string>
+    <string name="alarm_hint_answer">Подсказка: правильный ответ — %1$d</string>
+    <string name="alarm_answer_correct">Верно! Теперь будильник можно выключить.</string>
+
+    <!-- Кнопки действий -->
+    <string name="alarm_action_check">Проверить</string>
+    <string name="alarm_action_dismiss">Выключить будильник</string>
+    <string name="alarm_action_snooze">Отложить на %1$s</string>
+
+    <!-- Подтверждение snooze -->
+    <string name="alarm_snooze_title">Отложить будильник?</string>
+    <string name="alarm_snooze_confirm">Будильник прозвонит снова через %1$s. Подсказки для snooze отключены.</string>
+    <string name="alarm_snooze_confirm_action">Отложить</string>
+
+    <!-- Умные повторы -->
+    <string name="alarm_repeat_counter">Повтор %1$d из %2$d</string>
+    <string name="alarm_repeat_next">Следующий толчок через %1$s</string>
+    <string name="alarm_repeat_exhausted">Звук на максимуме — решите пример, чтобы выключить</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ЭКРАН НАСТРОЕК                                                     -->
+    <!-- Все настройки приложения собраны здесь                             -->
+    <!-- ================================================================== -->
+
+    <string name="settings_intro">Выберите раздел. Одновременно открыт только один блок, чтобы нужные параметры было проще найти.</string>
+    <string name="settings_category_basics">Основные настройки сна</string>
+    <string name="settings_category_basics_summary">Время подъёма, длительность и количество циклов</string>
+    <string name="settings_category_cues">Осознанные сновидения</string>
+    <string name="settings_category_cues_summary">Звук, расписание и громкость ночных подсказок</string>
+    <string name="settings_category_alarm">Пробуждение</string>
+    <string name="settings_category_alarm_summary">Мелодия, вибрация, задача и повторы будильника</string>
+    <string name="settings_category_automation">Автоматизация сна</string>
+    <string name="settings_category_automation_summary">Определение засыпания и коррекция подъёма</string>
+    <string name="settings_category_appearance">Оформление и язык</string>
+    <string name="settings_category_appearance_summary">Цветовая тема и язык интерфейса</string>
+    <string name="settings_category_data">Данные и резервные копии</string>
+    <string name="settings_category_data_summary">Импорт и экспорт настроек или всех данных</string>
+    <string name="settings_category_reliability">Надёжность и справка</string>
+    <string name="settings_category_reliability_summary">Системные разрешения и важная информация</string>
+    <string name="settings_expand">Развернуть раздел</string>
+    <string name="settings_collapse">Свернуть раздел</string>
+    <string name="setting_app_language">Язык приложения</string>
+    <string name="setting_app_language_hint">Изменение применяется сразу ко всем экранам и уведомлениям приложения.</string>
+    <string name="language_system">Системный</string>
+    <string name="language_russian">Русский</string>
+    <string name="language_english">English</string>
+
+    <!-- Время и циклы -->
+    <string name="section_time">Время</string>
+    <string name="setting_wake_time">Я хочу проснуться в</string>
+    <string name="hint_wake_time">Это ориентир: приложение разбудит вас между циклами сна, не позже этого времени.</string>
+    <string name="time_unit_hours">часы</string>
+    <string name="time_unit_minutes">минуты</string>
+
+    <string name="section_cycles">Циклы сна</string>
+    <string name="setting_cycle_length">Длина цикла</string>
+    <string name="setting_cycles_count">Количество циклов</string>
+    <string name="setting_onset_latency">Время засыпания</string>
+    <string name="hint_cycles_in_wake_mode">В режиме подъёма приложение подскажет рекомендуемое число циклов.</string>
+    <string name="minutes_format">%1$d мин</string>
+
+    <!-- Подсказки для осознанных снов -->
+    <string name="section_lucid_cues">Подсказки для осознанных снов</string>
+    <string name="setting_cues_enabled">Включить подсказки</string>
+    <string name="hint_cues_disabled">Подсказки для осознанных снов выключены.</string>
+    <string name="setting_cue_sound">Звук подсказки</string>
+    <string name="cue_sound_default">Не выбран</string>
+    <string name="action_remove_cue_sound">Убрать звук подсказки</string>
+    <string name="warning_no_cue_sound">Звук подсказки не выбран — подсказки будут пропускаться. Выберите файл ниже.</string>
+    <string name="cue_picker_title">Звук подсказки</string>
+    <string name="action_pick_from_storage">Выбрать файл из хранилища</string>
+    <string name="action_preview_ringtone">Прослушать</string>
+    <string name="action_stop_preview">Остановить</string>
+    <string name="action_reset_ringtone">Вернуть системную</string>
+    <string name="setting_cue_schedule_mode">Когда подавать сигнал</string>
+    <string name="cue_mode_periodic">Через интервал</string>
+    <string name="cue_mode_rem">В фазе сна (REM)</string>
+    <string name="setting_first_cue_delay">Первый сигнал через</string>
+    <string name="setting_cue_interval">Интервал повторных</string>
+    <string name="setting_rem_offset">Точка внутри REM-окна</string>
+    <string name="percent_format">%1$d%%</string>
+    <string name="setting_cue_volume">Громкость подсказки</string>
+    <string name="setting_cue_volume_warning">Подсказка должна быть тихой, чтобы не разбудить. Выше 20–30% вы рискуете проснуться от сигнала.</string>
+    <string name="setting_cues_preview">По текущим настройкам получится сигналов: %1$d</string>
+    <string name="action_cues_help">Как это работает и когда ставить сигнал</string>
+
+    <!-- Будильник -->
+    <string name="section_alarm">Будильник</string>
+    <string name="setting_math_difficulty">Сложность задачи</string>
+    <string name="math_difficulty_easy">Легко</string>
+    <string name="math_difficulty_medium">Средне</string>
+    <string name="math_difficulty_hard">Сложно</string>
+    <string name="setting_quiet_alarm">Тихий режим будильника</string>
+    <string name="setting_vibration">Вибрация при пробуждении</string>
+    <string name="setting_ringtone">Мелодия будильника</string>
+    <string name="ringtone_system_default">Системная по умолчанию</string>
+    <string name="action_pick_ringtone">Выбрать мелодию</string>
+    <string name="ringtone_picker_title">Мелодия будильника</string>
+    <string name="sound_file_unavailable">Файл звука недоступен. Выберите другой файл.</string>
+    <string name="sound_permission_error">Не удалось сохранить доступ к файлу. Выберите звук через системное хранилище.</string>
+    <string name="setting_smart_repeat_enabled">Повторять, пока не проснусь</string>
+    <string name="setting_smart_repeat_first">Первый повтор через</string>
+    <string name="setting_smart_repeat_interval">Интервал повторов</string>
+    <string name="setting_smart_repeat_max">Не больше повторов</string>
+    <string name="setting_mirror_system">Дублировать в системные часы</string>
+    <string name="hint_mirror">Создаёт видимый будильник-дублёр на то же время. Возможен двойной звонок; после выключения дублёр иногда приходится снимать вручную в системных часах — это ограничение Android.</string>
+
+    <!-- Автоопределение засыпания -->
+    <string name="section_auto_detect">Автоопределение засыпания</string>
+    <string name="setting_auto_detect_onset">Определять засыпание по неподвижности</string>
+    <string name="setting_auto_correct_wake">Сдвигать подъём по факту засыпания</string>
+    <string name="hint_auto_detect">Экспериментально. Телефон слушает акселерометр и отмечает момент, когда вы затихли; точность порядка одной-двух минут, расход батареи небольшой. Без второго тумблера будильник НЕ сдвигается — детекция идёт только в статистику.</string>
+
+    <!-- Данные (экспорт/импорт) -->
+    <string name="section_data">Данные</string>
+    <string name="action_export_settings">Экспорт настроек</string>
+    <string name="action_import_settings">Импорт настроек</string>
+    <string name="action_export_all_data">Экспортировать все данные</string>
+    <string name="action_import_all_data">Импортировать все данные</string>
+    <string name="action_import">Импортировать</string>
+    <string name="import_all_title">Импорт всех данных</string>
+    <string name="import_all_warning">Все текущие данные приложения (дневник, задачи, календарь, статистика, напоминания, D-Day, библиотека и настройки) будут ЗАМЕНЕНЫ данными из файла. Это действие необратимо.\n\nПродолжить?</string>
+    <string name="import_success">Настройки импортированы</string>
+    <string name="import_error">Не удалось прочитать файл настроек</string>
+    <string name="export_all_success">Все данные успешно экспортированы</string>
+    <string name="import_all_success">Все данные успешно импортированы</string>
+    <string name="export_error">Ошибка экспорта</string>
+
+    <!-- Дисклеймер -->
+    <string name="section_disclaimer">Важно</string>
+    <string name="disclaimer_text">Приложение не является медицинским устройством и не диагностирует фазы сна. Расчёт основан на усреднённой модели циклов сна. Подсказки для осознанных сновидений могут не сработать или вызывать дискомфорт. Громкость подсказок должна оставаться очень низкой. Если вы чувствуете недосып, увеличьте количество циклов или ложитесь раньше.</string>
+
+    <!-- Оформление -->
+    <string name="action_open_themes">Оформление: выбрать тему</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ЭКРАН СТАТИСТИКИ                                                   -->
+    <!-- История сна и графики                                              -->
+    <!-- ================================================================== -->
+
+    <string name="stats_label_statistics">Статистика</string>
+    <string name="stats_title">Ваш сон</string>
+    <string name="stats_subtitle">Последняя ночь, средние за 7 дней и история сессий</string>
+
+    <string name="stats_label_last_night">Последняя ночь</string>
+    <string name="stats_last_night_range">с %1$s до %2$s</string>
+    <string name="stats_cycles_info">%1$d циклов по %2$d мин</string>
+    <string name="stats_cues_info">Подсказки: %1$d из %2$d</string>
+    <string name="stats_cues_off">Подсказки были выключены</string>
+    <string name="stats_detected_onset">заснул за ~%1$d мин (авто)</string>
+    <string name="stats_cycles_unit">циклов</string>
+
+    <string name="stats_label_avg_7d">Среднее за 7 дней</string>
+    <string name="stats_sessions_count">Сессий за 7 дней: %1$d</string>
+    <string name="stats_label_no_snooze">Без snooze</string>
+    <string name="stats_label_cues">Подсказки</string>
+
+    <string name="stats_label_history">История</string>
+    <string name="stats_last_sessions">Последние %1$d</string>
+
+    <string name="stats_badge_active">Активна</string>
+    <string name="stats_badge_normal">Без snooze</string>
+    <string name="stats_badge_snooze">Snooze</string>
+    <string name="stats_badge_missed">Пропущен</string>
+    <string name="stats_badge_cancelled">Отменён</string>
+
+    <string name="stats_empty_title">Пока нет записей</string>
+    <string name="stats_empty_text">Запустите первую сессию сна на главном экране, и статистика появится здесь.</string>
+
+    <string name="stats_chart_duration_title">Сколько спали по дням</string>
+    <string name="stats_chart_duration_hint">Нажмите на столбец, чтобы увидеть длительность</string>
+    <string name="stats_chart_wake_title">Во сколько вставали</string>
+    <string name="stats_action_export_csv">CSV</string>
+    <string name="stats_export_done">История сна экспортирована</string>
+    <string name="stats_export_empty">Пока нечего экспортировать</string>
+
+    <string name="action_open_stats">Статистика сна</string>
+
+
+    <!-- ================================================================== -->
+    <!-- УВЕДОМЛЕНИЯ                                                        -->
+    <!-- Тексты уведомлений и названия каналов                              -->
+    <!-- ================================================================== -->
+
+    <!-- Каналы уведомлений -->
+    <string name="notification_channel_sleep_name">Активная сессия сна</string>
+    <string name="notification_channel_sleep_description">Постоянное уведомление о текущей сессии сна и подсказках</string>
+    <string name="notification_channel_alarm_name">Будильник</string>
+    <string name="notification_channel_alarm_description">Звук и полноэкранный экран будильника</string>
+    <string name="notification_channel_alarm_set_name">Установка будильника</string>
+    <string name="notification_channel_alarm_set_description">Подтверждение того, что будильник установлен</string>
+
+    <!-- Уведомление сна -->
+    <string name="sleep_notification_title">Сон активен</string>
+    <string name="sleep_notification_starting">Подготовка сессии сна…</string>
+    <string name="sleep_notification_cycle_format">Цикл %1$d/%2$d</string>
+    <string name="sleep_notification_no_cycle">Засыпание…</string>
+    <string name="sleep_notification_next_cue_format">следующий пиип через %1$d мин</string>
+    <string name="sleep_notification_no_cues">подсказки выключены</string>
+    <string name="sleep_notification_wake_format">подъём в %1$s</string>
+    <string name="sleep_notification_status_format">%1$s · %2$s · %3$s</string>
+    <string name="sleep_notification_action_cancel">Отменить</string>
+    <string name="sleep_notification_start_with_cue">Будильник на %1$s · ближайший пиип в %2$s</string>
+    <string name="sleep_notification_start_no_cue">Будильник установлен на %1$s</string>
+
+    <!-- Уведомление будильника -->
+    <string name="alarm_notification_title">Пора вставать!</string>
+    <string name="alarm_notification_text">Нажмите, чтобы открыть будильник.</string>
+    <string name="alarm_set_title">Будильник установлен</string>
+    <string name="system_alarm_mirror_message">Sleep Cycle Lucid Alarm — резервный будильник</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ДНЕВНИК                                                            -->
+    <!-- Записи дневника, снов и идей                                       -->
+    <!-- ================================================================== -->
+    <!-- Строки для дневника пока не вынесены в strings.xml,                -->
+    <!-- они хардкодятся в DiaryScreen.kt. При желании можно вынести сюда.  -->
+
+
+    <!-- ================================================================== -->
+    <!-- ЗАДАЧИ                                                             -->
+    <!-- Задачи и утренняя рутина                                           -->
+    <!-- ================================================================== -->
+
+    <string name="tasks_new_placeholder">Новая задача…</string>
+    <string name="tasks_add">Добавить задачу</string>
+    <string name="tasks_section_morning">Утренняя рутина</string>
+    <string name="tasks_section_general">Общие дела</string>
+    <string name="tasks_morning_subtitle">Повторяется каждый день, ведётся стрик 🔥</string>
+    <string name="tasks_empty_section">Пока пусто</string>
+    <string name="tasks_has_reminder">🔔 напоминание</string>
+    <string name="tasks_add_reminder">Создать напоминание</string>
+    <string name="tasks_delete">Удалить задачу</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ПОМОДОРО                                                           -->
+    <!-- Таймер фокусировки и статистика                                    -->
+    <!-- ================================================================== -->
+
+    <string name="pomodoro_title">Помодоро</string>
+    <string name="pomodoro_focus">Фокус</string>
+    <string name="pomodoro_break">Перерыв</string>
+    <string name="pomodoro_start">Старт</string>
+    <string name="pomodoro_pause">Пауза</string>
+    <string name="pomodoro_reset">Сброс</string>
+    <string name="pomodoro_today">Сегодня фокусов: %1$d</string>
+    <string name="pomodoro_month_focus">Фокуса за месяц: %1$d мин</string>
+
+
+    <!-- ================================================================== -->
+    <!-- БИБЛИОТЕКА                                                         -->
+    <!-- Отзывы на книги, фильмы, музыку                                    -->
+    <!-- ================================================================== -->
+
+    <string name="library_title">Библиотека</string>
+    <string name="library_search">Поиск по названию или автору…</string>
+    <string name="library_empty">Пока пусто. Нажмите «+», чтобы добавить первый отзыв.</string>
+    <string name="library_graph">Граф связей</string>
+    <string name="library_graph_soon">Граф отзывов появится в следующем обновлении. Связи уже строятся через общие теги.</string>
+    <string name="library_filter_all">Все</string>
+    <string name="library_filter_books">Книги</string>
+    <string name="library_filter_movies">Фильмы</string>
+    <string name="library_filter_music">Музыка</string>
+    <string name="library_edit_title">Элемент библиотеки</string>
+    <string name="library_field_title">Название</string>
+    <string name="library_field_author">Автор</string>
+    <string name="library_pick_cover">Обложка</string>
+    <string name="library_remove_cover">Убрать</string>
+    <string name="library_field_desc">Краткое описание</string>
+    <string name="library_field_impression">Впечатление</string>
+    <string name="library_field_thoughts">Мысли</string>
+    <string name="library_field_rating">Оценка</string>
+    <string name="library_field_tag">Тег</string>
+    <string name="library_save">Сохранить</string>
+    <string name="library_delete">Удалить</string>
+    <string name="library_delete_title">Удалить отзыв?</string>
+    <string name="library_delete_text">Элемент, его обложка и связи с тегами будут удалены безвозвратно.</string>
+    <string name="library_delete_item_text">«%1$s» будет удалён безвозвратно.</string>
+
+
+    <!-- ================================================================== -->
+    <!-- НАПОМИНАНИЯ                                                        -->
+    <!-- Напоминания с повторами                                            -->
+    <!-- ================================================================== -->
+
+    <string name="reminders_title">Напоминания</string>
+    <string name="reminders_new">Новое напоминание</string>
+    <string name="reminders_empty">Пока нет напоминаний. Нажмите «+», чтобы создать.</string>
+    <string name="reminders_edit">Редактировать</string>
+    <string name="reminders_delete">Удалить</string>
+    <string name="reminders_next">Следующее: %1$s</string>
+    <string name="reminders_exact_alarm_warning">Точные будильники запрещены системой — напоминания могут приходить с задержкой. Разрешите их в настройках.</string>
+
+    <string name="reminder_edit_new">Новое напоминание</string>
+    <string name="reminder_edit_title">Напоминание</string>
+    <string name="reminder_field_title">Название</string>
+    <string name="reminder_field_time">Время</string>
+    <string name="reminder_field_repeat">Повторение</string>
+    <string name="reminder_field_days">Дни недели</string>
+    <string name="reminder_field_interval">Каждые %1$d дн.</string>
+    <string name="reminder_save">Сохранить</string>
+
+    <string name="repeat_once">Один раз</string>
+    <string name="repeat_daily">Ежедневно</string>
+    <string name="repeat_weekly">По дням</string>
+    <string name="repeat_interval">Раз в N дней</string>
+
+    <string name="day_mon">Пн</string>
+    <string name="day_tue">Вт</string>
+    <string name="day_wed">Ср</string>
+    <string name="day_thu">Чт</string>
+    <string name="day_fri">Пт</string>
+    <string name="day_sat">Сб</string>
+    <string name="day_sun">Вс</string>
+
+    <string name="reminder_pre_text">Скоро · осталось 5 минут</string>
+    <string name="reminder_fire_text">Пора!</string>
+    <string name="reminder_action_done">Выполнено</string>
+    <string name="reminder_action_snooze">Отложить +5 мин</string>
+
+    <string name="channel_reminder_pre">Напоминания (предупреждение)</string>
+    <string name="channel_reminder_pre_desc">Беззвучное уведомление за 5 минут с обратным отсчётом.</string>
+    <string name="channel_reminder_fire">Напоминания (срабатывание)</string>
+    <string name="channel_reminder_fire_desc">Звуковое уведомление в момент времени.</string>
+
+
+    <!-- ================================================================== -->
+    <!-- D-DAY                                                              -->
+    <!-- Обратные отсчёты до событий                                        -->
+    <!-- ================================================================== -->
+
+    <string name="dday_title">D-Day</string>
+    <string name="dday_field_title">Название события</string>
+    <string name="dday_field_day">ДД</string>
+    <string name="dday_field_month">ММ</string>
+    <string name="dday_field_year">ГГГГ</string>
+    <string name="dday_error_date">Некорректная дата</string>
+    <string name="dday_add">Добавить</string>
+    <string name="dday_empty">Пока нет событий.</string>
+    <string name="dday_delete">Удалить событие</string>
+    <string name="dday_days_left">%1$d дн.</string>
+    <string name="dday_today">Сегодня!</string>
+    <string name="dday_passed">Прошло</string>
+    <string name="dday_badge">До %1$s — %2$d дн.</string>
+    <string name="dday_badge_today">%1$s — сегодня!</string>
+
+
+    <!-- ================================================================== -->
+    <!-- АССИСТЕНТ                                                          -->
+    <!-- Локальный AI-ассистент                                             -->
+    <!-- ================================================================== -->
+
+    <string name="assistant_title">Ассистент</string>
+    <string name="assistant_hint">Спросите о сне, задачах, дедлайнах или утре. Всё оффлайн.</string>
+    <string name="assistant_placeholder">Задайте вопрос…</string>
+    <string name="assistant_send">Отправить</string>
+    <string name="assistant_quick_sleep">Сколько я спал?</string>
+    <string name="assistant_quick_morning">Какое будет утро?</string>
+    <string name="assistant_quick_tasks">Задачи на сегодня</string>
+    <string name="assistant_not_trained">Модель ещё обучается или мало данных (нужно ≥ 3 дней с настроением).</string>
+    <string name="assistant_trained_on">Обучено на %1$d примерах.</string>
+    <string name="assistant_insight_morning">Прогноз утра</string>
+    <string name="assistant_insight_snooze">Лимит snooze</string>
+    <string name="assistant_heavy">Тяжёлое утро</string>
+    <string name="assistant_good">Лёгкое утро</string>
+    <string name="assistant_predicted">Предсказано: %1$s / 5</string>
+    <string name="assistant_greeting_back">Привет! Чем помочь?</string>
+    <string name="assistant_fallback">Я локальный ассистент. Спросите про сон, задачи, дедлайны, настроение или утро.</string>
+    <string name="assistant_no_sleep_data">Пока нет данных о сне.</string>
+    <string name="assistant_sleep_answer">Последний сон: %1$d минут, %2$d циклов.</string>
+    <string name="assistant_no_tasks">На сегодня задач нет.</string>
+    <string name="assistant_tasks_answer">Открытых задач: %1$d</string>
+    <string name="assistant_no_dday">Нет будущих событий.</string>
+    <string name="assistant_dday_today">%1$s — сегодня!</string>
+    <string name="assistant_dday_answer">До «%1$s» осталось %2$d дн.</string>
+    <string name="assistant_morning_heavy">Похоже, утро будет тяжёлым (прогноз %1$s/5). Лучше не откладывать будильник.</string>
+    <string name="assistant_morning_good">Утро должно быть лёгким (прогноз %1$s/5).</string>
+    <string name="assistant_mood_answer">Ваше настроение сегодня: %1$d из 5.</string>
+    <string name="assistant_no_mood">Сегодня настроение ещё не отмечено.</string>
+    <string name="assistant_snooze_default">Недостаточно данных для рекомендации snooze.</string>
+    <string name="assistant_snooze_answer">Рекомендую не больше %1$d повторов snooze.</string>
+    <string name="assistant_stats_sleep">Последний сон: %1$d минут.</string>
+    <string name="assistant_stats_mood">Настроение сегодня: %1$d/5.</string>
+    <string name="assistant_no_data">Пока нет данных для статистики.</string>
+
+
+    <!-- ================================================================== -->
+    <!-- БРИФИНГ                                                            -->
+    <!-- Голосовая сводка после подъёма                                     -->
+    <!-- ================================================================== -->
+
+    <string name="briefing_settings_title">Голосовой брифинг</string>
+    <string name="briefing_enable">Озвучивать сводку после подъёма</string>
+    <string name="briefing_playing">Озвучиваю сводку…</string>
+    <string name="briefing_greeting">Доброе утро!</string>
+    <string name="briefing_last_sleep">Ты спал %1$d минут, %2$d циклов.</string>
+    <string name="briefing_detected_onset">Заснул примерно за %1$d минут.</string>
+    <string name="briefing_dday_today">Сегодня %1$s!</string>
+    <string name="briefing_dday">До %1$s осталось %2$d дней.</string>
+    <string name="briefing_no_events">Сегодня нет событий.</string>
+    <string name="briefing_events_prefix">Сегодня %1$d событий, первое —</string>
+    <string name="briefing_study_yesterday">Вчера ты учился %1$d минут.</string>
+    <string name="briefing_no_tasks">На сегодня задач нет.</string>
+    <string name="briefing_tasks_prefix">Сегодня у вас %1$d задач:</string>
+
+
+    <!-- ================================================================== -->
+    <!-- НАСТРОЕНИЕ                                                         -->
+    <!-- Диалог выбора настроения после подъёма                             -->
+    <!-- ================================================================== -->
+
+    <string name="mood_picker_title">Как вы себя чувствуете?</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ТЕМЫ ОФОРМЛЕНИЯ                                                    -->
+    <!-- Выбор цветовой схемы                                               -->
+    <!-- ================================================================== -->
+    <!-- === Часть 9: Темы (140 пресетов) === -->
+    <string name="themes_title">Темы</string>
+    <string name="themes_tab_day">День</string>
+    <string name="themes_tab_night">Ночь</string>
+
+    <!-- Базовые -->
+    <string name="theme_night">Ночная</string>
+    <string name="theme_ocean">Глубокий океан</string>
+    <string name="theme_sunset">Тёплый закат</string>
+    <string name="theme_forest">Лес</string>
+    <string name="theme_lavender">Лаванда</string>
+    <string name="theme_rose">Роза</string>
+    <string name="theme_graphite">Графит</string>
+    <string name="theme_amoled">AMOLED</string>
+    <string name="theme_coffee">Кофе</string>
+    <string name="theme_mint">Мята</string>
+    <string name="theme_gold">Золото</string>
+    <string name="theme_day">День</string>
+    <string name="theme_paper">Бумага</string>
+    <string name="theme_ice">Лёд</string>
+
+    <!-- Киберпанк -->
+    <string name="theme_night_city">Night City</string>
+    <string name="theme_netrunner">Netrunner</string>
+    <string name="theme_synthwave">Synthwave</string>
+    <string name="theme_vaporwave">Vaporwave</string>
+    <string name="theme_chrome">Chrome</string>
+    <string name="theme_neon_rain">Neon Rain</string>
+    <string name="theme_acid_grid">Acid Grid</string>
+
+    <!-- Дизельпанк -->
+    <string name="theme_diesel">Diesel</string>
+    <string name="theme_rust">Rust</string>
+    <string name="theme_brass">Brass</string>
+    <string name="theme_smoke">Smoke</string>
+    <string name="theme_war_room">War Room</string>
+
+    <!-- Пост-панк -->
+    <string name="theme_cold_wave">Cold Wave</string>
+    <string name="theme_gothic">Gothic</string>
+    <string name="theme_bauhaus">Bauhaus</string>
+    <string name="theme_mono">Mono</string>
+    <string name="theme_factory">Factory</string>
+
+    <!-- Природа тёмная -->
+    <string name="theme_deep_forest">Глубокий лес</string>
+    <string name="theme_swamp">Болото</string>
+    <string name="theme_autumn_night">Осенняя ночь</string>
+    <string name="theme_winter_night">Зимняя ночь</string>
+    <string name="theme_aurora">Северное сияние</string>
+    <string name="theme_desert_night">Ночная пустыня</string>
+    <string name="theme_volcano">Вулкан</string>
+    <string name="theme_midnight_garden">Ночной сад</string>
+    <string name="theme_moss">Мох</string>
+    <string name="theme_coral_reef">Коралловый риф</string>
+
+    <!-- Linux тёмный -->
+    <string name="theme_ubuntu">Ubuntu</string>
+    <string name="theme_debian">Debian</string>
+    <string name="theme_arch">Arch</string>
+    <string name="theme_fedora">Fedora</string>
+    <string name="theme_mint_os">Linux Mint</string>
+    <string name="theme_manjaro">Manjaro</string>
+    <string name="theme_kali">Kali</string>
+    <string name="theme_gentoo">Gentoo</string>
+    <string name="theme_nixos">NixOS</string>
+    <string name="theme_opensuse">openSUSE</string>
+    <string name="theme_pop_os">Pop!_OS</string>
+    <string name="theme_elementary">Elementary</string>
+
+    <!-- Космос тёмный -->
+    <string name="theme_deep_space">Deep Space</string>
+    <string name="theme_nebula">Туманность</string>
+    <string name="theme_mars">Марс</string>
+    <string name="theme_moon">Луна</string>
+    <string name="theme_andromeda">Андромеда</string>
+    <string name="theme_black_hole">Чёрная дыра</string>
+    <string name="theme_starfield">Звёздное поле</string>
+    <string name="theme_comet">Комета</string>
+    <string name="theme_solar_flare">Солнечная вспышка</string>
+
+    <!-- Ретро-терминалы -->
+    <string name="theme_matrix">Matrix</string>
+    <string name="theme_phosphor">Phosphor</string>
+    <string name="theme_amber_terminal">Amber Terminal</string>
+    <string name="theme_hacker">Hacker</string>
+
+    <!-- Стильные тёмные -->
+    <string name="theme_noir">Нуар</string>
+    <string name="theme_blood">Кровь</string>
+    <string name="theme_wine">Вино</string>
+    <string name="theme_royal">Royal</string>
+    <string name="theme_emerald">Изумруд</string>
+    <string name="theme_sapphire">Сапфир</string>
+    <string name="theme_ruby">Рубин</string>
+    <string name="theme_obsidian">Обсидиан</string>
+    <string name="theme_cyber_violet">Cyber Violet</string>
+    <string name="theme_neon_pink">Neon Pink</string>
+    <string name="theme_retro_sun">Retro Sun</string>
+    <string name="theme_deep_blue">Deep Blue</string>
+
+    <!-- Новые тёмные -->
+    <string name="theme_blue_hour">Синий час</string>
+    <string name="theme_northern_lights">Полярное сияние</string>
+    <string name="theme_plum_velvet">Сливочный бархат</string>
+    <string name="theme_midnight_ink">Полуночные чернила</string>
+    <string name="theme_storm">Шторм</string>
+    <string name="theme_pine_night">Сосновая ночь</string>
+    <string name="theme_ember">Угли</string>
+    <string name="theme_eclipse">Затмение</string>
+    <string name="theme_deep_teal">Тёмный тиффани</string>
+    <string name="theme_cocoa_night">Ночное какао</string>
+
+    <!-- Природа светлая -->
+    <string name="theme_dawn">Рассвет</string>
+    <string name="theme_morning_mist">Утренний туман</string>
+    <string name="theme_meadow">Луг</string>
+    <string name="theme_spring">Весна</string>
+    <string name="theme_summer">Лето</string>
+    <string name="theme_birch">Берёза</string>
+    <string name="theme_sakura">Сакура</string>
+    <string name="theme_lavender_field">Лавандовое поле</string>
+    <string name="theme_sky">Небо</string>
+    <string name="theme_sand">Песок</string>
+    <string name="theme_ocean_light">Океан светлый</string>
+    <string name="theme_autumn">Осень</string>
+
+    <!-- Бумага / ретро -->
+    <string name="theme_parchment">Пергамент</string>
+    <string name="theme_sepia">Сепия</string>
+    <string name="theme_old_book">Старая книга</string>
+    <string name="theme_cream">Кремовый</string>
+    <string name="theme_ivory">Слоновая кость</string>
+    <string name="theme_linen">Льняной</string>
+    <string name="theme_ecru">Экрю</string>
+
+    <!-- Пастель -->
+    <string name="theme_pastel_pink">Пастельно-розовый</string>
+    <string name="theme_pastel_blue">Пастельно-голубой</string>
+    <string name="theme_mint_cream">Мятный крем</string>
+    <string name="theme_peach">Персиковый</string>
+    <string name="theme_powder">Пудровый</string>
+    <string name="theme_lilac">Сиреневый</string>
+
+    <!-- Linux светлый -->
+    <string name="theme_ubuntu_light">Ubuntu Light</string>
+    <string name="theme_debian_light">Debian Light</string>
+    <string name="theme_fedora_light">Fedora Light</string>
+    <string name="theme_mint_light">Mint Light</string>
+    <string name="theme_pop_os_light">Pop!_OS Light</string>
+
+    <!-- Космос светлый -->
+    <string name="theme_moonlight">Лунный свет</string>
+    <string name="theme_cloud">Облако</string>
+    <string name="theme_snow">Снег</string>
+    <string name="theme_pearl">Жемчуг</string>
+    <string name="theme_starlight">Звёздный свет</string>
+
+    <!-- Стильные светлые -->
+    <string name="theme_honey">Мёд</string>
+    <string name="theme_sage">Шалфей</string>
+    <string name="theme_coral">Коралл</string>
+    <string name="theme_terracotta">Терракота</string>
+    <string name="theme_olive">Оливковый</string>
+    <string name="theme_rose_garden">Розовый сад</string>
+    <string name="theme_cotton">Хлопок</string>
+
+    <!-- Новые светлые -->
+    <string name="theme_sunrise">Восход</string>
+    <string name="theme_sea_breeze">Морской бриз</string>
+    <string name="theme_alpine">Альпийская</string>
+    <string name="theme_lemon">Лимонная</string>
+    <string name="theme_blush">Румянец</string>
+    <string name="theme_pistachio">Фисташка</string>
+    <string name="theme_arctic">Арктика</string>
+    <string name="theme_latte">Латте</string>
+    <string name="theme_orchid_mist">Орхидейный туман</string>
+    <string name="theme_clear_sky">Ясное небо</string>
+    <!-- ================================================================== -->
+    <!-- МЕНЮ "РАЗНОЕ"                                                      -->
+    <!-- Дополнительные модули                                              -->
+    <!-- ================================================================== -->
+
+    <string name="misc_library">Библиотека</string>
+    <string name="misc_reminders">Напоминания</string>
+    <string name="misc_dday">D-Day</string>
+    <string name="misc_assistant">Ассистент</string>
+    <string name="misc_briefing">Голосовой брифинг</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ПРОВЕРКА СИСТЕМЫ                                                   -->
+    <!-- Диагностика разрешений и настроек                                  -->
+    <!-- ================================================================== -->
+
+    <string name="system_check_title">Проверка системы</string>
+    <string name="system_check_subtitle">Для корректной работы будильников и напоминаний нужны следующие разрешения.</string>
+    <string name="system_check_fix">Исправить</string>
+    <string name="system_check_refresh">Проверить снова</string>
+    <string name="action_system_check">Проверка надёжности</string>
+
+    <string name="system_check_notifications">Уведомления</string>
+    <string name="system_check_notifications_desc">Показывать уведомления о напоминаниях и срабатывании будильника.</string>
+
+    <string name="system_check_exact_alarms">Точные будильники</string>
+    <string name="system_check_exact_alarms_desc">Срабатывание будильников и напоминаний в точно заданное время.</string>
+
+    <string name="system_check_battery">Без экономии батареи</string>
+    <string name="system_check_battery_desc">Приложение не будет остановлено системой в фоне.</string>
+
+    <string name="system_check_dnd">Доступ к режиму «Не беспокоить»</string>
+    <string name="system_check_dnd_desc">Канал будильника сможет прерывать режим «Не беспокоить».</string>
+
+    <string name="system_check_overlay">Поверх других окон</string>
+    <string name="system_check_overlay_desc">Показывать экран будильника поверх экрана блокировки.</string>
+
+    <string name="system_check_fullscreen">Полноэкранный показ будильника</string>
+    <string name="system_check_fullscreen_desc">Будильник будет отображаться поверх экрана блокировки.</string>
+    <string name="system_check_fullscreen_xiaomi_desc">Для POCO/Xiaomi разрешите два пункта: «Экран блокировки» и «Открытие новых окон в фоне».</string>
+
+    <string name="required_permissions_title">Необходимые разрешения</string>
+    <string name="required_permissions_description">Без этих разрешений приложение не может гарантировать своевременный сигнал, звук и показ будильника на заблокированном экране. Выдайте их по очереди в системных окнах.</string>
+    <string name="required_permissions_progress">Выдано: %1$d из %2$d</string>
+    <string name="required_permissions_grant">Разрешить: %1$s</string>
+    <string name="required_permissions_granted">Выдано</string>
+    <string name="required_permissions_missing">Нужно</string>
+    <string name="required_permissions_footer">После изменения системной настройки вернитесь в приложение — состояние проверится автоматически.</string>
+
+    <string name="system_check_hyperos_title">Для HyperOS / Poco / Xiaomi</string>
+    <string name="system_check_hyperos_body">Дополнительно в настройках телефона:\n• Безопасность → Разрешения → Автозапуск → включить\n• Безопасность → Ускорение → исключите приложение\n• Настройки → Батарея → приложение → «Без ограничений»</string>
+
+    <!-- Инструкции для разных оболочек -->
+    <string name="system_check_oem_title">Особенности оболочек</string>
+    <string name="system_check_oem_subtitle">Выполните эти шаги один раз вручную.</string>
+    <string name="system_check_close">Закрыть</string>
+
+    <string name="oem_xiaomi_steps">1. Настройки → Приложения → Все приложения → Brainord → Контроль активности: «Нет ограничений».\n2. Автозапуск: включить.\n3. Другие разрешения: включить «Экран блокировки» и «Открытие новых окон в фоне».\n4. Закрепите приложение в недавних (долгое нажатие → замок).\n5. Точные будильники: разрешить.</string>
+    <string name="oem_samsung_steps">1. Настройки → Батарея → Ограничения фоновой работы: удалите приложение из спящих.\n2. Настройки → Батарея → Приложения без ограничений: добавьте приложение.\n3. Настройки → Приложения → Sleep Cycle Lucid Alarm → Батарея: «Не ограничено».\n4. Уведомления: разрешить, категория «Будильник» — высокая важность.\n5. Точные будильники: разрешить.</string>
+    <string name="oem_huawei_steps">1. Настройки → Приложения → Приложения → Sleep Cycle Lucid Alarm → Запуск: выключить «Автоматическое управление».\n2. Включить вручную: автозапуск, косвенный запуск, работа в фоне.\n3. Закрепите приложение в недавних (потянуть вниз → замок).\n4. Разрешить уведомления и показ на экране блокировки.\n5. Точные будильники: разрешить.</string>
+    <string name="oem_oneplus_steps">1. Настройки → Приложения → Управление приложениями → Sleep Cycle Lucid Alarm → Батарея: «Разрешить всегда».\n2. Включить автозапуск.\n3. Настройки → Батарея → Оптимизация батареи → приложение → «Не оптимизировать».\n4. Закрепите приложение в недавних.\n5. Точные будильники и уведомления: разрешить.</string>
+    <string name="oem_pixel_steps">1. Настройки → Приложения → Sleep Cycle Lucid Alarm → Батарея: «Без ограничений».\n2. Будильники и напоминания: разрешить.\n3. Уведомления: разрешить, канал «Будильник» — высокий приоритет.\n4. Не беспокоить: разрешить будильникам прерывать режим.\n5. Полноэкранные уведомления: разрешить.</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ПРЕДУПРЕЖДЕНИЯ И ОШИБКИ                                            -->
+    <!-- Системные сообщения                                                -->
+    <!-- ================================================================== -->
+
+    <string name="warning_exact_alarms_required">Разрешите точные будильники, иначе приложение может не сработать.</string>
+    <string name="warning_notifications_disabled">Уведомления запрещены: будильник может не открыться полноэкранно.</string>
+    <string name="warning_battery_optimization_enabled">Отключите оптимизацию батареи для надёжной работы.</string>
+    <string name="warning_full_screen_intent_disabled">Полноэкранный показ запрещён: будильник может не открыться поверх экрана блокировки.</string>
+    <string name="warning_dnd_access_disabled">Разрешите доступ к режиму «Не беспокоить», чтобы сигнал не был заглушён.</string>
+
+    <string name="error_exact_alarms_required">Невозможно запустить сон: не разрешены точные будильники.</string>
+    <string name="error_required_permissions">Сначала выдайте все обязательные разрешения для работы будильника.</string>
+    <string name="error_plan_not_ready">План сна ещё не готов. Пересчитайте расчёт.</string>
+    <string name="error_failed_to_schedule_alarm">Не удалось поставить точный будильник. Проверьте разрешения.</string>
+    <string name="error_no_cycle_fits">До нужного времени не помещается ни одного полного цикла. Сократите время засыпания или подвиньте время подъёма.</string>
+
+
+    <!-- ================================================================== -->
+    <!-- ВСПОМОГАТЕЛЬНЫЕ СТРОКИ                                             -->
+    <!-- Форматы, описания, технические                                     -->
+    <!-- ================================================================== -->
+
+    <string name="content_description_system_check">Проверка системных настроек</string>
+    <string name="content_description_previous_hour">Предыдущий час</string>
+    <string name="content_description_next_hour">Следующий час</string>
+    <string name="content_description_previous_minute">Предыдущие 5 минут</string>
+    <string name="content_description_next_minute">Следующие 5 минут</string>
+
+    <string name="tts_cue_phrase">Ты спишь?</string>
+
+    <!-- Справка по REM-подсказкам -->
+    <string name="help_cues_title">Подсказки в фазе сна</string>
+    <string name="help_cues_model_title">Как устроена ночь</string>
+    <string name="help_cues_model">Каждый цикл сна проходит путь от лёгкой дрёмы через глубокий сон к фазе быстрых движений глаз — REM, в которой чаще всего видят сны. В первых циклах глубокий сон длинный, а REM короткий и ютится в самом конце цикла. К утру картина зеркально меняется: глубокий сон почти исчезает, а REM разрастается до получаса и больше. Поэтому сигнал, поданный в REM, имеет шанс зацепить сон, а сигнал в глубоком сне первых циклов скорее просто разбудит.</string>
+    <string name="help_cues_table_header">Доля REM в каждом цикле (усреднённая модель)</string>
+    <string name="help_cues_table_note">Это усреднённая гипнограмма взрослого человека, а не измерение вашего сна. Реальные фазы у всех разные и меняются от ночи к ночи.</string>
+    <string name="help_cues_cycle_format">Цикл %1$d</string>
+    <string name="help_cues_timing_title">Когда сигнал работает лучше всего</string>
+    <string name="help_cues_timing">Первый REM обычно приходит через 70–90 минут после засыпания. Внешняя подсказка эффективнее всего именно в REM и особенно в последние два-три часа сна, когда REM-окна самые длинные. Техники WBTB и MILD строятся на том же принципе: мягкий сигнал в нужную фазу повышает шанс осознаться во сне. Ставить сигнал в глубокий сон первых циклов почти бессмысленно и рискованно — легко разбудить.</string>
+    <string name="help_cues_sources_title">На чём основана модель</string>
+    <string name="help_cues_source_1">S. LaBerge — техники MILD и WBTB для индукции осознанных сновидений.</string>
+    <string name="help_cues_source_2">T. Stumbrys и соавт. (2013) — обзор внешней стимуляции во время REM.</string>
+    <string name="help_cues_source_3">K. Konkoly и соавт. (2021, Current Biology) — диалог со спящими именно в фазе REM.</string>
+    <string name="help_cues_source_4">D. Aspy и соавт. — исследования MILD и оптимального времени подсказок.</string>
+    <string name="help_cues_disclaimer">Модель теоретическая: приложение не измеряет фазы сна, а лишь раскладывает сигналы по усреднённой схеме. Если подсказки мешают или вызывают дискомфорт — выключите их. Громкость держите минимальной.</string>
+    <string name="help_cues_close">Понятно</string>
+
+    <!-- ================================================================== -->
+    <!-- ДОПОЛНИТЕЛЬНЫЕ СТРОКИ (используются в коде)                       -->
+    <!-- ================================================================== -->
+
+    <!-- SystemCheckDialog -->
+    <string name="system_check_status_ok">OK</string>
+    <string name="system_check_action_configure">Настроить</string>
+
+    <!-- ScheduleScreen -->
+    <string name="schedule_title">Расписание</string>
+    <string name="schedule_hint">Автосохранение включено — текст запишется сам через секунду после правки.</string>
+    <string name="schedule_placeholder">Пн: …\nВт: …\nСр: …\n\nИли просто заметки на неделю…</string>
+
+    <!-- Tab schedule -->
+    <string name="tab_schedule">Расписание</string>
+    <string name="tab_library">Библиотека</string>
+
+    <!-- CorrelationSection -->
+    <string name="corr_title">Сон vs Задачи vs Настроение</string>
+    <string name="corr_not_enough">Недостаточно данных (нужно ≥ 5 дней с настроением). Отмечайте настроение при подъёме.</string>
+    <string name="corr_sleep_mood">Сон ↔ Настроение</string>
+    <string name="corr_tasks_mood">Задачи ↔ Настроение</string>
+    <string name="corr_sleep_tasks">Сон ↔ Задачи</string>
+    <string name="corr_no_data">нет данных</string>
+    <string name="corr_strength_none">связи почти нет</string>
+    <string name="corr_strength_weak">слабая связь</string>
+    <string name="corr_strength_moderate">умеренная связь</string>
+    <string name="corr_strength_strong">сильная связь</string>
+    <string name="corr_strength_very">очень сильная связь</string>
+    <string name="corr_legend_sleep">Сон</string>
+    <string name="corr_legend_tasks">Задачи</string>
+    <string name="corr_legend_mood">Настроение</string>
+
+    <string name="diary_title">Дневник</string>
+    <string name="content_description_briefing">Голосовой брифинг</string>
+    <string name="briefing_system_tts_info">Используется системный голос Android. Голос, скорость и язык настраиваются в системных настройках устройства (Настройки → Язык и ввод → Преобразование текста в речь).</string>
+    <string name="calendar_notification_channel_name">События календаря</string>
+    <string name="calendar_notification_channel_description">Уведомления о событиях из календаря</string>
+    <string name="calendar_notification_event_time">Событие в %1$s</string>
+    <string name="calendar_title_copied">Название скопировано</string>
+    <string name="calendar_add_event">Добавить событие</string>
+    <string name="calendar_new_event">Новое событие</string>
+    <string name="calendar_edit_event">Изменить событие</string>
+    <string name="calendar_save_event">Сохранить ฅ✓</string>
+    <string name="calendar_title_placeholder">ฅ^•ﻌ•^ฅ название</string>
+    <string name="calendar_field_title">Название</string>
+    <string name="calendar_all_day">Весь день</string>
+    <string name="calendar_start">Начало</string>
+    <string name="calendar_end">Конец</string>
+    <string name="calendar_repeat">Повторение</string>
+    <string name="calendar_reminder">Напоминание</string>
+    <string name="calendar_repeat_none">Нет</string>
+    <string name="calendar_repeat_daily">Ежедневно</string>
+    <string name="calendar_repeat_weekly">Еженедельно</string>
+    <string name="calendar_reminder_none">Нет</string>
+    <string name="calendar_reminder_on_time">В срок</string>
+    <string name="calendar_reminder_minutes">%1$d м</string>
+    <string name="calendar_reminder_hours">%1$d ч</string>
+    <string name="pomodoro_mode_idle">Время концентрации</string>
+    <string name="pomodoro_mode_focus">Идёт концентрация</string>
+    <string name="pomodoro_mode_focus_paused">Концентрация (пауза)</string>
+    <string name="pomodoro_mode_break">Время отдыха</string>
+    <string name="pomodoro_mode_break_paused">Отдых (пауза)</string>
+    <string name="pomodoro_total_today">Всего за сегодня</string>
+    <string name="pomodoro_new_subject">Новый предмет</string>
+    <string name="pomodoro_subject">Предмет</string>
+    <string name="pomodoro_focus_complete_title">Концентрация завершена</string>
+    <string name="pomodoro_focus_complete_message">Время отдохнуть!</string>
+    <string name="pomodoro_break_complete_title">Отдых завершён</string>
+    <string name="pomodoro_break_complete_message">Пора вернуться к работе!</string>
+    <string name="pomodoro_ticker_title">Тикалка</string>
+    <string name="pomodoro_ticker_message">Прошло %1$d минут. Сделайте перерыв!</string>
+    <string name="dday_new_event">Новое событие</string>
+    <string name="dday_title_placeholder">например, День рождения</string>
+    <string name="dday_events_section">События</string>
+    <string name="reminder_title_placeholder">что напомнить?</string>
+    <string name="library_section_main">Основное</string>
+    <string name="library_section_cover">Обложка</string>
+    <string name="library_section_notes">Заметки</string>
+    <string name="library_section_rating_tags">Оценка и теги</string>
+    <string name="library_title_placeholder">название</string>
+    <string name="library_author_placeholder">автор</string>
+    <string name="diary_tab_dreams">Сны</string>
+    <string name="diary_tab_ideas">Идеи</string>
+    <string name="diary_empty">Записей пока нет</string>
+    <string name="diary_selection_actions">Действия с %1$d записями</string>
+    <string name="diary_empty_short">(пусто)</string>
+    <string name="diary_dream_prefix">Сон\u0020</string>
+    <string name="diary_idea_prefix">Идея\u0020</string>
+    <string name="diary_change_date">Изменить дату</string>
+    <string name="diary_edit">Редактировать</string>
+    <string name="diary_preview">Предпросмотр</string>
+    <string name="diary_empty_entry">(пустая запись)</string>
+    <string name="diary_dream_placeholder">Опишите ваш сон…</string>
+    <string name="diary_idea_placeholder">Опишите вашу идею…</string>
+    <string name="diary_entry_placeholder">Запись…</string>
+    <string name="action_ok">ОК</string>
+    <string name="stats_tab_study">Учёба</string>
+    <string name="study_period_day">День</string>
+    <string name="study_period_week">Неделя</string>
+    <string name="study_period_month">Месяц</string>
+    <string name="study_total_time_multiline">Общее время\nучёбы</string>
+    <string name="study_max_focus_multiline">Макс. время\nконцентрации</string>
+    <string name="study_start_time">Время начала</string>
+    <string name="study_end_time">Время окончания</string>
+    <string name="study_today">Сегодня</string>
+    <string name="study_yesterday">Вчера</string>
+    <string name="study_general">общее</string>
+    <string name="study_label">Учёба</string>
+    <string name="study_other">Другое</string>
+    <string name="study_timeline">Таймлайн</string>
+    <string name="study_average_prefix">авг.:</string>
+    <string name="study_week_range">пн, %1$s ~ вс, %2$s</string>
+    <string name="study_total_time">Общее время</string>
+    <string name="study_average_day">Среднее за день</string>
+    <string name="study_until_friday">До пятницы</string>
+    <string name="study_previous_week">Прош. нед. %1$s</string>
+    <string name="study_start_end">Время начала / окончания</string>
+    <string name="study_subject_ratio">Соотношение по предметам</string>
+    <string name="study_time_by_subject">Время учёбы по предметам</string>
+    <string name="study_cumulative_time">Накопленное время учёбы</string>
+    <string name="study_break_ratio">Соотношение учёба/перерыв</string>
+    <string name="study_quarter_format">%1$d · %2$d квартал</string>
+    <string name="study_month_year_format">%1$s %2$d г.</string>
+    <string name="study_previous_month">Прошлый месяц</string>
+</resources>
