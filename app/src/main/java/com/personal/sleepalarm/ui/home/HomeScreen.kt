@@ -44,8 +44,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -737,10 +737,10 @@ private fun QuickAccessPill(
     modifier: Modifier = Modifier
 ) {
     val containerColor = lerp(MaterialTheme.colorScheme.surface, accent, 0.72f)
-    val contentColor = if (containerColor.luminance() > 0.18f) {
-        Color.Black.copy(alpha = 0.82f)
+    val contentColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        Color.White.copy(alpha = 0.82f)
     } else {
-        Color.White.copy(alpha = 0.92f)
+        Color.Black.copy(alpha = 0.82f)
     }
     Box(
         modifier = modifier
