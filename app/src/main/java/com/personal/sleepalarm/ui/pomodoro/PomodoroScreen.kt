@@ -21,6 +21,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,14 +62,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
@@ -586,17 +593,12 @@ private fun CatFigure(
             " /\\_/\\\n( -.- ) zZ\n \\___/"
     }
 
-    Text(
+    ResponsiveAsciiArt(
         text = text,
-        style = MaterialTheme.typography.bodySmall.copy(
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            lineHeight = 13.sp,
-            fontWeight = FontWeight.Bold
-        ),
         color = tint,
-        maxLines = 5,
-        modifier = modifier
+        maxFontSize = 11.sp,
+        lineHeightMultiplier = 13f / 11f,
+        modifier = modifier.fillMaxSize()
     )
 }
 
@@ -826,19 +828,14 @@ private fun SleepingCat(modifier: Modifier) {
     else lerp(c2, c1, (p - 0.5f) * 2f)
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Text(
+        ResponsiveAsciiArt(
             text = centerCat(catText, axis = 3f),
-            style = MaterialTheme.typography.displayLarge.copy(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 52.sp,
-                lineHeight = 58.sp,
-                fontWeight = FontWeight.Bold
-            ),
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.graphicsLayer {
-                scaleX = breathScale
-                scaleY = breathScale
-            }
+            maxFontSize = 52.sp,
+            lineHeightMultiplier = 58f / 52f,
+            renderScale = breathScale,
+            scaleReserve = 1.06f,
+            modifier = Modifier.fillMaxSize()
         )
 
         // Одна z за раз
@@ -1233,18 +1230,13 @@ private fun AwakeCat(modifier: Modifier) {
         }
     }
 
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Text(
-            text = centerCat(currentText, axis = 3f),
-            style = MaterialTheme.typography.displayLarge.copy(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 40.sp,
-                lineHeight = 46.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            color = MaterialTheme.colorScheme.primary
-        )
-    }
+    ResponsiveAsciiArt(
+        text = centerCat(currentText, axis = 3f),
+        color = MaterialTheme.colorScheme.primary,
+        maxFontSize = 40.sp,
+        lineHeightMultiplier = 46f / 40f,
+        modifier = modifier
+    )
 }
 @Composable
 private fun PlayingCat(modifier: Modifier) {
@@ -1563,19 +1555,104 @@ private fun PlayingCat(modifier: Modifier) {
         }
     }
 
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    ResponsiveAsciiArt(
+        text = centerCat(currentText, axis = 4f),
+        color = MaterialTheme.colorScheme.primary,
+        maxFontSize = 40.sp,
+        lineHeightMultiplier = 46f / 40f,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun ResponsiveAsciiArt(
+    text: String,
+    color: Color,
+    maxFontSize: TextUnit,
+    lineHeightMultiplier: Float,
+    modifier: Modifier = Modifier,
+    renderScale: Float = 1f,
+    scaleReserve: Float = 1f
+) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        val density = LocalDensity.current
+        val textMeasurer = rememberTextMeasurer()
+        val maximumFontSizePx = with(density) { maxFontSize.toPx() }
+        val maximumLineHeightPx = maximumFontSizePx * lineHeightMultiplier
+        val maximumStyle = MaterialTheme.typography.displayLarge.copy(
+            fontFamily = FontFamily.Monospace,
+            fontSize = with(density) { maximumFontSizePx.toSp() },
+            lineHeight = with(density) { maximumLineHeightPx.toSp() },
+            fontWeight = FontWeight.Bold
+        )
+        val lineCount = text.count { it == '\n' } + 1
+        val measured = remember(text, maximumStyle, textMeasurer) {
+            textMeasurer.measure(
+                text = AnnotatedString(text),
+                style = maximumStyle,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                maxLines = lineCount,
+                constraints = Constraints()
+            )
+        }
+        val availableWidthPx = with(density) { maxWidth.toPx() }
+        val availableHeightPx = with(density) { maxHeight.toPx() }
+        val fitScale = calculateAsciiFitScale(
+            measuredWidthPx = measured.size.width.toFloat(),
+            measuredHeightPx = measured.size.height.toFloat(),
+            availableWidthPx = availableWidthPx,
+            availableHeightPx = availableHeightPx,
+            scaleReserve = scaleReserve
+        )
+        val fittedFontSizePx = maximumFontSizePx * fitScale
+
         Text(
-            text = centerCat(currentText, axis = 4f),
-            style = MaterialTheme.typography.displayLarge.copy(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 40.sp,
-                lineHeight = 46.sp,
-                fontWeight = FontWeight.Bold
+            text = text,
+            style = maximumStyle.copy(
+                fontSize = with(density) { fittedFontSizePx.toSp() },
+                lineHeight = with(density) {
+                    (fittedFontSizePx * lineHeightMultiplier).toSp()
+                }
             ),
-            color = MaterialTheme.colorScheme.primary
+            color = color,
+            maxLines = lineCount,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.graphicsLayer {
+                scaleX = renderScale
+                scaleY = renderScale
+            }
         )
     }
 }
+
+internal fun calculateAsciiFitScale(
+    measuredWidthPx: Float,
+    measuredHeightPx: Float,
+    availableWidthPx: Float,
+    availableHeightPx: Float,
+    scaleReserve: Float = 1f
+): Float {
+    if (
+        measuredWidthPx <= 0f || measuredHeightPx <= 0f ||
+        availableWidthPx <= 0f || availableHeightPx <= 0f
+    ) return 1f
+
+    val safeReserve = scaleReserve.coerceAtLeast(1f)
+    val safeWidth = availableWidthPx * ASCII_CONTENT_FRACTION
+    val safeHeight = availableHeightPx * ASCII_CONTENT_FRACTION
+    return minOf(
+        safeWidth / (measuredWidthPx * safeReserve),
+        safeHeight / (measuredHeightPx * safeReserve),
+        1f
+    ).coerceIn(MIN_ASCII_SCALE, 1f)
+}
+
+private const val ASCII_CONTENT_FRACTION = 0.94f
+private const val MIN_ASCII_SCALE = 0.05f
+
 /**
  * Центрирует кадр кота по заданной оси (может быть дробной —
  * например 3.5f, чтобы ось прошла МЕЖДУ двумя пробелами).
