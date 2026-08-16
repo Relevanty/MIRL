@@ -134,13 +134,25 @@ class MarkdownVisualTransformation(
                 )
                 "quote"
             }
-            trimmed.startsWith("- ") || trimmed.startsWith("* ") -> {
+            trimmed.startsWith("- [ ] ") || trimmed.startsWith("- [x] ") ||
+                    trimmed.startsWith("- [X] ") -> {
+                addStyle(
+                    SpanStyle(color = listColor, fontWeight = FontWeight.Bold),
+                    contentStart, (contentStart + 6).coerceAtMost(lineEnd)
+                )
+                applyInline(trimmed.drop(6), (contentStart + 6).coerceAtMost(lineEnd))
+                "task"
+            }
+            trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("+ ") -> {
                 addStyle(
                     SpanStyle(color = listColor, fontWeight = FontWeight.Bold),
                     contentStart, contentStart + 2
                 )
                 addStyle(SpanStyle(color = listColor), contentStart + 2, lineEnd)
-                applyInline(trimmed.removePrefix("- ").removePrefix("* "), contentStart + 2)
+                applyInline(
+                    trimmed.removePrefix("- ").removePrefix("* ").removePrefix("+ "),
+                    contentStart + 2
+                )
                 "list"
             }
             Regex("^\\d+\\. ").containsMatchIn(trimmed) -> {

@@ -1,7 +1,5 @@
 package com.personal.sleepalarm.ui.calendar
 
-import com.personal.sleepalarm.ui.components.CatArt
-import com.personal.sleepalarm.ui.components.CatText
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.graphicsLayer
 import java.time.LocalTime
@@ -19,6 +17,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +48,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -216,10 +216,14 @@ fun CalendarScreen(
 
                 val dayEvents = eventsOn(events, date)
                 if (dayEvents.isEmpty()) {
-                    CatText(
-                        text = CatArt.SLEEP,
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = stringResource(R.string.calendar_no_events),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        textAlign = TextAlign.Center
                     )
                 } else {
                     dayEvents.forEach { ev ->
@@ -289,11 +293,18 @@ fun CalendarScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    CatText(CatArt.PLUS, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.calendar_add_event))
                 }
-                Spacer(modifier = Modifier.height(24.dp))
+                // Keep the primary action above the app navigation bar on devices
+                // where a modal sheet and the host Scaffold share one window.
+                Spacer(modifier = Modifier.height(104.dp))
             }
         }
     }
@@ -323,10 +334,28 @@ private fun DayCell(
     events: List<CalendarEventEntity>,
     onClick: () -> Unit
 ) {
+    val shape = RoundedCornerShape(8.dp)
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .clip(RoundedCornerShape(8.dp))
+            .padding(1.dp)
+            .clip(shape)
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(
+                    alpha = if (day.inMonth) 0.10f else 0.035f
+                )
+            )
+            .border(
+                width = if (isToday) 1.2.dp else 0.55.dp,
+                color = if (isToday) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant.copy(
+                        alpha = if (day.inMonth) 0.44f else 0.22f
+                    )
+                },
+                shape = shape
+            )
             .clickable(onClick = onClick)
             .padding(2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -396,7 +425,7 @@ private fun StudyChip(millis: Long) {
 @Composable
 private fun EventChip(title: String) {
     Text(
-        text = "ฅ " + title,
+        text = title,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 2.dp)
@@ -471,53 +500,54 @@ private fun EventEditor(
         else -> stringResource(R.string.calendar_reminder_minutes, reminder ?: 0)
     }
 
+    val saveEvent = {
+        val endMillis = if (allDay) {
+            start.toLocalDate().atTime(23, 59).atZone(zone).toInstant().toEpochMilli()
+        } else {
+            end.toInstant().toEpochMilli()
+        }
+        onSave(
+            CalendarEventEntity(
+                id = initial?.id ?: 0,
+                title = title.trim(),
+                startMillis = start.toInstant().toEpochMilli(),
+                endMillis = endMillis,
+                allDay = allDay,
+                repeatRule = repeat,
+                reminderMinutes = reminder
+            )
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, null, tint = MaterialTheme.colorScheme.primary)
-            }
-            Text(
-                stringResource(
-                    if (initial == null) R.string.calendar_new_event else R.string.calendar_edit_event
-                ),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(Modifier.weight(1f))
-            TextButton(enabled = title.isNotBlank(), onClick = {
-                val endMillis = if (allDay)
-                    start.toLocalDate().atTime(23, 59).atZone(zone).toInstant().toEpochMilli()
-                else end.toInstant().toEpochMilli()
-                onSave(
-                    CalendarEventEntity(
-                        id = initial?.id ?: 0,
-                        title = title.trim(),
-                        startMillis = start.toInstant().toEpochMilli(),
-                        endMillis = endMillis,
-                        allDay = allDay,
-                        repeatRule = repeat,
-                        reminderMinutes = reminder
-                    )
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
                 )
-            }) { Text(stringResource(R.string.calendar_save_event)) }
+            }
         }
-
-        Spacer(Modifier.height(16.dp))
 
         OutlinedTextField(
             placeholder = { Text(stringResource(R.string.calendar_title_placeholder)) },
             value = title, onValueChange = { title = it },
             label = { Text(stringResource(R.string.calendar_field_title)) },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            singleLine = true
         )
-
-        Spacer(Modifier.height(16.dp))
 
         EditorCard {
             SwitchRow(stringResource(R.string.calendar_all_day), allDay) { allDay = it }
@@ -532,13 +562,28 @@ private fun EventEditor(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-
         EditorCard {
             EditorRow(stringResource(R.string.calendar_reminder), reminderLabel, chevron = true) {
                 showReminder = true
             }
         }
+
+        Button(
+            onClick = saveEvent,
+            enabled = title.isNotBlank(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(58.dp),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.calendar_save_event),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
     }
 
     if (showStart) {
@@ -584,9 +629,14 @@ private fun EditorCard(content: @Composable androidx.compose.foundation.layout.C
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            .padding(horizontal = 16.dp),
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f))
+            .border(
+                width = 0.75.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .padding(horizontal = 18.dp),
         content = content
     )
 }

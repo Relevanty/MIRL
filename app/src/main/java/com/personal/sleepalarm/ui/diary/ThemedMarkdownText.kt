@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.ui.diary
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +40,7 @@ private sealed class MdBlock {
     data class Quote(val text: String) : MdBlock()
     data class Indent(val text: String) : MdBlock()
     data class Bullet(val text: String) : MdBlock()
+    data class Task(val checked: Boolean, val text: String) : MdBlock()
     data class Numbered(val number: String, val text: String) : MdBlock()
     data class CodeBlock(val code: String) : MdBlock()
     data class MathBlock(val code: String) : MdBlock()
@@ -95,12 +98,25 @@ private fun parseMarkdown(src: String): List<MdBlock> {
                     trimmed.startsWith("### ") -> blocks += MdBlock.Heading(3, trimmed.removePrefix("### "))
                     trimmed.startsWith("## ") -> blocks += MdBlock.Heading(2, trimmed.removePrefix("## "))
                     trimmed.startsWith("# ") -> blocks += MdBlock.Heading(1, trimmed.removePrefix("# "))
-                    trimmed.startsWith("> ") -> blocks += MdBlock.Quote(trimmed.removePrefix("> "))
-                    trimmed.startsWith("- [ ] ") -> blocks += MdBlock.Bullet("☐  " + trimmed.removePrefix("- [ ] "))
+                    trimmed.startsWith("> ") -> {
+                        val quote = trimmed.removePrefix("> ")
+                        val previous = blocks.lastOrNull()
+                        if (previous is MdBlock.Quote) {
+                            blocks[blocks.lastIndex] = previous.copy(text = previous.text + "\n" + quote)
+                        } else {
+                            blocks += MdBlock.Quote(quote)
+                        }
+                    }
+                    trimmed.startsWith("- [ ] ") ->
+                        blocks += MdBlock.Task(checked = false, text = trimmed.removePrefix("- [ ] "))
                     trimmed.startsWith("- [x] ") || trimmed.startsWith("- [X] ") ->
-                        blocks += MdBlock.Bullet("☑  " + trimmed.removePrefix("- [x] ").removePrefix("- [X] "))
+                        blocks += MdBlock.Task(
+                            checked = true,
+                            text = trimmed.removePrefix("- [x] ").removePrefix("- [X] ")
+                        )
                     trimmed.startsWith("- ") -> blocks += MdBlock.Bullet(trimmed.removePrefix("- "))
                     trimmed.startsWith("* ") -> blocks += MdBlock.Bullet(trimmed.removePrefix("* "))
+                    trimmed.startsWith("+ ") -> blocks += MdBlock.Bullet(trimmed.removePrefix("+ "))
                     numberRegex.matchEntire(trimmed) != null -> {
                         val m = numberRegex.matchEntire(trimmed)!!
                         blocks += MdBlock.Numbered(m.groupValues[1], m.groupValues[2])
@@ -324,6 +340,52 @@ fun ThemedMarkdownText(
                         Text(
                             buildInline(block.text, scheme),
                             style = typo.bodyLarge.copy(color = scheme.onBackground),
+                            maxLines = maxLines,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                is MdBlock.Task -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 2.dp, end = 10.dp)
+                                .size(19.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(
+                                    if (block.checked) scheme.primary
+                                    else scheme.surfaceVariant.copy(alpha = 0.45f)
+                                )
+                                .border(
+                                    width = 1.25.dp,
+                                    color = if (block.checked) scheme.primary
+                                    else scheme.outline.copy(alpha = 0.7f),
+                                    shape = RoundedCornerShape(5.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (block.checked) {
+                                Text(
+                                    text = "✓",
+                                    color = scheme.onPrimary,
+                                    style = typo.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Text(
+                            text = buildInline(block.text, scheme),
+                            style = typo.bodyLarge.copy(
+                                color = if (block.checked) scheme.onSurfaceVariant
+                                else scheme.onBackground,
+                                textDecoration = if (block.checked) TextDecoration.LineThrough
+                                else TextDecoration.None
+                            ),
                             maxLines = maxLines,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)

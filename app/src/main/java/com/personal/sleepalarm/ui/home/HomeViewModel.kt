@@ -12,6 +12,7 @@ import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.AlarmProfileEntity
 import com.personal.sleepalarm.data.db.entity.CueEventEntity
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
+import com.personal.sleepalarm.data.preferences.QuickNotesPreference
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
 import com.personal.sleepalarm.domain.calculator.CueScheduleCalculator
@@ -68,6 +69,18 @@ class HomeViewModel(
 ) : AndroidViewModel(application) {
 
     private val context = application.applicationContext
+
+    private val quickNotesPreference = QuickNotesPreference(context)
+
+    val quickNotes: StateFlow<String> = quickNotesPreference.observeText().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = ""
+    )
+
+    fun updateQuickNotes(text: String) {
+        viewModelScope.launch { quickNotesPreference.setText(text) }
+    }
 
     private val database = AppDatabase.getInstance(context)
 

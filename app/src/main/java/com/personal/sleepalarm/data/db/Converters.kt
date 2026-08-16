@@ -7,6 +7,7 @@ import com.personal.sleepalarm.domain.model.CueScheduleMode
 import com.personal.sleepalarm.domain.model.CueType
 import com.personal.sleepalarm.domain.model.DismissType
 import com.personal.sleepalarm.domain.model.MathDifficulty
+import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.data.db.entity.LibraryItemType
 import com.personal.sleepalarm.data.db.entity.RepeatMode
 
@@ -17,6 +18,13 @@ import com.personal.sleepalarm.data.db.entity.RepeatMode
  * ThemeMode НЕ конвертируется — он хранится в DataStore, не в Room.
  */
 class Converters {
+
+    @TypeConverter
+    fun fromFocusActivityType(value: FocusActivityType): String = value.name
+
+    @TypeConverter
+    fun toFocusActivityType(value: String): FocusActivityType =
+        runCatching { FocusActivityType.valueOf(value) }.getOrDefault(FocusActivityType.STUDY)
 
     // === Существующие конвертеры (НЕ менять) ===
 

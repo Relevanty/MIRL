@@ -20,15 +20,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -259,36 +260,48 @@ private fun SleepAlarmRoot() {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            NavigationBar {
+            val navigationColors = NavigationBarItemDefaults.colors(
+                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                 NavigationBarItem(
                     selected = selectedTab == TAB_SLEEP,
                     onClick = { selectedTab = TAB_SLEEP },
-                    icon = { Icon(Icons.Default.Bedtime, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_home)) }
+                    icon = { Icon(Icons.Default.DarkMode, contentDescription = null) },
+                    label = { Text(stringResource(R.string.tab_home)) },
+                    colors = navigationColors
                 )
                 NavigationBarItem(
                     selected = selectedTab == TAB_TASKS,
                     onClick = { selectedTab = TAB_TASKS },
                     icon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_tasks)) }
+                    label = { Text(stringResource(R.string.tab_tasks)) },
+                    colors = navigationColors
                 )
                 NavigationBarItem(
                     selected = selectedTab == TAB_POMODORO,
                     onClick = { selectedTab = TAB_POMODORO },
                     icon = { Icon(Icons.Default.Timer, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_pomodoro)) }
+                    label = { Text(stringResource(R.string.tab_pomodoro)) },
+                    colors = navigationColors
                 )
                 NavigationBarItem(
                     selected = showMiscSheet || miscScreen != null,
                     onClick = { showMiscSheet = true },
                     icon = { Icon(Icons.Default.MoreHoriz, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_misc)) }
+                    label = { Text(stringResource(R.string.tab_misc)) },
+                    colors = navigationColors
                 )
                 NavigationBarItem(
                     selected = selectedTab == TAB_SETTINGS,
                     onClick = { selectedTab = TAB_SETTINGS },
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_settings)) }
+                    label = { Text(stringResource(R.string.tab_settings)) },
+                    colors = navigationColors
                 )
             }
         }

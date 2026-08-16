@@ -4,7 +4,7 @@
     <!-- ================================================================== -->
     <!-- ОСНОВНЫЕ СТРОКИ                                                    -->
     <!-- ================================================================== -->
-    <string name="app_name">Brainord</string>
+    <string name="app_name">MIRL</string>
     <string name="action_back">Назад</string>
     <string name="action_cancel">Отмена</string>
     <string name="action_close">Закрыть</string>
@@ -37,6 +37,11 @@
     <string name="home_summary_cues_off">выключены</string>
     <string name="home_summary_cues_none">не поместились в окно сна</string>
     <string name="home_summary_cues_count">%1$d сигналов за ночь</string>
+    <string name="home_sleep_plan_title">План на эту ночь</string>
+    <string name="home_sleep_wake_label">Подъём между циклами</string>
+    <string name="quick_notes_title">Записи</string>
+    <string name="quick_notes_placeholder">Пишите свободно. Поддерживаются # заголовки, **жирный текст**, списки, цитаты, задачи и код.</string>
+    <string name="quick_notes_empty">Здесь пока нет записей.</string>
 
     <!-- Расчёт плана сна -->
     <string name="section_plan">Расчёт</string>
@@ -268,6 +273,26 @@
     <string name="stats_action_export_csv">CSV</string>
     <string name="stats_export_done">История сна экспортирована</string>
     <string name="stats_export_empty">Пока нечего экспортировать</string>
+    <string name="sleep_stats_total">Всего сна</string>
+    <string name="sleep_stats_average">Среднее</string>
+    <string name="sleep_stats_avg_bedtime">Средний отбой</string>
+    <string name="sleep_stats_avg_wake">Средний подъём</string>
+    <string name="sleep_stats_selected_night">Сон за выбранный день</string>
+    <string name="sleep_stats_planned_value">План: %1$s</string>
+    <string name="sleep_stats_duration_chart">Фактический сон и план</string>
+    <string name="sleep_stats_actual">Фактически</string>
+    <string name="sleep_stats_planned">По плану</string>
+    <string name="sleep_stats_schedule_chart">Расписание ночей</string>
+    <string name="sleep_stats_regularity_chart">Регулярность отбоя и подъёма</string>
+    <string name="sleep_stats_bedtime">Отбой</string>
+    <string name="sleep_stats_wake_time">Подъём</string>
+    <string name="sleep_stats_latency_chart">Сколько занимало засыпание</string>
+    <string name="sleep_stats_no_latency">Нет данных автоопределения засыпания</string>
+    <string name="sleep_stats_outcomes_chart">Как завершались ночи</string>
+    <string name="sleep_stats_cues_chart">Срабатывание подсказок</string>
+    <string name="sleep_stats_cues_value">Воспроизведено %1$d из %2$d</string>
+    <string name="sleep_stats_calendar_chart">Календарь сна</string>
+    <string name="sleep_stats_empty_period">В выбранном периоде нет записанных ночей</string>
 
     <string name="action_open_stats">Статистика сна</string>
 
@@ -302,7 +327,7 @@
     <string name="alarm_notification_title">Пора вставать!</string>
     <string name="alarm_notification_text">Нажмите, чтобы открыть будильник.</string>
     <string name="alarm_set_title">Будильник установлен</string>
-    <string name="system_alarm_mirror_message">Sleep Cycle Lucid Alarm — резервный будильник</string>
+    <string name="system_alarm_mirror_message">MIRL — резервный будильник</string>
 
 
     <!-- ================================================================== -->
@@ -749,11 +774,11 @@
     <string name="system_check_oem_subtitle">Выполните эти шаги один раз вручную.</string>
     <string name="system_check_close">Закрыть</string>
 
-    <string name="oem_xiaomi_steps">1. Настройки → Приложения → Все приложения → Brainord → Контроль активности: «Нет ограничений».\n2. Автозапуск: включить.\n3. Другие разрешения: включить «Экран блокировки» и «Открытие новых окон в фоне».\n4. Закрепите приложение в недавних (долгое нажатие → замок).\n5. Точные будильники: разрешить.</string>
-    <string name="oem_samsung_steps">1. Настройки → Батарея → Ограничения фоновой работы: удалите приложение из спящих.\n2. Настройки → Батарея → Приложения без ограничений: добавьте приложение.\n3. Настройки → Приложения → Sleep Cycle Lucid Alarm → Батарея: «Не ограничено».\n4. Уведомления: разрешить, категория «Будильник» — высокая важность.\n5. Точные будильники: разрешить.</string>
-    <string name="oem_huawei_steps">1. Настройки → Приложения → Приложения → Sleep Cycle Lucid Alarm → Запуск: выключить «Автоматическое управление».\n2. Включить вручную: автозапуск, косвенный запуск, работа в фоне.\n3. Закрепите приложение в недавних (потянуть вниз → замок).\n4. Разрешить уведомления и показ на экране блокировки.\n5. Точные будильники: разрешить.</string>
-    <string name="oem_oneplus_steps">1. Настройки → Приложения → Управление приложениями → Sleep Cycle Lucid Alarm → Батарея: «Разрешить всегда».\n2. Включить автозапуск.\n3. Настройки → Батарея → Оптимизация батареи → приложение → «Не оптимизировать».\n4. Закрепите приложение в недавних.\n5. Точные будильники и уведомления: разрешить.</string>
-    <string name="oem_pixel_steps">1. Настройки → Приложения → Sleep Cycle Lucid Alarm → Батарея: «Без ограничений».\n2. Будильники и напоминания: разрешить.\n3. Уведомления: разрешить, канал «Будильник» — высокий приоритет.\n4. Не беспокоить: разрешить будильникам прерывать режим.\n5. Полноэкранные уведомления: разрешить.</string>
+    <string name="oem_xiaomi_steps">1. Настройки → Приложения → Все приложения → MIRL → Контроль активности: «Нет ограничений».\n2. Автозапуск: включить.\n3. Другие разрешения: включить «Экран блокировки» и «Открытие новых окон в фоне».\n4. Закрепите приложение в недавних (долгое нажатие → замок).\n5. Точные будильники: разрешить.</string>
+    <string name="oem_samsung_steps">1. Настройки → Батарея → Ограничения фоновой работы: удалите приложение из спящих.\n2. Настройки → Батарея → Приложения без ограничений: добавьте приложение.\n3. Настройки → Приложения → MIRL → Батарея: «Не ограничено».\n4. Уведомления: разрешить, категория «Будильник» — высокая важность.\n5. Точные будильники: разрешить.</string>
+    <string name="oem_huawei_steps">1. Настройки → Приложения → Приложения → MIRL → Запуск: выключить «Автоматическое управление».\n2. Включить вручную: автозапуск, косвенный запуск, работа в фоне.\n3. Закрепите приложение в недавних (потянуть вниз → замок).\n4. Разрешить уведомления и показ на экране блокировки.\n5. Точные будильники: разрешить.</string>
+    <string name="oem_oneplus_steps">1. Настройки → Приложения → Управление приложениями → MIRL → Батарея: «Разрешить всегда».\n2. Включить автозапуск.\n3. Настройки → Батарея → Оптимизация батареи → приложение → «Не оптимизировать».\n4. Закрепите приложение в недавних.\n5. Точные будильники и уведомления: разрешить.</string>
+    <string name="oem_pixel_steps">1. Настройки → Приложения → MIRL → Батарея: «Без ограничений».\n2. Будильники и напоминания: разрешить.\n3. Уведомления: разрешить, канал «Будильник» — высокий приоритет.\n4. Не беспокоить: разрешить будильникам прерывать режим.\n5. Полноэкранные уведомления: разрешить.</string>
 
 
     <!-- ================================================================== -->
@@ -847,8 +872,9 @@
     <string name="calendar_add_event">Добавить событие</string>
     <string name="calendar_new_event">Новое событие</string>
     <string name="calendar_edit_event">Изменить событие</string>
-    <string name="calendar_save_event">Сохранить ฅ✓</string>
-    <string name="calendar_title_placeholder">ฅ^•ﻌ•^ฅ название</string>
+    <string name="calendar_save_event">Сохранить</string>
+    <string name="calendar_title_placeholder">Название события</string>
+    <string name="calendar_no_events">На этот день событий нет</string>
     <string name="calendar_field_title">Название</string>
     <string name="calendar_all_day">Весь день</string>
     <string name="calendar_start">Начало</string>
@@ -929,4 +955,40 @@
     <string name="study_quarter_format">%1$d · %2$d квартал</string>
     <string name="study_month_year_format">%1$s %2$d г.</string>
     <string name="study_previous_month">Прошлый месяц</string>
+    <string name="pomodoro_total_activity_day">За день</string>
+    <string name="pomodoro_activity_arrow_description">Потяните стрелку, чтобы выбрать вид деятельности</string>
+    <string name="pomodoro_activity_question">Чем займёмся?</string>
+    <string name="pomodoro_activity_study">Учёба</string>
+    <string name="pomodoro_activity_work">Работа</string>
+    <string name="pomodoro_activity_other">Другое</string>
+    <string name="pomodoro_activity_change_after_timer">Категорию можно сменить после таймера</string>
+    <string name="pomodoro_subjects">Предметы</string>
+    <string name="pomodoro_tasks">Задачи</string>
+    <string name="pomodoro_other_items">Дела</string>
+    <string name="pomodoro_empty_category">Здесь пока пусто. Нажмите ^+^, чтобы добавить.</string>
+    <string name="pomodoro_new_task">Новая задача</string>
+    <string name="pomodoro_task">Задача</string>
+    <string name="pomodoro_new_other">Новое дело</string>
+    <string name="pomodoro_other_item">Дело</string>
+
+    <string name="activity_period_summary">Сводка активности</string>
+    <string name="activity_study">Учёба</string>
+    <string name="activity_sleep">Сон</string>
+    <string name="activity_work">Работа</string>
+    <string name="activity_other">Другое</string>
+    <string name="activity_category_ratio">Соотношение активности</string>
+    <string name="activity_chart_comparison">Баланс категорий</string>
+    <string name="activity_chart_timeline">Лента дня</string>
+    <string name="activity_chart_hourly">Активность по часам</string>
+    <string name="activity_chart_daily">Активность по дням</string>
+    <string name="activity_chart_trend">Динамика общего времени</string>
+    <string name="activity_chart_heatmap">Календарь активности</string>
+    <string name="activity_top_items">На что ушло время</string>
+    <string name="activity_total_tracked">всего учтено</string>
+    <string name="activity_no_data">За этот период пока нет данных</string>
+    <string name="activity_previous_period">Предыдущий период</string>
+    <string name="activity_next_period">Следующий период</string>
+    <string name="activity_duration_hours_minutes">%1$d ч %2$d мин</string>
+    <string name="activity_duration_hours">%1$d ч</string>
+    <string name="activity_duration_minutes">%1$d мин</string>
 </resources>
