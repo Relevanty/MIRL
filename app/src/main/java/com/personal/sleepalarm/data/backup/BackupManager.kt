@@ -7,6 +7,7 @@ import androidx.room.withTransaction
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.*
 import com.personal.sleepalarm.util.ProfileJsonCodec
+import com.personal.sleepalarm.domain.model.FocusActivityType
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -40,7 +41,7 @@ class BackupManager(private val context: Context) {
 
     companion object {
         private const val TAG = "BackupManager"
-        private const val BACKUP_VERSION = 1
+        private const val BACKUP_VERSION = 2
     }
 
     private val db: AppDatabase = AppDatabase.getInstance(context)
@@ -69,6 +70,12 @@ class BackupManager(private val context: Context) {
             })
             put("studySessions", JSONArray().apply {
                 db.studySessionDao().getAll().forEach { put(studySessionToJson(it)) }
+            })
+            put("pomodoroSessions", JSONArray().apply {
+                db.pomodoroDao().getAll().forEach { put(pomodoroSessionToJson(it)) }
+            })
+            put("otherActivities", JSONArray().apply {
+                db.otherActivityDao().getAll().forEach { put(otherActivityToJson(it)) }
             })
             put("calendarEvents", JSONArray().apply {
                 db.calendarEventDao().getAll().forEach { put(eventToJson(it)) }
@@ -146,6 +153,8 @@ class BackupManager(private val context: Context) {
             db.reminderDao().deleteAll()
             db.studySessionDao().deleteAll()
             db.subjectDao().deleteAll()
+            db.pomodoroDao().deleteAll()
+            db.otherActivityDao().deleteAll()
             db.calendarEventDao().deleteAll()
             db.taskDao().deleteAll()
             db.ddayDao().deleteAll()
@@ -182,6 +191,20 @@ class BackupManager(private val context: Context) {
                 val list =
                     (0 until arr.length()).mapNotNull { studySessionFromJson(arr.getJSONObject(it)) }
                 if (list.isNotEmpty()) db.studySessionDao().insertAll(list)
+            }
+
+            root.optJSONArray("pomodoroSessions")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    pomodoroSessionFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.pomodoroDao().insertAll(list)
+            }
+
+            root.optJSONArray("otherActivities")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    otherActivityFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.otherActivityDao().insertAll(list)
             }
 
             root.optJSONArray("calendarEvents")?.let { arr ->
@@ -293,6 +316,19 @@ class BackupManager(private val context: Context) {
         put("id", s.id); put("subjectId", s.subjectId); put("startMillis", s.startMillis)
         put("endMillis", s.endMillis); put("durationMillis", s.durationMillis)
         put("dateKey", s.dateKey); put("createdAt", s.createdAt)
+    }
+
+    private fun pomodoroSessionToJson(s: PomodoroSessionEntity) = JSONObject().apply {
+        put("id", s.id); put("startedAt", s.startedAt); put("durationMinutes", s.durationMinutes)
+        put("completedAt", s.completedAt ?: JSONObject.NULL); put("isCompleted", s.isCompleted)
+        put("isBreak", s.isBreak); put("activityType", s.activityType.name)
+        put("subjectId", s.subjectId ?: JSONObject.NULL); put("taskId", s.taskId ?: JSONObject.NULL)
+        put("otherActivityId", s.otherActivityId ?: JSONObject.NULL); put("itemName", s.itemName)
+        put("actualDurationMillis", s.actualDurationMillis)
+    }
+
+    private fun otherActivityToJson(a: OtherActivityEntity) = JSONObject().apply {
+        put("id", a.id); put("name", a.name); put("color", a.color); put("createdAt", a.createdAt)
     }
 
     private fun eventToJson(e: CalendarEventEntity) = JSONObject().apply {
@@ -412,6 +448,42 @@ class BackupManager(private val context: Context) {
         )
     } catch (e: Exception) {
         Log.e(TAG, "Ошибка парсинга study-сессии", e); null
+    }
+
+    private fun pomodoroSessionFromJson(o: JSONObject): PomodoroSessionEntity? = try {
+        PomodoroSessionEntity(
+            id = o.optInt("id", 0),
+            startedAt = o.optLong("startedAt"),
+            durationMinutes = o.optInt("durationMinutes"),
+            completedAt = if (o.isNull("completedAt")) null else o.optLong("completedAt"),
+            isCompleted = o.optBoolean("isCompleted", false),
+            isBreak = o.optBoolean("isBreak", false),
+            activityType = enumValueOrDefault(
+                o.optString("activityType"),
+                FocusActivityType.STUDY
+            ),
+            subjectId = if (o.isNull("subjectId")) null else o.optInt("subjectId"),
+            taskId = if (o.isNull("taskId")) null else o.optInt("taskId"),
+            otherActivityId = if (o.isNull("otherActivityId")) null else o.optInt("otherActivityId"),
+            itemName = o.optString("itemName", ""),
+            actualDurationMillis = o.optLong(
+                "actualDurationMillis",
+                o.optInt("durationMinutes", 0) * 60_000L
+            )
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга pomodoro-сессии", e); null
+    }
+
+    private fun otherActivityFromJson(o: JSONObject): OtherActivityEntity? = try {
+        OtherActivityEntity(
+            id = o.optInt("id", 0),
+            name = o.optString("name", ""),
+            color = o.optInt("color", 0xFF9E9E9E.toInt()),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis())
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга дела", e); null
     }
 
     private fun eventFromJson(o: JSONObject): CalendarEventEntity? = try {

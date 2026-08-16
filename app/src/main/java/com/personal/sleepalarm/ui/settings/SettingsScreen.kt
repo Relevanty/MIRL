@@ -86,7 +86,7 @@ fun SettingsScreen(
 
     var showSystemCheck by remember { mutableStateOf(false) }
     var expandedCategory by rememberSaveable {
-        mutableStateOf<String?>(SettingsCategory.BASICS.name)
+        mutableStateOf<String?>(null)
     }
 
     var showImportConfirm by remember { mutableStateOf(false) }

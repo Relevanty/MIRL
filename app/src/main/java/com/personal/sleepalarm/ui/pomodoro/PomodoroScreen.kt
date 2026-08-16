@@ -1,6 +1,11 @@
 package com.personal.sleepalarm.ui.pomodoro
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.foundation.layout.offset
 import kotlin.math.roundToInt
@@ -13,6 +18,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,13 +37,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,8 +60,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,7 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
-import com.personal.sleepalarm.data.db.entity.SubjectEntity
+import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.ui.components.NumberWheel
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import kotlinx.coroutines.delay
@@ -73,6 +82,12 @@ val SUBJECT_COLORS = listOf(
     0xFF4DB6AC, 0xFFFFB74D, 0xFF64B5F6, 0xFFF06292
 ).map { it.toInt() }
 
+private data class ActivityItemUi(
+    val id: Int,
+    val name: String,
+    val color: Int
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PomodoroScreen(
@@ -80,23 +95,53 @@ fun PomodoroScreen(
     modifier: Modifier = Modifier
 ) {
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
-    val todaySessions by viewModel.todaySessions.collectAsStateWithLifecycle()
+    val workTasks by viewModel.workTasks.collectAsStateWithLifecycle()
+    val otherActivities by viewModel.otherActivities.collectAsStateWithLifecycle()
+    val currentDaySessions by viewModel.currentDayFocusSessions.collectAsStateWithLifecycle()
+    val currentDayRange by viewModel.currentDayRange.collectAsStateWithLifecycle()
     val remaining by viewModel.remaining.collectAsStateWithLifecycle()
     val mode by viewModel.mode.collectAsStateWithLifecycle()
-    val selectedId by viewModel.selectedSubjectId.collectAsStateWithLifecycle()
+    val activityType by viewModel.activityType.collectAsStateWithLifecycle()
+    val selectedId by viewModel.selectedItemId.collectAsStateWithLifecycle()
     val focusDuration by viewModel.focusDuration.collectAsStateWithLifecycle()
     val breakDuration by viewModel.breakDuration.collectAsStateWithLifecycle()
-    val resetAfterBreak by viewModel.resetAfterBreak.collectAsStateWithLifecycle()
 
-    val totalToday = todaySessions.sumOf { it.durationMillis }
-    val totalsBySubject = remember(todaySessions) {
-        todaySessions.groupBy { it.subjectId }
-            .mapValues { (_, v) -> v.sumOf { it.durationMillis } }
+    val activityItems = remember(activityType, subjects, workTasks, otherActivities) {
+        when (activityType) {
+            FocusActivityType.STUDY -> subjects.map { ActivityItemUi(it.id, it.name, it.color) }
+            FocusActivityType.WORK -> workTasks.map {
+                ActivityItemUi(it.id, it.title, 0xFF5C6BC0.toInt())
+            }
+            FocusActivityType.OTHER -> otherActivities.map {
+                ActivityItemUi(it.id, it.name, it.color)
+            }
+        }
     }
+    val totalsByItem = remember(currentDaySessions, activityType, currentDayRange) {
+        val (from, to) = currentDayRange
+        currentDaySessions.asSequence()
+            .filter { it.activityType == activityType }
+            .mapNotNull { session ->
+                val itemId = when (activityType) {
+                    FocusActivityType.STUDY -> session.subjectId
+                    FocusActivityType.WORK -> session.taskId
+                    FocusActivityType.OTHER -> session.otherActivityId
+                } ?: return@mapNotNull null
+                val actualEnd = session.startedAt + session.actualDurationMillis
+                val end = minOf(session.completedAt ?: actualEnd, actualEnd, to)
+                val start = maxOf(session.startedAt, from)
+                itemId to (end - start).coerceAtLeast(0L)
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, durations) -> durations.sum() }
+    }
+    val totalLast24Hours = totalsByItem.values.sum()
+    val currentItemName = activityItems.firstOrNull { it.id == selectedId }?.name
 
     var showEditor by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<SubjectEntity?>(null) }
+    var editing by remember { mutableStateOf<ActivityItemUi?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showActivityPanel by remember { mutableStateOf(false) }
 
     val modeLabel = when (mode) {
         TimerMode.IDLE -> stringResource(R.string.pomodoro_mode_idle)
@@ -122,14 +167,15 @@ fun PomodoroScreen(
                     .padding(vertical = 20.dp, horizontal = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {                    BigCatFigure(
-                    mode = mode,
-                    subjectName = subjects.firstOrNull { it.id == selectedId }?.name,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)          // фиксированная высота зоны кота
-                        .clickable { showSettings = true }
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    BigCatFigure(
+                        mode = mode,
+                        subjectName = currentItemName,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clickable { showSettings = true }
+                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -143,7 +189,7 @@ fun PomodoroScreen(
 
                     if (mode != TimerMode.IDLE) {
                         Text(
-                            text = subjects.firstOrNull { it.id == selectedId }?.name ?: "",
+                            text = currentItemName.orEmpty(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -159,17 +205,30 @@ fun PomodoroScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            Text(
+                text = when (activityType) {
+                    FocusActivityType.STUDY -> stringResource(R.string.pomodoro_subjects)
+                    FocusActivityType.WORK -> stringResource(R.string.pomodoro_tasks)
+                    FocusActivityType.OTHER -> stringResource(R.string.pomodoro_other_items)
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = stringResource(R.string.pomodoro_total_today),
+                    text = stringResource(R.string.pomodoro_total_activity_day),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.tertiary
                 )
                 Text(
-                    text = formatDuration(totalToday),
+                    text = formatDuration(totalLast24Hours),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -179,35 +238,43 @@ fun PomodoroScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(subjects, key = { it.id }) { subject ->
-                    val isCurrentSubject = subject.id == selectedId
-                    val rowMode = if (!isCurrentSubject) TimerMode.IDLE else mode
-                    SubjectRow(
-                        subject = subject,
-                        todayMillis = totalsBySubject[subject.id] ?: 0L,
-                        isSelected = isCurrentSubject,
+                items(activityItems, key = { it.id }) { item ->
+                    val isCurrentItem = item.id == selectedId
+                    val rowMode = if (!isCurrentItem) TimerMode.IDLE else mode
+                    ActivityItemRow(
+                        item = item,
+                        durationMillis = totalsByItem[item.id] ?: 0L,
                         currentMode = rowMode,
                         onPlay = {
                             when {
-                                // 1-й тап во время фокуса: пауза / продолжить
-                                mode == TimerMode.FOCUS && isCurrentSubject -> viewModel.toggle()
-                                // 3-й тап во время перерыва: прекратить отдых, вернуться в IDLE
-                                (mode == TimerMode.BREAK || mode == TimerMode.BREAK_PAUSED) && isCurrentSubject ->
+                                mode == TimerMode.FOCUS && isCurrentItem -> viewModel.toggle()
+                                (mode == TimerMode.BREAK || mode == TimerMode.BREAK_PAUSED) && isCurrentItem ->
                                     viewModel.endBreakToIdle()
-                                // Стартовый тап: начать фокус
-                                else -> viewModel.start(subject.id)
+                                else -> viewModel.start(item.id, item.name)
                             }
                         },
                         onEdit = {
-                            editing = subject
+                            editing = item
                             showEditor = true
                         }
                     )
                 }
+
+                if (activityItems.isEmpty()) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.pomodoro_empty_category),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 28.dp),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
 
-        // Невидимая кнопка добавления предмета — ПОСЛЕ колонки, поверх контента
         Text(
             text = "^+^",
             modifier = Modifier
@@ -223,20 +290,77 @@ fun PomodoroScreen(
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
         )
+
+        AnimatedVisibility(
+            visible = showActivityPanel,
+            enter = fadeIn() + slideInHorizontally(initialOffsetX = { it }),
+            exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it }),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 4.dp, end = 8.dp)
+        ) {
+            ActivityTypePanel(
+                selected = activityType,
+                enabled = mode == TimerMode.IDLE,
+                onDismiss = { showActivityPanel = false },
+                onSelect = {
+                    viewModel.selectActivityType(it)
+                    showActivityPanel = false
+                }
+            )
+        }
+
+        if (!showActivityPanel) {
+            ActivityDrawerHandle(
+                onOpen = { showActivityPanel = true },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp, end = 8.dp)
+            )
+        }
     }
 
     if (showEditor) {
-        SubjectEditorDialog(
+        ActivityItemEditorDialog(
             initial = editing,
+            activityType = activityType,
             onSave = { name, color ->
-                if (editing != null) {
-                    viewModel.updateSubject(editing!!.copy(name = name, color = color))
-                } else {
-                    viewModel.addSubject(name, color)
+                val current = editing
+                when (activityType) {
+                    FocusActivityType.STUDY -> if (current == null) {
+                        viewModel.addSubject(name, color)
+                    } else {
+                        subjects.firstOrNull { it.id == current.id }?.let {
+                            viewModel.updateSubject(it.copy(name = name, color = color))
+                        }
+                    }
+                    FocusActivityType.WORK -> if (current == null) {
+                        viewModel.addWorkTask(name)
+                    } else {
+                        workTasks.firstOrNull { it.id == current.id }?.let {
+                            viewModel.updateWorkTask(it.copy(title = name))
+                        }
+                    }
+                    FocusActivityType.OTHER -> if (current == null) {
+                        viewModel.addOtherActivity(name, color)
+                    } else {
+                        otherActivities.firstOrNull { it.id == current.id }?.let {
+                            viewModel.updateOtherActivity(it.copy(name = name, color = color))
+                        }
+                    }
                 }
                 showEditor = false
             },
-            onDelete = editing?.let { { viewModel.deleteSubject(it.id); showEditor = false } },
+            onDelete = editing?.let { item ->
+                {
+                    when (activityType) {
+                        FocusActivityType.STUDY -> viewModel.deleteSubject(item.id)
+                        FocusActivityType.WORK -> viewModel.deleteWorkTask(item.id)
+                        FocusActivityType.OTHER -> viewModel.deleteOtherActivity(item.id)
+                    }
+                    showEditor = false
+                }
+            },
             onDismiss = { showEditor = false }
         )
     }
@@ -249,6 +373,105 @@ fun PomodoroScreen(
             onBreakDurationChange = { viewModel.setBreakDuration(it) },
             onDismiss = { showSettings = false }
         )
+    }
+}
+
+@Composable
+private fun ActivityDrawerHandle(
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var dragX by remember { mutableFloatStateOf(0f) }
+    val description = stringResource(R.string.pomodoro_activity_arrow_description)
+
+    Box(
+        modifier = modifier
+            .size(width = 34.dp, height = 46.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f))
+            .semantics { contentDescription = description }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { dragX = 0f },
+                    onDragEnd = {
+                        if (dragX < -24f) onOpen()
+                        dragX = 0f
+                    },
+                    onDragCancel = { dragX = 0f }
+                ) { change, amount ->
+                    change.consume()
+                    dragX += amount.x
+                }
+            }
+            .clickable(onClick = onOpen),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "‹",
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+            fontSize = 29.sp,
+            fontWeight = FontWeight.Light
+        )
+    }
+}
+
+@Composable
+private fun ActivityTypePanel(
+    selected: FocusActivityType,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (FocusActivityType) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(216.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = stringResource(R.string.pomodoro_activity_question),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = stringResource(R.string.action_cancel),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        FocusActivityType.entries.forEach { type ->
+            val label = when (type) {
+                FocusActivityType.STUDY -> stringResource(R.string.pomodoro_activity_study)
+                FocusActivityType.WORK -> stringResource(R.string.pomodoro_activity_work)
+                FocusActivityType.OTHER -> stringResource(R.string.pomodoro_activity_other)
+            }
+            FilterChip(
+                selected = selected == type,
+                onClick = { onSelect(type) },
+                enabled = enabled,
+                label = { Text(label) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        if (!enabled) {
+            Text(
+                text = stringResource(R.string.pomodoro_activity_change_after_timer),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -378,10 +601,9 @@ private fun CatFigure(
 }
 
 @Composable
-private fun SubjectRow(
-    subject: SubjectEntity,
-    todayMillis: Long,
-    isSelected: Boolean,
+private fun ActivityItemRow(
+    item: ActivityItemUi,
+    durationMillis: Long,
     currentMode: TimerMode,
     onPlay: () -> Unit,
     onEdit: () -> Unit
@@ -402,20 +624,20 @@ private fun SubjectRow(
                 .clickable(onClick = onPlay),
             contentAlignment = Alignment.Center
         ) {
-            CatFigure(mode = currentMode, tint = Color(subject.color))
+            CatFigure(mode = currentMode, tint = Color(item.color))
         }
 
         Spacer(modifier = Modifier.width(12.dp))
 
         Text(
-            text = subject.name,
+            text = item.name,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.weight(1f)
         )
 
         Text(
-            text = formatDuration(todayMillis),
+            text = formatDuration(durationMillis),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -431,8 +653,9 @@ private fun SubjectRow(
 }
 
 @Composable
-private fun SubjectEditorDialog(
-    initial: SubjectEntity?,
+private fun ActivityItemEditorDialog(
+    initial: ActivityItemUi?,
+    activityType: FocusActivityType,
     onSave: (String, Int) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit
@@ -445,7 +668,23 @@ private fun SubjectEditorDialog(
         title = {
             Text(
                 stringResource(
-                    if (initial == null) R.string.pomodoro_new_subject else R.string.pomodoro_subject
+                    when (activityType) {
+                        FocusActivityType.STUDY -> if (initial == null) {
+                            R.string.pomodoro_new_subject
+                        } else {
+                            R.string.pomodoro_subject
+                        }
+                        FocusActivityType.WORK -> if (initial == null) {
+                            R.string.pomodoro_new_task
+                        } else {
+                            R.string.pomodoro_task
+                        }
+                        FocusActivityType.OTHER -> if (initial == null) {
+                            R.string.pomodoro_new_other
+                        } else {
+                            R.string.pomodoro_other_item
+                        }
+                    }
                 )
             )
         },
@@ -458,21 +697,24 @@ private fun SubjectEditorDialog(
                     singleLine = true
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SUBJECT_COLORS.forEach { c ->
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(Color(c))
-                                .then(
-                                    if (c == color) Modifier.background(
-                                        MaterialTheme.colorScheme.onBackground,
-                                        CircleShape
-                                    ) else Modifier
-                                )
-                        ) {
-                            IconButton(onClick = { color = c }, modifier = Modifier.size(28.dp)) { }
+                if (activityType != FocusActivityType.WORK) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SUBJECT_COLORS.forEach { c ->
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(c))
+                                    .then(
+                                        if (c == color) Modifier.background(
+                                            MaterialTheme.colorScheme.onBackground,
+                                            CircleShape
+                                        ) else Modifier
+                                    )
+                            ) {
+                                IconButton(onClick = { color = c }, modifier = Modifier.size(28.dp)) { }
+                            }
                         }
                     }
                 }

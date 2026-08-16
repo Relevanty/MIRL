@@ -19,6 +19,7 @@ import com.personal.sleepalarm.data.db.dao.DDayDao
 import com.personal.sleepalarm.data.db.dao.LibraryDao
 import com.personal.sleepalarm.data.db.dao.MoodEntryDao
 import com.personal.sleepalarm.data.db.dao.PomodoroDao
+import com.personal.sleepalarm.data.db.dao.OtherActivityDao
 import com.personal.sleepalarm.data.db.dao.ReminderDao
 import com.personal.sleepalarm.data.db.dao.ScheduleDao
 import com.personal.sleepalarm.data.db.dao.SleepSessionDao
@@ -31,6 +32,7 @@ import com.personal.sleepalarm.data.db.entity.LibraryItemTagCrossRef
 import com.personal.sleepalarm.data.db.entity.LibraryTagEntity
 import com.personal.sleepalarm.data.db.entity.MoodEntryEntity
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
+import com.personal.sleepalarm.data.db.entity.OtherActivityEntity
 import com.personal.sleepalarm.data.db.entity.ReminderEntity
 import com.personal.sleepalarm.data.db.entity.ScheduleEntity
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
@@ -73,10 +75,13 @@ import com.personal.sleepalarm.data.db.entity.SubjectEntity
         StudySessionEntity::class,
         CalendarEventEntity::class,
 
-        DiaryEntryEntity::class
+        DiaryEntryEntity::class,
+
+        // ДОБАВЛЕНО (v8): дела для категории «Другое» в помодоро.
+        OtherActivityEntity::class
 
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -88,6 +93,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cueEventDao(): CueEventDao
     abstract fun scheduleDao(): ScheduleDao
     abstract fun pomodoroDao(): PomodoroDao
+    abstract fun otherActivityDao(): OtherActivityDao
     abstract fun libraryDao(): LibraryDao
 
     // ДОБАВЛЕНО (v5):
@@ -130,7 +136,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
-                    MIGRATION_6_7
+                    MIGRATION_6_7,
+                    MIGRATION_7_8
                 )
                 .build()
         }
@@ -336,6 +343,39 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_diary_entries_dateKey ON diary_entries (dateKey)")
             }
 
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pomodoro_sessions ADD COLUMN activityType TEXT NOT NULL DEFAULT 'STUDY'")
+                db.execSQL("ALTER TABLE pomodoro_sessions ADD COLUMN subjectId INTEGER")
+                db.execSQL("ALTER TABLE pomodoro_sessions ADD COLUMN taskId INTEGER")
+                db.execSQL("ALTER TABLE pomodoro_sessions ADD COLUMN otherActivityId INTEGER")
+                db.execSQL("ALTER TABLE pomodoro_sessions ADD COLUMN itemName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE pomodoro_sessions ADD COLUMN actualDurationMillis INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "UPDATE pomodoro_sessions " +
+                        "SET actualDurationMillis = durationMinutes * 60000 " +
+                        "WHERE isCompleted = 1 AND actualDurationMillis = 0"
+                )
+                // Переносим прежнюю учебную историю в единый журнал фокуса.
+                db.execSQL(
+                    "INSERT INTO pomodoro_sessions (" +
+                        "startedAt, durationMinutes, completedAt, isCompleted, isBreak, " +
+                        "activityType, subjectId, taskId, otherActivityId, itemName, actualDurationMillis) " +
+                        "SELECT s.startMillis, CAST((s.durationMillis + 59999) / 60000 AS INTEGER), " +
+                        "s.endMillis, 1, 0, 'STUDY', s.subjectId, NULL, NULL, " +
+                        "COALESCE((SELECT name FROM subjects WHERE id = s.subjectId), ''), s.durationMillis " +
+                        "FROM study_sessions s WHERE NOT EXISTS (" +
+                        "SELECT 1 FROM pomodoro_sessions p WHERE p.startedAt = s.startMillis " +
+                        "AND p.completedAt = s.endMillis AND p.activityType = 'STUDY')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS other_activities (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, color INTEGER NOT NULL, createdAt INTEGER NOT NULL)"
+                )
+            }
         }
     }
 }

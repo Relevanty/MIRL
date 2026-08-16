@@ -20,6 +20,6 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Sleep Cycle Lucid Alarm"
+rootProject.name = "MIRL"
 
 include(":app")

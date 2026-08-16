@@ -2,6 +2,7 @@ package com.personal.sleepalarm.data.db.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
@@ -15,6 +16,15 @@ interface PomodoroDao {
 
     @Insert
     suspend fun insert(session: PomodoroSessionEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(sessions: List<PomodoroSessionEntity>)
+
+    @Query("SELECT * FROM pomodoro_sessions ORDER BY startedAt ASC")
+    suspend fun getAll(): List<PomodoroSessionEntity>
+
+    @Query("DELETE FROM pomodoro_sessions")
+    suspend fun deleteAll()
 
     @Update
     suspend fun update(session: PomodoroSessionEntity)
@@ -39,6 +49,28 @@ interface PomodoroDao {
         """
     )
     fun observeCompletedFocusBetween(from: Long, to: Long): Flow<List<PomodoroSessionEntity>>
+
+    /** Фокус-сессии, пересекающие точный временной интервал. */
+    @Query(
+        """
+        SELECT * FROM pomodoro_sessions
+        WHERE isBreak = 0
+          AND completedAt IS NOT NULL
+          AND actualDurationMillis > 0
+          AND completedAt > :from AND startedAt < :to
+        ORDER BY startedAt ASC
+        """
+    )
+    fun observeFocusOverlapping(from: Long, to: Long): Flow<List<PomodoroSessionEntity>>
+
+    @Query(
+        """
+        SELECT * FROM pomodoro_sessions
+        WHERE isBreak = 0 AND completedAt IS NOT NULL AND actualDurationMillis > 0
+        ORDER BY startedAt ASC
+        """
+    )
+    fun observeAllRecordedFocus(): Flow<List<PomodoroSessionEntity>>
 
     /** Количество завершённых фокусов за период. */
     @Query(

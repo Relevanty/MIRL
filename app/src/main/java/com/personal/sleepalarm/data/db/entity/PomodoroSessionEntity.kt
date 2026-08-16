@@ -3,6 +3,7 @@ package com.personal.sleepalarm.data.db.entity
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.personal.sleepalarm.domain.model.FocusActivityType
 
 /**
  * Одна помодоро-сессия: фокус или перерыв.
@@ -28,5 +29,19 @@ data class PomodoroSessionEntity(
 
     val isCompleted: Boolean = false,
 
-    val isBreak: Boolean = false
+    val isBreak: Boolean = false,
+
+    /** Категория фокуса. Для старых записей миграция устанавливает STUDY. */
+    val activityType: FocusActivityType = FocusActivityType.STUDY,
+
+    /** Связь с конкретным элементом выбранной категории. */
+    val subjectId: Int? = null,
+    val taskId: Int? = null,
+    val otherActivityId: Int? = null,
+
+    /** Снимок названия: история остаётся читаемой после переименования/удаления. */
+    val itemName: String = "",
+
+    /** Фактически отработанное время, включая неполные фокус-сессии. */
+    val actualDurationMillis: Long = 0L
 )
