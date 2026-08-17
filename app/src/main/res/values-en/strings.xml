@@ -280,6 +280,9 @@
     <string name="library_delete_title">Delete review?</string>
     <string name="library_delete_text">The item, its cover and tag connections will be permanently deleted.</string>
     <string name="library_delete_item_text">“%1$s” will be permanently deleted.</string>
+    <string name="library_action_edit">Edit</string>
+    <string name="library_action_move_up">Move up</string>
+    <string name="library_action_move_down">Move down</string>
     <string name="reminders_title">Reminders</string>
     <string name="reminders_new">New reminder</string>
     <string name="reminders_empty">No reminders yet. Tap “+” to create one.</string>

@@ -2,8 +2,10 @@ package com.personal.sleepalarm.ui.library
 
 import com.personal.sleepalarm.ui.theme.ThemedAlertDialog
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,12 +18,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -68,6 +73,7 @@ fun LibraryScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var itemToDelete by remember { mutableStateOf<LibraryItemEntity?>(null) }
+    var actionItem by remember { mutableStateOf<LibraryItemEntity?>(null) }
     var showEdit by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<Int?>(null) }
     var showGraph by remember { mutableStateOf(false) }
@@ -211,7 +217,7 @@ fun LibraryScreen(
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.items, key = { it.id }) { item ->
+                    itemsIndexed(state.items, key = { _, item -> item.id }) { _, item ->
                         LibraryCard(
                             item = item,
                             tagsFlow = viewModel.tagsForItem(item.id),
@@ -219,12 +225,41 @@ fun LibraryScreen(
                                 editTarget = item.id
                                 showEdit = true
                             },
-                            onDelete = { itemToDelete = item }
+                            onLongClick = { actionItem = item }
                         )
                     }
                 }
             }
         }
+    }
+
+    actionItem?.let { item ->
+        val index = state.items.indexOfFirst { it.id == item.id }
+        LibraryActionsDialog(
+            item = item,
+            canMoveUp = index > 0,
+            canMoveDown = index >= 0 && index < state.items.lastIndex,
+            onDismiss = { actionItem = null },
+            onEdit = {
+                editTarget = item.id
+                showEdit = true
+                actionItem = null
+            },
+            onMoveUp = {
+                if (index > 0) viewModel.swapItems(item, state.items[index - 1])
+                actionItem = null
+            },
+            onMoveDown = {
+                if (index >= 0 && index < state.items.lastIndex) {
+                    viewModel.swapItems(item, state.items[index + 1])
+                }
+                actionItem = null
+            },
+            onDelete = {
+                actionItem = null
+                itemToDelete = item
+            }
+        )
     }
 
     itemToDelete?.let { item ->
@@ -285,12 +320,13 @@ private fun FilterTypeRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryCard(
     item: LibraryItemEntity,
     tagsFlow: Flow<List<LibraryTagEntity>>,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onLongClick: () -> Unit
 ) {
     val tags by tagsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val bitmap = remember(item.coverUri) { CoverHelper.loadBitmap(item.coverUri) }
@@ -300,7 +336,7 @@ private fun LibraryCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -356,12 +392,63 @@ private fun LibraryCard(
             )
         }
 
-        IconButton(onClick = onDelete) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = stringResource(R.string.library_delete),
-                tint = MaterialTheme.colorScheme.error
-            )
+    }
+}
+
+@Composable
+private fun LibraryActionsDialog(
+    item: LibraryItemEntity,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDelete: () -> Unit
+) {
+    ThemedAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(item.title) },
+        text = {
+            Column {
+                LibraryActionRow(Icons.Default.Edit, stringResource(R.string.library_action_edit), true, onEdit)
+                LibraryActionRow(Icons.Default.ArrowUpward, stringResource(R.string.library_action_move_up), canMoveUp, onMoveUp)
+                LibraryActionRow(Icons.Default.ArrowDownward, stringResource(R.string.library_action_move_down), canMoveDown, onMoveDown)
+                LibraryActionRow(
+                    Icons.Default.Delete,
+                    stringResource(R.string.library_delete),
+                    true,
+                    onDelete,
+                    MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
+    )
+}
+
+@Composable
+private fun LibraryActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    color: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val contentColor = color.copy(alpha = if (enabled) 1f else 0.35f)
+        Icon(icon, contentDescription = null, tint = contentColor)
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = contentColor, style = MaterialTheme.typography.bodyLarge)
     }
 }

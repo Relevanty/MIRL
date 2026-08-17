@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -140,7 +141,7 @@ fun HomeScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        PlanSummaryCard(plan = state.plan)
+                        SleepPlanWithCat(plan = state.plan)
                         StartButtons(
                             activeSession = state.activeSession,
                             canStart = state.plan != null && state.permissions.exactAlarmsAllowed,
@@ -150,10 +151,6 @@ fun HomeScreen(
                     }
                 }
             }
-
-            // Drawn above the translucent plan card so the opaque backdrop can
-            // cleanly separate the cat from the card beneath it.
-            GeometricCatBackdrop(Modifier.fillMaxSize())
 
             // Transient cards share one overlay stack. Neither an active sleep
             // session nor a permission warning can remeasure and move the plan.
@@ -216,7 +213,34 @@ fun HomeScreen(
 }
 
 @Composable
-private fun GeometricCatBackdrop(modifier: Modifier = Modifier) {
+private fun SleepPlanWithCat(plan: SleepPlan?) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val cardEdge = calculateSleepCatCardEdgeDp(maxWidth.value).dp
+        val catCanvasHeight = cardEdge + 56.dp
+
+        PlanSummaryCard(
+            plan = plan,
+            modifier = Modifier.padding(top = cardEdge)
+        )
+        // The cat and the plan card now share the same coordinate system. Any
+        // content above this box moves them together instead of separating them.
+        GeometricCatBackdrop(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(catCanvasHeight),
+            cardEdgeFromTop = cardEdge
+        )
+    }
+}
+
+internal fun calculateSleepCatCardEdgeDp(availableWidthDp: Float): Float =
+    (availableWidthDp * 0.30f).coerceIn(96f, 124f)
+
+@Composable
+private fun GeometricCatBackdrop(
+    modifier: Modifier = Modifier,
+    cardEdgeFromTop: androidx.compose.ui.unit.Dp
+) {
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
     val tertiary = MaterialTheme.colorScheme.tertiary
@@ -224,23 +248,24 @@ private fun GeometricCatBackdrop(modifier: Modifier = Modifier) {
     val backdrop = MaterialTheme.colorScheme.background
     val ink = MaterialTheme.colorScheme.onBackground
     Canvas(modifier) {
-        val cardEdge = size.height * 0.316f
-        val center = Offset(size.width * 0.685f, cardEdge - size.width * 0.082f)
+        val cardEdge = cardEdgeFromTop.toPx()
+        // Keep the head slightly forward of the reclining body.
+        val center = Offset(size.width * 0.71f, cardEdge - size.width * 0.082f)
         val radius = size.width * 0.15f
         val featureColor = ink.copy(alpha = 0.34f)
 
         // The tail rests on the card edge first, then drops softly down its left side.
         val tail = Path().apply {
-            moveTo(size.width * 0.265f, cardEdge + radius * 0.01f)
+            moveTo(size.width * 0.235f, cardEdge + radius * 0.01f)
             cubicTo(
-                size.width * 0.20f, cardEdge + radius * 0.01f,
-                size.width * 0.105f, cardEdge - radius * 0.01f,
-                size.width * 0.075f, cardEdge + radius * 0.08f
+                size.width * 0.17f, cardEdge + radius * 0.01f,
+                size.width * 0.055f, cardEdge - radius * 0.01f,
+                size.width * 0.025f, cardEdge + radius * 0.08f
             )
             cubicTo(
-                size.width * 0.045f, cardEdge + radius * 0.18f,
-                size.width * 0.05f, cardEdge + radius * 0.42f,
-                size.width * 0.065f, cardEdge + radius * 0.50f
+                size.width * -0.005f, cardEdge + radius * 0.18f,
+                size.width * 0.0f, cardEdge + radius * 0.42f,
+                size.width * 0.015f, cardEdge + radius * 0.50f
             )
         }
         drawPath(
@@ -588,11 +613,11 @@ private fun ActiveSessionCard(activeSession: SleepSessionEntity, onCancel: () ->
 }
 
 @Composable
-private fun PlanSummaryCard(plan: SleepPlan?) {
+private fun PlanSummaryCard(plan: SleepPlan?, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(30.dp)
     if (plan == null) {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f))
@@ -609,7 +634,7 @@ private fun PlanSummaryCard(plan: SleepPlan?) {
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f))

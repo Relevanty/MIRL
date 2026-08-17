@@ -63,6 +63,20 @@ class LibraryRepository(
         CoverHelperDelete(item.coverUri)
     }
 
+    /** Exchanges two visible positions without changing the database schema. */
+    suspend fun swapItems(first: LibraryItemEntity, second: LibraryItemEntity) {
+        database.withTransaction {
+            if (first.updatedAt == second.updatedAt) {
+                val top = System.currentTimeMillis()
+                dao.touchItem(first.id, top)
+                dao.touchItem(second.id, top - 1)
+            } else {
+                dao.touchItem(first.id, second.updatedAt)
+                dao.touchItem(second.id, first.updatedAt)
+            }
+        }
+    }
+
     private fun CoverHelperDelete(path: String?) {
         com.personal.sleepalarm.util.CoverHelper.deleteCover(path)
     }

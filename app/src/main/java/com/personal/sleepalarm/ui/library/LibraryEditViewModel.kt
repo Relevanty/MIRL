@@ -10,6 +10,7 @@ import com.personal.sleepalarm.data.db.entity.LibraryItemEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemType
 import com.personal.sleepalarm.data.repository.LibraryRepository
 import com.personal.sleepalarm.util.CoverHelper
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -33,6 +34,8 @@ data class LibraryEditState(
     val tagInput: String = ""
 )
 
+internal fun LibraryEditState.clearedForCreate(): LibraryEditState = LibraryEditState()
+
 /**
  * ViewModel создания/редактирования элемента библиотеки.
  */
@@ -47,10 +50,12 @@ class LibraryEditViewModel(
 
     private val _state = MutableStateFlow(LibraryEditState())
     val state: StateFlow<LibraryEditState> = _state
+    private var loadJob: Job? = null
 
     /** Загружает существующий элемент для редактирования + его теги. */
     fun load(id: Int) {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             val item = repository.observeItem(id).first() ?: return@launch
             val tags = repository.observeTagsForItem(id).first()
 
@@ -67,6 +72,13 @@ class LibraryEditViewModel(
                 tags = tags.map { it.name }
             )
         }
+    }
+
+    /** Начинает создание нового элемента, не переиспользуя данные прошлого редактора. */
+    fun resetForCreate() {
+        loadJob?.cancel()
+        loadJob = null
+        _state.update { it.clearedForCreate() }
     }
 
     fun setType(type: LibraryItemType) = _state.update { it.copy(type = type) }

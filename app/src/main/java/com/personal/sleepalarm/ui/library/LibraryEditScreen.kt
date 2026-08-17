@@ -61,7 +61,11 @@ fun LibraryEditScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(editItemId) {
-        editItemId?.let { viewModel.load(it) }
+        if (editItemId == null) {
+            viewModel.resetForCreate()
+        } else {
+            viewModel.load(editItemId)
+        }
     }
 
     val coverPicker = rememberLauncherForActivityResult(

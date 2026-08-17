@@ -71,4 +71,8 @@ class LibraryViewModel(
     fun deleteItem(item: LibraryItemEntity) {
         viewModelScope.launch { repository.deleteItem(item) }
     }
+
+    fun swapItems(first: LibraryItemEntity, second: LibraryItemEntity) {
+        viewModelScope.launch { repository.swapItems(first, second) }
+    }
 }
