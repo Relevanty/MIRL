@@ -17,6 +17,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -39,8 +40,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -260,49 +269,62 @@ private fun SleepAlarmRoot() {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            val navigationColors = NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+            val navigationLabels = listOf(
+                stringResource(R.string.tab_home),
+                stringResource(R.string.tab_tasks),
+                stringResource(R.string.tab_pomodoro),
+                stringResource(R.string.tab_misc),
+                stringResource(R.string.tab_settings)
             )
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                NavigationBarItem(
-                    selected = selectedTab == TAB_SLEEP,
-                    onClick = { selectedTab = TAB_SLEEP },
-                    icon = { Icon(Icons.Default.DarkMode, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_home)) },
-                    colors = navigationColors
+            BoxWithConstraints {
+                val labelFontSize = rememberNavigationLabelFontSize(
+                    labels = navigationLabels,
+                    navigationWidth = maxWidth
                 )
-                NavigationBarItem(
-                    selected = selectedTab == TAB_TASKS,
-                    onClick = { selectedTab = TAB_TASKS },
-                    icon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_tasks)) },
-                    colors = navigationColors
+                val navigationColors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                NavigationBarItem(
-                    selected = selectedTab == TAB_POMODORO,
-                    onClick = { selectedTab = TAB_POMODORO },
-                    icon = { Icon(Icons.Default.Timer, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_pomodoro)) },
-                    colors = navigationColors
-                )
-                NavigationBarItem(
-                    selected = showMiscSheet || miscScreen != null,
-                    onClick = { showMiscSheet = true },
-                    icon = { Icon(Icons.Default.MoreHoriz, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_misc)) },
-                    colors = navigationColors
-                )
-                NavigationBarItem(
-                    selected = selectedTab == TAB_SETTINGS,
-                    onClick = { selectedTab = TAB_SETTINGS },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text(stringResource(R.string.tab_settings)) },
-                    colors = navigationColors
-                )
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                    NavigationBarItem(
+                        selected = selectedTab == TAB_SLEEP,
+                        onClick = { selectedTab = TAB_SLEEP },
+                        icon = { Icon(Icons.Default.DarkMode, contentDescription = null) },
+                        label = { NavigationLabel(navigationLabels[0], labelFontSize) },
+                        colors = navigationColors
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == TAB_TASKS,
+                        onClick = { selectedTab = TAB_TASKS },
+                        icon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
+                        label = { NavigationLabel(navigationLabels[1], labelFontSize) },
+                        colors = navigationColors
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == TAB_POMODORO,
+                        onClick = { selectedTab = TAB_POMODORO },
+                        icon = { Icon(Icons.Default.Timer, contentDescription = null) },
+                        label = { NavigationLabel(navigationLabels[2], labelFontSize) },
+                        colors = navigationColors
+                    )
+                    NavigationBarItem(
+                        selected = showMiscSheet || miscScreen != null,
+                        onClick = { showMiscSheet = true },
+                        icon = { Icon(Icons.Default.MoreHoriz, contentDescription = null) },
+                        label = { NavigationLabel(navigationLabels[3], labelFontSize) },
+                        colors = navigationColors
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == TAB_SETTINGS,
+                        onClick = { selectedTab = TAB_SETTINGS },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                        label = { NavigationLabel(navigationLabels[4], labelFontSize) },
+                        colors = navigationColors
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -338,3 +360,66 @@ private fun SleepAlarmRoot() {
         )
     }
 }
+
+@Composable
+private fun rememberNavigationLabelFontSize(
+    labels: List<String>,
+    navigationWidth: Dp
+): TextUnit {
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val maximumFontSize = 12.sp
+    val maximumStyle = MaterialTheme.typography.labelMedium.copy(fontSize = maximumFontSize)
+    val widestLabelPx = remember(
+        labels,
+        maximumStyle,
+        textMeasurer,
+        density.density,
+        density.fontScale
+    ) {
+        labels.maxOf { label ->
+            textMeasurer.measure(
+                text = AnnotatedString(label),
+                style = maximumStyle,
+                softWrap = false,
+                maxLines = 1
+            ).size.width.toFloat()
+        }
+    }
+    val totalWidthPx = with(density) { navigationWidth.toPx() }
+    val horizontalReservePx = with(density) { 10.dp.toPx() }
+    val availableLabelWidthPx =
+        (totalWidthPx / labels.size - horizontalReservePx).coerceAtLeast(1f)
+    val maximumFontSizePx = with(density) { maximumFontSize.toPx() }
+    val fittedFontSizePx = calculateNavigationLabelFontSizePx(
+        maximumFontSizePx = maximumFontSizePx,
+        widestLabelWidthPx = widestLabelPx,
+        availableLabelWidthPx = availableLabelWidthPx
+    )
+    return with(density) { fittedFontSizePx.toSp() }
+}
+
+@Composable
+private fun NavigationLabel(text: String, fontSize: TextUnit) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = fontSize),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip
+    )
+}
+
+internal fun calculateNavigationLabelFontSizePx(
+    maximumFontSizePx: Float,
+    widestLabelWidthPx: Float,
+    availableLabelWidthPx: Float
+): Float {
+    if (maximumFontSizePx <= 0f || widestLabelWidthPx <= 0f || availableLabelWidthPx <= 0f) {
+        return maximumFontSizePx.coerceAtLeast(0f)
+    }
+    val scale = (availableLabelWidthPx / widestLabelWidthPx).coerceAtMost(1f)
+    return maximumFontSizePx * scale.coerceAtLeast(MIN_NAVIGATION_LABEL_SCALE)
+}
+
+private const val MIN_NAVIGATION_LABEL_SCALE = 0.5f
