@@ -249,22 +249,23 @@ private fun GeometricCatBackdrop(
     val ink = MaterialTheme.colorScheme.onBackground
     Canvas(modifier) {
         val cardEdge = cardEdgeFromTop.toPx()
-        val center = Offset(size.width * 0.685f, cardEdge - size.width * 0.082f)
+        // Keep the head slightly forward of the reclining body.
+        val center = Offset(size.width * 0.71f, cardEdge - size.width * 0.082f)
         val radius = size.width * 0.15f
         val featureColor = ink.copy(alpha = 0.34f)
 
         // The tail rests on the card edge first, then drops softly down its left side.
         val tail = Path().apply {
-            moveTo(size.width * 0.265f, cardEdge + radius * 0.01f)
+            moveTo(size.width * 0.235f, cardEdge + radius * 0.01f)
             cubicTo(
-                size.width * 0.20f, cardEdge + radius * 0.01f,
-                size.width * 0.105f, cardEdge - radius * 0.01f,
-                size.width * 0.075f, cardEdge + radius * 0.08f
+                size.width * 0.17f, cardEdge + radius * 0.01f,
+                size.width * 0.055f, cardEdge - radius * 0.01f,
+                size.width * 0.025f, cardEdge + radius * 0.08f
             )
             cubicTo(
-                size.width * 0.045f, cardEdge + radius * 0.18f,
-                size.width * 0.05f, cardEdge + radius * 0.42f,
-                size.width * 0.065f, cardEdge + radius * 0.50f
+                size.width * -0.005f, cardEdge + radius * 0.18f,
+                size.width * 0.0f, cardEdge + radius * 0.42f,
+                size.width * 0.015f, cardEdge + radius * 0.50f
             )
         }
         drawPath(

@@ -398,6 +398,9 @@
     <string name="library_delete_title">Удалить отзыв?</string>
     <string name="library_delete_text">Элемент, его обложка и связи с тегами будут удалены безвозвратно.</string>
     <string name="library_delete_item_text">«%1$s» будет удалён безвозвратно.</string>
+    <string name="library_action_edit">Редактировать</string>
+    <string name="library_action_move_up">Переместить выше</string>
+    <string name="library_action_move_down">Переместить ниже</string>
 
 
     <!-- ================================================================== -->
