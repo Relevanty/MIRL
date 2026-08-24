@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
+import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.domain.calculator.ActivityDayBoundary
 import com.personal.sleepalarm.domain.calculator.ActivityPeriodCalculator
 import com.personal.sleepalarm.domain.calculator.ActivityPeriodTotals
@@ -85,8 +86,8 @@ private data class ActivityBucket(
 
 @Composable
 fun ActivityStatsContent(
-    viewModel: ActivityStatsViewModel = viewModel(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: ActivityStatsViewModel = viewModel()
 ) {
     val source by viewModel.source.collectAsStateWithLifecycle()
     val zone = ZoneId.systemDefault()
@@ -121,6 +122,12 @@ fun ActivityStatsContent(
     val categories = categoryVisuals()
     val periodLabel = remember(period, periodDates, locale) {
         formatPeriodLabel(period, periodDates.first, periodDates.second, locale)
+    }
+    val completedStudyBlocks = remember(source.completedFocusBlocks, bounds) {
+        source.completedFocusBlocks.filter { block ->
+            block.activityType == FocusActivityType.STUDY &&
+                (block.completedAt ?: 0L) in bounds.first until bounds.second
+        }
     }
 
     Column(
@@ -164,6 +171,8 @@ fun ActivityStatsContent(
         )
 
         SummaryGrid(totals, categories)
+
+        CompletedStudyBlocksCard(completedStudyBlocks, locale)
 
         DistributionChart(totals, categories)
         ComparisonChart(totals, categories)
@@ -210,6 +219,105 @@ fun ActivityStatsContent(
             periodEnd = bounds.second,
             categories = categories
         )
+    }
+}
+
+@Composable
+private fun CompletedStudyBlocksCard(
+    blocks: List<FocusProtocolSessionEntity>,
+    locale: Locale
+) {
+    ChartCard(stringResource(R.string.study_completed_blocks)) {
+        if (blocks.isEmpty()) {
+            Text(
+                text = stringResource(R.string.study_completed_blocks_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            return@ChartCard
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StudyMetric(
+                value = blocks.size.toString(),
+                label = stringResource(R.string.study_blocks_label),
+                modifier = Modifier.weight(1f)
+            )
+            StudyMetric(
+                value = blocks.sumOf { it.completedCycles }.toString(),
+                label = stringResource(R.string.focus_block_cycles_label),
+                modifier = Modifier.weight(1f)
+            )
+            StudyMetric(
+                value = formatDuration(blocks.sumOf { it.totalFocusMillis }),
+                label = stringResource(R.string.focus_block_focus_time_label),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        blocks.take(6).forEach { block ->
+            val date = remember(block.completedAt, locale) {
+                Instant.ofEpochMilli(block.completedAt ?: block.createdAt)
+                    .atZone(ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ofPattern("d MMM, HH:mm", locale))
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.48f))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = block.itemName,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = date,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = block.outcome,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(
+                        R.string.study_block_result,
+                        block.completedCycles,
+                        formatDuration(block.totalFocusMillis)
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudyMetric(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
     }
 }
 

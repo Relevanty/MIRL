@@ -128,5 +128,9 @@
                 <action android:name="com.personal.sleepalarm.event.FIRE" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".alarm.FocusProtocolReceiver"
+            android:exported="false" />
     </application>
 </manifest>

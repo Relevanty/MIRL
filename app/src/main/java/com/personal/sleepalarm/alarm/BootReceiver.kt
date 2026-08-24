@@ -55,6 +55,7 @@ class BootReceiver : BroadcastReceiver() {
                 val app = applicationContext as com.personal.sleepalarm.app.App
                 val enabledReminders = app.serviceLocator.reminderRepository.getEnabled()
                 app.serviceLocator.reminderScheduler.rescheduleAll(enabledReminders)
+                app.serviceLocator.focusProtocolManager.reconcileActiveSessions()
 
                 val database = AppDatabase.getInstance(applicationContext)
 

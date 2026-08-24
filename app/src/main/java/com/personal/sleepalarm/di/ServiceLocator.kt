@@ -7,6 +7,7 @@ import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.preferences.BriefingPreference
 import com.personal.sleepalarm.data.preferences.ThemePreference
 import com.personal.sleepalarm.data.repository.DDayRepository
+import com.personal.sleepalarm.data.repository.FocusProtocolRepository
 import com.personal.sleepalarm.data.repository.LibraryRepository
 import com.personal.sleepalarm.data.repository.MoodRepository
 import com.personal.sleepalarm.data.repository.PomodoroRepository
@@ -16,6 +17,7 @@ import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
 import com.personal.sleepalarm.data.repository.TaskRepository
 import com.personal.sleepalarm.service.audio.BriefingCoordinator
+import com.personal.sleepalarm.service.focus.FocusProtocolManager
 
 /**
  * Ручной DI-контейнер.
@@ -53,6 +55,14 @@ class ServiceLocator(
 
     val pomodoroRepository: PomodoroRepository by lazy {
         PomodoroRepository(database.pomodoroDao())
+    }
+
+    val focusProtocolRepository: FocusProtocolRepository by lazy {
+        FocusProtocolRepository(database.focusProtocolDao(), database.energySampleDao())
+    }
+
+    val focusProtocolManager: FocusProtocolManager by lazy {
+        FocusProtocolManager(appContext)
     }
 
     val libraryRepository: LibraryRepository by lazy {
