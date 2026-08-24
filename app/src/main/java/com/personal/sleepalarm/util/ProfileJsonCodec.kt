@@ -32,7 +32,7 @@ import org.json.JSONObject
 object ProfileJsonCodec {
 
     /** Версия формата JSON. Задел на будущие миграции формата. */
-    const val SCHEMA_VERSION = 1
+    const val SCHEMA_VERSION = 2
 
     private const val KEY_SCHEMA = "schema_version"
 
@@ -50,6 +50,7 @@ object ProfileJsonCodec {
     private const val K_FIRST_CUE = "firstCueDelayMinutes"
     private const val K_CUE_INTERVAL = "cueIntervalMinutes"
     private const val K_CUE_VOLUME = "cueVolumePercent"
+    private const val K_NOTIFICATION_VOLUME = "notificationVolumePercent"
     private const val K_MATH = "mathDifficulty"
     private const val K_QUIET = "quietAlarmEnabled"
     private const val K_UPDATED_AT = "updatedAt"
@@ -87,6 +88,7 @@ object ProfileJsonCodec {
         json.put(K_FIRST_CUE, profile.firstCueDelayMinutes)
         json.put(K_CUE_INTERVAL, profile.cueIntervalMinutes)
         json.put(K_CUE_VOLUME, profile.cueVolumePercent)
+        json.put(K_NOTIFICATION_VOLUME, profile.notificationVolumePercent)
         json.put(K_MATH, profile.mathDifficulty.name)
         json.put(K_QUIET, profile.quietAlarmEnabled)
         json.put(K_UPDATED_AT, profile.updatedAt)
@@ -141,6 +143,10 @@ object ProfileJsonCodec {
                 firstCueDelayMinutes = obj.optInt(K_FIRST_CUE, defaults.firstCueDelayMinutes),
                 cueIntervalMinutes = obj.optInt(K_CUE_INTERVAL, defaults.cueIntervalMinutes),
                 cueVolumePercent = obj.optInt(K_CUE_VOLUME, defaults.cueVolumePercent),
+                notificationVolumePercent = obj.optInt(
+                    K_NOTIFICATION_VOLUME,
+                    defaults.notificationVolumePercent
+                ),
                 mathDifficulty = safeEnum(
                     obj.optString(K_MATH, defaults.mathDifficulty.name),
                     MathDifficulty.values(),
@@ -211,6 +217,7 @@ object ProfileJsonCodec {
             cueVolumePercent = CueScheduleCalculator.normalizeCueVolume(
                 profile.cueVolumePercent
             ),
+            notificationVolumePercent = profile.notificationVolumePercent.coerceIn(0, 100),
             remCueOffsetPercent = profile.remCueOffsetPercent.coerceIn(10, 90),
             smartRepeatFirstDelayMinutes = profile.smartRepeatFirstDelayMinutes.coerceIn(1, 10),
             smartRepeatIntervalMinutes = profile.smartRepeatIntervalMinutes.coerceIn(1, 10),

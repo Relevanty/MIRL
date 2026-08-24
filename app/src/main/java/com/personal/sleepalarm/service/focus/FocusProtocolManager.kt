@@ -17,6 +17,7 @@ import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
 import com.personal.sleepalarm.data.db.entity.StudySessionEntity
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.model.FocusProtocolPhase
+import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
 import com.personal.sleepalarm.ui.MainActivity
 import java.time.Instant
 import java.time.ZoneId
@@ -56,6 +57,8 @@ class FocusProtocolManager(context: Context) {
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = appContext.getString(R.string.focus_protocol_channel_description)
+                setSound(null, null)
+                enableVibration(true)
             }
         )
     }
@@ -421,7 +424,7 @@ class FocusProtocolManager(context: Context) {
             (legEnd - session.phaseStartedAt).coerceAtLeast(0L)
     }
 
-    private fun showNotification(session: FocusProtocolSessionEntity, alert: Boolean) {
+    private suspend fun showNotification(session: FocusProtocolSessionEntity, alert: Boolean) {
         val title = when (session.phase) {
             FocusProtocolPhase.RESET -> R.string.focus_protocol_phase_reset
             FocusProtocolPhase.ACTIVATE -> R.string.focus_protocol_phase_activate
@@ -446,6 +449,7 @@ class FocusProtocolManager(context: Context) {
             .setContentText(session.outcome)
             .setContentIntent(openIntent)
             .setOnlyAlertOnce(!alert)
+            .setSilent(!alert)
             .setAutoCancel(false)
             .setOngoing(session.phase != FocusProtocolPhase.ACTIVATE &&
                 session.phase != FocusProtocolPhase.CYCLE_READY &&
@@ -475,7 +479,12 @@ class FocusProtocolManager(context: Context) {
             appContext.getString(R.string.action_cancel),
             actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_CANCEL)
         )
-        runCatching { notificationManager.notify(notificationId(session.id), builder.build()) }
+        val shown = runCatching {
+            notificationManager.notify(notificationId(session.id), builder.build())
+        }.isSuccess
+        if (shown && alert) {
+            AppNotificationSoundPlayer.play(appContext)
+        }
     }
 
     private fun actionPendingIntent(sessionId: Int, action: String): PendingIntent {
@@ -503,7 +512,7 @@ class FocusProtocolManager(context: Context) {
         .format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     companion object {
-        private const val CHANNEL_ID = "focus_protocol_channel"
+        private const val CHANNEL_ID = "focus_protocol_channel_app_volume_v2"
         private const val NOTIFICATION_BASE = 680_000
         private const val ENERGY_BEFORE = "BEFORE_FOCUS"
         private const val ENERGY_AFTER = "AFTER_FOCUS"

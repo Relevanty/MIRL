@@ -43,7 +43,7 @@ class BackupManager(private val context: Context) {
 
     companion object {
         private const val TAG = "BackupManager"
-        private const val BACKUP_VERSION = 4
+        private const val BACKUP_VERSION = 5
     }
 
     private val db: AppDatabase = AppDatabase.getInstance(context)
@@ -316,6 +316,7 @@ class BackupManager(private val context: Context) {
         put("firstCueDelayMinutes", p.firstCueDelayMinutes)
         put("cueIntervalMinutes", p.cueIntervalMinutes)
         put("cueVolumePercent", p.cueVolumePercent)
+        put("notificationVolumePercent", p.notificationVolumePercent)
         put("mathDifficulty", p.mathDifficulty.name)
         put("quietAlarmEnabled", p.quietAlarmEnabled)
         put("vibrationEnabled", p.vibrationEnabled)

@@ -128,6 +128,10 @@
     <string name="settings_category_cues_summary">Звук, расписание и громкость ночных подсказок</string>
     <string name="settings_category_alarm">Пробуждение</string>
     <string name="settings_category_alarm_summary">Мелодия, вибрация, задача и повторы будильника</string>
+    <string name="settings_category_signals">Сигналы приложения</string>
+    <string name="settings_category_signals_summary">Громкость Pomodoro, концентрации, напоминаний и календаря</string>
+    <string name="pomodoro_notification_channel_name">Таймер Pomodoro</string>
+    <string name="pomodoro_notification_channel_description">Сигналы завершения фокуса и отдыха</string>
     <string name="settings_category_automation">Автоматизация сна</string>
     <string name="settings_category_automation_summary">Определение засыпания и коррекция подъёма</string>
     <string name="settings_category_appearance">Оформление и язык</string>
@@ -185,6 +189,10 @@
 
     <!-- Будильник -->
     <string name="section_alarm">Будильник</string>
+    <string name="section_notification_sounds">Звуки уведомлений</string>
+    <string name="setting_notification_volume">Громкость сигналов приложения</string>
+    <string name="setting_notification_volume_hint" formatted="false">Не зависит от системной громкости уведомлений. Итоговая громкость ограничена уровнем будильника Android. При 0% сигналы будут беззвучными.</string>
+    <string name="action_test_notification_sound">Проверить звук</string>
     <string name="setting_math_difficulty">Сложность задачи</string>
     <string name="math_difficulty_easy">Легко</string>
     <string name="math_difficulty_medium">Средне</string>
@@ -196,6 +204,7 @@
     <string name="action_pick_ringtone">Выбрать мелодию</string>
     <string name="ringtone_picker_title">Мелодия будильника</string>
     <string name="sound_file_unavailable">Файл звука недоступен. Выберите другой файл.</string>
+    <string name="notification_sound_preview_failed">Не удалось воспроизвести системный звук уведомления.</string>
     <string name="sound_permission_error">Не удалось сохранить доступ к файлу. Выберите звук через системное хранилище.</string>
     <string name="setting_smart_repeat_enabled">Повторять, пока не проснусь</string>
     <string name="setting_smart_repeat_first">Первый повтор через</string>

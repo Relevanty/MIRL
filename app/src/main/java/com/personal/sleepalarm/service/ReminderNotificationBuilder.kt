@@ -5,8 +5,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -14,6 +12,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.alarm.ReminderReceiver
 import com.personal.sleepalarm.data.db.entity.ReminderEntity
+import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
 
 /**
  * Построитель уведомлений напоминаний + каналы.
@@ -28,7 +27,7 @@ class ReminderNotificationBuilder(
         private const val TAG = "ReminderNotify"
 
         const val CHANNEL_PRE = "reminder_pre_channel"
-        const val CHANNEL_FIRE = "reminder_fire_channel"
+        const val CHANNEL_FIRE = "reminder_fire_channel_app_volume_v2"
 
         const val PRE_NOTIFICATION_ID_BASE = 90_000
         const val FIRE_NOTIFICATION_ID_BASE = 95_000
@@ -61,14 +60,7 @@ class ReminderNotificationBuilder(
                 description = context.getString(R.string.channel_reminder_fire_desc)
                 enableLights(true)
                 enableVibration(true)
-                // Дефолтный звук системы, чтобы FIRE точно пищал.
-                setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
+                setSound(null, null)
             }
 
             notificationManager.createNotificationChannel(pre)
@@ -156,7 +148,7 @@ class ReminderNotificationBuilder(
     }
 
     /** Безопасный show FIRE с диагностикой. */
-    fun showFire(reminder: ReminderEntity) {
+    suspend fun showFire(reminder: ReminderEntity) {
         cancelPre(reminder.id)
         if (!areNotificationsEnabled()) {
             Log.w(TAG, "FIRE skip: уведомления отключены пользователем")
@@ -167,6 +159,7 @@ class ReminderNotificationBuilder(
                 fireNotificationId(reminder.id),
                 buildFireNotification(reminder)
             )
+            AppNotificationSoundPlayer.play(context)
             Log.d(TAG, "FIRE shown id=${reminder.id}")
         } catch (se: SecurityException) {
             Log.e(TAG, "FIRE SecurityException (POST_NOTIFICATIONS не выдан)", se)

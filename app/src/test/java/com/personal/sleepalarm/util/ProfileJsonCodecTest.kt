@@ -40,6 +40,7 @@ class ProfileJsonCodecTest {
         firstCueDelayMinutes = 80,
         cueIntervalMinutes = 45,
         cueVolumePercent = 15,
+        notificationVolumePercent = 65,
         mathDifficulty = MathDifficulty.HARD,
         quietAlarmEnabled = true,
         updatedAt = 1_700_000_000_000L,
@@ -144,6 +145,7 @@ class ProfileJsonCodecTest {
         assertEquals(defaults.cueScheduleMode, decoded.cueScheduleMode)
         assertEquals(defaults.smartRepeatMaxCount, decoded.smartRepeatMaxCount)
         assertEquals(defaults.vibrationEnabled, decoded.vibrationEnabled)
+        assertEquals(defaults.notificationVolumePercent, decoded.notificationVolumePercent)
     }
 
     @Test
@@ -152,6 +154,7 @@ class ProfileJsonCodecTest {
         obj.put("remCueOffsetPercent", 5)      // вне 10..90 → 10
         obj.put("cycles", 99)                  // вне 3..7 → 7
         obj.put("cueVolumePercent", 150)       // вне 5..100 → 100
+        obj.put("notificationVolumePercent", -20) // вне 0..100 → 0
         obj.put("smartRepeatMaxCount", 100)    // вне 1..20 → 20
 
         val decoded = ProfileJsonCodec.decode(obj.toString())
@@ -159,6 +162,7 @@ class ProfileJsonCodecTest {
         assertEquals(10, decoded!!.remCueOffsetPercent)
         assertEquals(7, decoded.cycles)
         assertEquals(100, decoded.cueVolumePercent)
+        assertEquals(0, decoded.notificationVolumePercent)
         assertEquals(20, decoded.smartRepeatMaxCount)
     }
 
@@ -181,7 +185,8 @@ class ProfileJsonCodecTest {
             "smartRepeatFirstDelayMinutes",
             "smartRepeatIntervalMinutes",
             "smartRepeatMaxCount",
-            "mirrorToSystemClock"
+            "mirrorToSystemClock",
+            "notificationVolumePercent"
         ).forEach { key ->
             assertTrue("encode должен содержать ключ $key", obj.has(key))
         }

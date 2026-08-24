@@ -371,6 +371,20 @@ fun SettingsScreen(
             }
 
             SettingsCategoryCard(
+                category = SettingsCategory.SIGNALS,
+                expandedCategory = expandedCategory,
+                title = stringResource(R.string.settings_category_signals),
+                summary = stringResource(R.string.settings_category_signals_summary),
+                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
+            ) {
+                NotificationSoundsSection(
+                    volume = state.profile.notificationVolumePercent,
+                    onVolumeChange = viewModel::setNotificationVolume,
+                    onPreview = viewModel::previewAppNotificationSound
+                )
+            }
+
+            SettingsCategoryCard(
                 category = SettingsCategory.AUTOMATION,
                 expandedCategory = expandedCategory,
                 title = stringResource(R.string.settings_category_automation),
@@ -484,10 +498,51 @@ private enum class SettingsCategory {
     BASICS,
     CUES,
     ALARM,
+    SIGNALS,
     AUTOMATION,
     APPEARANCE,
     DATA,
     RELIABILITY
+}
+
+@Composable
+private fun NotificationSoundsSection(
+    volume: Int,
+    onVolumeChange: (Int) -> Unit,
+    onPreview: () -> Unit
+) {
+    SectionCard(title = stringResource(R.string.section_notification_sounds)) {
+        LabeledSlider(
+            label = stringResource(R.string.setting_notification_volume),
+            value = volume,
+            valueText = stringResource(R.string.percent_format, volume),
+            valueRange = 0f..100f,
+            steps = 19,
+            onValueChange = onVolumeChange
+        )
+
+        Text(
+            text = stringResource(R.string.setting_notification_volume_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        OutlinedButton(
+            onClick = onPreview,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.action_test_notification_sound))
+        }
+    }
 }
 
 private fun toggleCategory(current: String?, category: SettingsCategory): String? {

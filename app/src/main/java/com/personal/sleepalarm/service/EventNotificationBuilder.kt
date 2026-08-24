@@ -3,14 +3,13 @@ package com.personal.sleepalarm.service
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
+import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -24,7 +23,7 @@ class EventNotificationBuilder(
 ) {
     companion object {
         private const val TAG = "EventNotify"
-        const val CHANNEL_ID = "calendar_event_channel"
+        const val CHANNEL_ID = "calendar_event_channel_app_volume_v2"
         const val NOTIFICATION_ID_BASE = 100_000
     }
 
@@ -44,13 +43,7 @@ class EventNotificationBuilder(
             ).apply {
                 description = context.getString(R.string.calendar_notification_channel_description)
                 enableVibration(true)
-                setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
+                setSound(null, null)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -72,13 +65,14 @@ class EventNotificationBuilder(
             .build()
     }
 
-    fun show(event: CalendarEventEntity) {
+    suspend fun show(event: CalendarEventEntity) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
             Log.w(TAG, "skip: уведомления отключены пользователем")
             return
         }
         try {
             notificationManager.notify(NOTIFICATION_ID_BASE + event.id, build(event))
+            AppNotificationSoundPlayer.play(context)
             Log.d(TAG, "shown id=${event.id} title=${event.title}")
         } catch (se: SecurityException) {
             Log.e(TAG, "SecurityException (POST_NOTIFICATIONS)", se)

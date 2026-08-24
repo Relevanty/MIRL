@@ -25,6 +25,7 @@ import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.domain.model.SleepPlan
 import com.personal.sleepalarm.domain.model.SleepPlanWarning
 import com.personal.sleepalarm.service.SleepForegroundService
+import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
 import com.personal.sleepalarm.util.ProfileJsonCodec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -68,6 +69,7 @@ class SettingsViewModel(
     // === ДОБАВЛЕНО: прослушивание мелодии ===
     private var previewPlayer: MediaPlayer? = null
     private var previewJob: Job? = null
+    private var notificationPreviewJob: Job? = null
 
     private val _isPreviewPlaying = MutableStateFlow(false)
     val isPreviewPlaying: StateFlow<Boolean> = _isPreviewPlaying
@@ -267,6 +269,7 @@ class SettingsViewModel(
     }
 
     override fun onCleared() {
+        notificationPreviewJob?.cancel()
         stopPreview()
         super.onCleared()
     }
@@ -294,6 +297,22 @@ class SettingsViewModel(
     fun setFirstCueDelay(value: Int) = updateProfile { it.copy(firstCueDelayMinutes = value) }
     fun setCueInterval(value: Int) = updateProfile { it.copy(cueIntervalMinutes = value) }
     fun setCueVolume(value: Int) = updateProfile { it.copy(cueVolumePercent = value) }
+
+    fun setNotificationVolume(value: Int) = updateProfile {
+        it.copy(notificationVolumePercent = value.coerceIn(0, 100))
+    }
+
+    fun previewAppNotificationSound() {
+        if (notificationPreviewJob?.isActive == true) return
+        stopPreview()
+        notificationPreviewJob = viewModelScope.launch {
+            val played = AppNotificationSoundPlayer.play(context)
+            if (!played) {
+                _message.value = context.getString(R.string.notification_sound_preview_failed)
+            }
+            notificationPreviewJob = null
+        }
+    }
 
     // ДОБАВЛЕНО (F7): режим расписания + смещение в REM-окне.
     fun setCueScheduleMode(mode: CueScheduleMode) =
