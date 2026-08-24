@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.media.RingtoneManager
 import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.AndroidViewModel
@@ -20,6 +19,7 @@ import com.personal.sleepalarm.data.db.entity.SubjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.calculator.ActivityDayBoundary
+import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
 import com.personal.sleepalarm.ui.MainActivity
 import java.time.Instant
 import java.time.LocalTime
@@ -156,10 +156,12 @@ class PomodoroViewModel(
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             POMODORO_CHANNEL,
-            "Pomodoro Timer",
+            context.getString(R.string.pomodoro_notification_channel_name),
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Notifications for Pomodoro timer"
+            description = context.getString(R.string.pomodoro_notification_channel_description)
+            setSound(null, null)
+            enableVibration(true)
         }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)
@@ -183,19 +185,24 @@ class PomodoroViewModel(
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val soundUri = _notificationSoundUri.value
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val notification = NotificationCompat.Builder(context, POMODORO_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(text)
-            .setSound(soundUri)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         runCatching { manager.notify(System.currentTimeMillis().toInt(), notification) }
+            .onSuccess {
+                viewModelScope.launch {
+                    AppNotificationSoundPlayer.play(
+                        context = context,
+                        soundUri = _notificationSoundUri.value
+                    )
+                }
+            }
     }
 
     fun start(itemId: Int, itemName: String) {
@@ -401,7 +408,7 @@ class PomodoroViewModel(
         const val MIN_BREAK_MINUTES = 1L
         const val MAX_BREAK_MINUTES = 30L
         private const val MINUTE_MS = 60L * 1000L
-        private const val POMODORO_CHANNEL = "pomodoro_channel"
+        private const val POMODORO_CHANNEL = "pomodoro_channel_app_volume_v2"
 
         fun calculateActivityDayRange(nowMillis: Long): Pair<Long, Long> {
             return ActivityDayBoundary.currentBounds(nowMillis, ZoneId.systemDefault())

@@ -99,6 +99,7 @@ class SleepProfileRepository(
             cueVolumePercent = CueScheduleCalculator.normalizeCueVolume(
                 profile.cueVolumePercent
             ),
+            notificationVolumePercent = profile.notificationVolumePercent.coerceIn(0, 100),
 
             // === ДОБАВЛЕНО: F7 — нормализация remCueOffsetPercent ===
             remCueOffsetPercent = profile.remCueOffsetPercent.coerceIn(10, 90),

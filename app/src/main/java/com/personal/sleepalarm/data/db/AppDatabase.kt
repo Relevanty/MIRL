@@ -48,7 +48,7 @@ import com.personal.sleepalarm.data.db.entity.SubjectEntity
 /**
  * Главная база приложения.
  *
- * Версия 10:
+ * Версия 11:
  *  - tasks: задачи и утренняя рутина со стриками
  *  - reminders: напоминания с повторами (ONCE/DAILY/WEEKLY/INTERVAL)
  *  - mood_entries: настроение (одна запись в день)
@@ -90,7 +90,7 @@ import com.personal.sleepalarm.data.db.entity.SubjectEntity
         EnergySampleEntity::class
 
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -150,7 +150,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_6_7,
                     MIGRATION_7_8,
                     MIGRATION_8_9,
-                    MIGRATION_9_10
+                    MIGRATION_9_10,
+                    MIGRATION_10_11
                 )
                 .build()
         }
@@ -459,6 +460,15 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE focus_protocol_sessions " +
                         "ADD COLUMN totalFocusMillis INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE alarm_profiles " +
+                        "ADD COLUMN notificationVolumePercent INTEGER NOT NULL DEFAULT 50"
                 )
             }
         }

@@ -58,6 +58,10 @@ data class AlarmProfileEntity(
     val cueIntervalMinutes: Int = 30,
     val cueVolumePercent: Int = 10,
 
+    // Громкость коротких сигналов приложения: Pomodoro, фокус,
+    // напоминания и календарь. Воспроизводятся через USAGE_ALARM.
+    val notificationVolumePercent: Int = 50,
+
     // === Будильник ===
     val mathDifficulty: MathDifficulty = MathDifficulty.MEDIUM,
     val quietAlarmEnabled: Boolean = false,

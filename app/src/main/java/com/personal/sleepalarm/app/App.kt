@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.app
 
 import android.app.Application
+import android.app.NotificationManager
 import android.content.Context
 import com.personal.sleepalarm.di.ServiceLocator
 import com.personal.sleepalarm.service.SleepNotificationBuilder
@@ -33,6 +34,8 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        deleteReplacedNotificationChannels()
+
         // Каналы уведомлений должны существовать до первого startForeground.
         SleepNotificationBuilder(this).createNotificationChannels()
 
@@ -41,5 +44,20 @@ class App : Application() {
         applicationScope.launch {
             serviceLocator.profileRepository.ensureProfileExists()
         }
+    }
+
+    /** Убирает системные дубликаты каналов, заменённых в версии 1.2.1. */
+    private fun deleteReplacedNotificationChannels() {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        REPLACED_NOTIFICATION_CHANNELS.forEach(notificationManager::deleteNotificationChannel)
+    }
+
+    private companion object {
+        val REPLACED_NOTIFICATION_CHANNELS = listOf(
+            "pomodoro_channel",
+            "focus_protocol_channel",
+            "reminder_fire_channel",
+            "calendar_event_channel"
+        )
     }
 }

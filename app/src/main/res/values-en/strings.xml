@@ -80,6 +80,10 @@
     <string name="settings_category_cues_summary">Sound, schedule and volume of night cues</string>
     <string name="settings_category_alarm">Wake-up</string>
     <string name="settings_category_alarm_summary">Alarm sound, vibration, challenge and repeats</string>
+    <string name="settings_category_signals">App signals</string>
+    <string name="settings_category_signals_summary">Volume for Pomodoro, focus, reminders and calendar</string>
+    <string name="pomodoro_notification_channel_name">Pomodoro timer</string>
+    <string name="pomodoro_notification_channel_description">Focus and break completion signals</string>
     <string name="settings_category_automation">Sleep automation</string>
     <string name="settings_category_automation_summary">Sleep-onset detection and wake-up adjustment</string>
     <string name="settings_category_appearance">Appearance and language</string>
@@ -130,6 +134,10 @@
     <string name="setting_cues_preview">Cues with current settings: %1$d</string>
     <string name="action_cues_help">How it works and when to play a cue</string>
     <string name="section_alarm">Alarm</string>
+    <string name="section_notification_sounds">Notification sounds</string>
+    <string name="setting_notification_volume">App signal volume</string>
+    <string name="setting_notification_volume_hint" formatted="false">Independent of the system notification volume. Final loudness is limited by the Android alarm volume. At 0%, signals stay silent.</string>
+    <string name="action_test_notification_sound">Test sound</string>
     <string name="setting_math_difficulty">Challenge difficulty</string>
     <string name="math_difficulty_easy">Easy</string>
     <string name="math_difficulty_medium">Medium</string>
@@ -141,6 +149,7 @@
     <string name="action_pick_ringtone">Choose sound</string>
     <string name="ringtone_picker_title">Alarm sound</string>
     <string name="sound_file_unavailable">The sound file is unavailable. Choose another file.</string>
+    <string name="notification_sound_preview_failed">Could not play the system notification sound.</string>
     <string name="sound_permission_error">Could not retain access to the file. Choose the sound through the system file picker.</string>
     <string name="setting_smart_repeat_enabled">Repeat until I wake up</string>
     <string name="setting_smart_repeat_first">First repeat after</string>
