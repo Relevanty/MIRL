@@ -4,6 +4,8 @@ import android.app.Application
 import android.app.NotificationManager
 import android.content.Context
 import com.personal.sleepalarm.di.ServiceLocator
+import com.personal.sleepalarm.service.EventNotificationBuilder
+import com.personal.sleepalarm.service.ReminderNotificationBuilder
 import com.personal.sleepalarm.service.SleepNotificationBuilder
 import com.personal.sleepalarm.util.AppLanguageManager
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +40,11 @@ class App : Application() {
 
         // Каналы уведомлений должны существовать до первого startForeground.
         SleepNotificationBuilder(this).createNotificationChannels()
+
+        // Заменённые каналы должны появиться в системных настройках сразу,
+        // а не только после первого срабатывания события или напоминания.
+        EventNotificationBuilder(this)
+        ReminderNotificationBuilder(this)
 
         // Создаём строку профиля по умолчанию,
         // чтобы главный экран сразу показывал валидные настройки.
