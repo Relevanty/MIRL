@@ -16,6 +16,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.personal.sleepalarm.data.db.dao.AlarmProfileDao
 import com.personal.sleepalarm.data.db.dao.CueEventDao
 import com.personal.sleepalarm.data.db.dao.DDayDao
+import com.personal.sleepalarm.data.db.dao.EnergySampleDao
+import com.personal.sleepalarm.data.db.dao.FocusProtocolDao
 import com.personal.sleepalarm.data.db.dao.LibraryDao
 import com.personal.sleepalarm.data.db.dao.MoodEntryDao
 import com.personal.sleepalarm.data.db.dao.PomodoroDao
@@ -27,6 +29,8 @@ import com.personal.sleepalarm.data.db.dao.TaskDao
 import com.personal.sleepalarm.data.db.entity.AlarmProfileEntity
 import com.personal.sleepalarm.data.db.entity.CueEventEntity
 import com.personal.sleepalarm.data.db.entity.DDayEntity
+import com.personal.sleepalarm.data.db.entity.EnergySampleEntity
+import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemTagCrossRef
 import com.personal.sleepalarm.data.db.entity.LibraryTagEntity
@@ -44,11 +48,12 @@ import com.personal.sleepalarm.data.db.entity.SubjectEntity
 /**
  * Главная база приложения.
  *
- * Версия 5 (ДОБАВЛЕНО):
+ * Версия 10:
  *  - tasks: задачи и утренняя рутина со стриками
  *  - reminders: напоминания с повторами (ONCE/DAILY/WEEKLY/INTERVAL)
  *  - mood_entries: настроение (одна запись в день)
  *  - dday_events: обратные отсчёты до событий
+ *  - focus_protocol_sessions и energy_samples: устойчивый протокол фокуса
  *
  * Старые таблицы (v1-v4) не изменяются — данные пользователя в безопасности.
  */
@@ -78,10 +83,14 @@ import com.personal.sleepalarm.data.db.entity.SubjectEntity
         DiaryEntryEntity::class,
 
         // ДОБАВЛЕНО (v8): дела для категории «Другое» в помодоро.
-        OtherActivityEntity::class
+        OtherActivityEntity::class,
+
+        // ДОБАВЛЕНО (v9): устойчивый протокол фокуса и замеры энергии.
+        FocusProtocolSessionEntity::class,
+        EnergySampleEntity::class
 
     ],
-    version = 8,
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -94,6 +103,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun scheduleDao(): ScheduleDao
     abstract fun pomodoroDao(): PomodoroDao
     abstract fun otherActivityDao(): OtherActivityDao
+    abstract fun focusProtocolDao(): FocusProtocolDao
+    abstract fun energySampleDao(): EnergySampleDao
     abstract fun libraryDao(): LibraryDao
 
     // ДОБАВЛЕНО (v5):
@@ -137,7 +148,9 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
-                    MIGRATION_7_8
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10
                 )
                 .build()
         }
@@ -374,6 +387,78 @@ abstract class AppDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS other_activities (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
                         "name TEXT NOT NULL, color INTEGER NOT NULL, createdAt INTEGER NOT NULL)"
+                )
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `focus_protocol_sessions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `activityType` TEXT NOT NULL,
+                        `itemId` INTEGER NOT NULL,
+                        `itemName` TEXT NOT NULL,
+                        `outcome` TEXT NOT NULL,
+                        `phase` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `phaseStartedAt` INTEGER NOT NULL,
+                        `phaseEndsAt` INTEGER,
+                        `resetDurationMinutes` INTEGER NOT NULL,
+                        `focusDurationMinutes` INTEGER NOT NULL,
+                        `recoveryDurationMinutes` INTEGER NOT NULL,
+                        `energyBefore` INTEGER NOT NULL,
+                        `energyAfter` INTEGER,
+                        `distractionCount` INTEGER NOT NULL,
+                        `focusStartedAt` INTEGER,
+                        `focusElapsedMillis` INTEGER NOT NULL,
+                        `pausedRemainingMillis` INTEGER NOT NULL,
+                        `completedAt` INTEGER,
+                        `cancelReason` TEXT,
+                        `pomodoroRecorded` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_focus_protocol_sessions_phase` " +
+                        "ON `focus_protocol_sessions` (`phase`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_focus_protocol_sessions_createdAt` " +
+                        "ON `focus_protocol_sessions` (`createdAt`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `energy_samples` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        `energy` INTEGER NOT NULL,
+                        `context` TEXT NOT NULL,
+                        `protocolSessionId` INTEGER
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_energy_samples_timestamp` " +
+                        "ON `energy_samples` (`timestamp`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_energy_samples_protocolSessionId` " +
+                        "ON `energy_samples` (`protocolSessionId`)"
+                )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE focus_protocol_sessions " +
+                        "ADD COLUMN completedCycles INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE focus_protocol_sessions " +
+                        "ADD COLUMN totalFocusMillis INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

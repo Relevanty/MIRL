@@ -143,6 +143,12 @@ class PomodoroViewModel(
         _selectedItemId.value = selectedIds[type]
     }
 
+    fun selectItem(id: Int) {
+        if (_mode.value != TimerMode.IDLE) return
+        selectedIds[_activityType.value] = id
+        _selectedItemId.value = id
+    }
+
     fun setResetAfterBreak(value: Boolean) {
         _resetAfterBreak.value = value
     }

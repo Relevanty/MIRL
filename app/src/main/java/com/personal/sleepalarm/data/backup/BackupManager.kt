@@ -8,6 +8,8 @@ import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.*
 import com.personal.sleepalarm.util.ProfileJsonCodec
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.FocusProtocolPhase
+import com.personal.sleepalarm.service.focus.FocusProtocolManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -18,7 +20,7 @@ import java.io.InputStreamReader
  *
  * Структура:
  * {
- *   "version": 1,
+ *   "version": 4,
  *   "exportedAt": "...",
  *   "alarmProfile": {...},
  *   "schedule": {...},
@@ -41,7 +43,7 @@ class BackupManager(private val context: Context) {
 
     companion object {
         private const val TAG = "BackupManager"
-        private const val BACKUP_VERSION = 2
+        private const val BACKUP_VERSION = 4
     }
 
     private val db: AppDatabase = AppDatabase.getInstance(context)
@@ -73,6 +75,12 @@ class BackupManager(private val context: Context) {
             })
             put("pomodoroSessions", JSONArray().apply {
                 db.pomodoroDao().getAll().forEach { put(pomodoroSessionToJson(it)) }
+            })
+            put("focusProtocolSessions", JSONArray().apply {
+                db.focusProtocolDao().getAll().forEach { put(focusProtocolToJson(it)) }
+            })
+            put("energySamples", JSONArray().apply {
+                db.energySampleDao().getAll().forEach { put(energySampleToJson(it)) }
             })
             put("otherActivities", JSONArray().apply {
                 db.otherActivityDao().getAll().forEach { put(otherActivityToJson(it)) }
@@ -153,6 +161,8 @@ class BackupManager(private val context: Context) {
             db.reminderDao().deleteAll()
             db.studySessionDao().deleteAll()
             db.subjectDao().deleteAll()
+            db.energySampleDao().deleteAll()
+            db.focusProtocolDao().deleteAll()
             db.pomodoroDao().deleteAll()
             db.otherActivityDao().deleteAll()
             db.calendarEventDao().deleteAll()
@@ -198,6 +208,20 @@ class BackupManager(private val context: Context) {
                     pomodoroSessionFromJson(arr.getJSONObject(it))
                 }
                 if (list.isNotEmpty()) db.pomodoroDao().insertAll(list)
+            }
+
+            root.optJSONArray("focusProtocolSessions")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    focusProtocolFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.focusProtocolDao().insertAll(list)
+            }
+
+            root.optJSONArray("energySamples")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    energySampleFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.energySampleDao().insertAll(list)
             }
 
             root.optJSONArray("otherActivities")?.let { arr ->
@@ -271,6 +295,7 @@ class BackupManager(private val context: Context) {
             }
         }
 
+        FocusProtocolManager(context).reconcileActiveSessions()
         Log.d(TAG, "Импорт завершён успешно")
     }
 
@@ -325,6 +350,32 @@ class BackupManager(private val context: Context) {
         put("subjectId", s.subjectId ?: JSONObject.NULL); put("taskId", s.taskId ?: JSONObject.NULL)
         put("otherActivityId", s.otherActivityId ?: JSONObject.NULL); put("itemName", s.itemName)
         put("actualDurationMillis", s.actualDurationMillis)
+    }
+
+    private fun focusProtocolToJson(s: FocusProtocolSessionEntity) = JSONObject().apply {
+        put("id", s.id); put("activityType", s.activityType.name); put("itemId", s.itemId)
+        put("itemName", s.itemName); put("outcome", s.outcome); put("phase", s.phase.name)
+        put("createdAt", s.createdAt); put("phaseStartedAt", s.phaseStartedAt)
+        put("phaseEndsAt", s.phaseEndsAt ?: JSONObject.NULL)
+        put("resetDurationMinutes", s.resetDurationMinutes)
+        put("focusDurationMinutes", s.focusDurationMinutes)
+        put("recoveryDurationMinutes", s.recoveryDurationMinutes)
+        put("energyBefore", s.energyBefore); put("energyAfter", s.energyAfter ?: JSONObject.NULL)
+        put("distractionCount", s.distractionCount)
+        put("focusStartedAt", s.focusStartedAt ?: JSONObject.NULL)
+        put("focusElapsedMillis", s.focusElapsedMillis)
+        put("pausedRemainingMillis", s.pausedRemainingMillis)
+        put("completedAt", s.completedAt ?: JSONObject.NULL)
+        put("cancelReason", s.cancelReason ?: JSONObject.NULL)
+        put("pomodoroRecorded", s.pomodoroRecorded)
+        put("completedCycles", s.completedCycles)
+        put("totalFocusMillis", s.totalFocusMillis)
+    }
+
+    private fun energySampleToJson(s: EnergySampleEntity) = JSONObject().apply {
+        put("id", s.id); put("timestamp", s.timestamp); put("energy", s.energy)
+        put("context", s.context)
+        put("protocolSessionId", s.protocolSessionId ?: JSONObject.NULL)
     }
 
     private fun otherActivityToJson(a: OtherActivityEntity) = JSONObject().apply {
@@ -473,6 +524,58 @@ class BackupManager(private val context: Context) {
         )
     } catch (e: Exception) {
         Log.e(TAG, "Ошибка парсинга pomodoro-сессии", e); null
+    }
+
+    private fun focusProtocolFromJson(o: JSONObject): FocusProtocolSessionEntity? = try {
+        FocusProtocolSessionEntity(
+            id = o.optInt("id", 0),
+            activityType = enumValueOrDefault(
+                o.optString("activityType"),
+                FocusActivityType.OTHER
+            ),
+            itemId = o.optInt("itemId", 0),
+            itemName = o.optString("itemName", ""),
+            outcome = o.optString("outcome", ""),
+            phase = enumValueOrDefault(
+                o.optString("phase"),
+                FocusProtocolPhase.CANCELLED
+            ),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+            phaseStartedAt = o.optLong("phaseStartedAt", System.currentTimeMillis()),
+            phaseEndsAt = if (o.isNull("phaseEndsAt")) null else o.optLong("phaseEndsAt"),
+            resetDurationMinutes = o.optInt("resetDurationMinutes", 10),
+            focusDurationMinutes = o.optInt("focusDurationMinutes", 25),
+            recoveryDurationMinutes = o.optInt("recoveryDurationMinutes", 5),
+            energyBefore = o.optInt("energyBefore", 5).coerceIn(1, 10),
+            energyAfter = if (o.isNull("energyAfter")) null else o.optInt("energyAfter").coerceIn(1, 10),
+            distractionCount = o.optInt("distractionCount", 0),
+            focusStartedAt = if (o.isNull("focusStartedAt")) null else o.optLong("focusStartedAt"),
+            focusElapsedMillis = o.optLong("focusElapsedMillis", 0L),
+            pausedRemainingMillis = o.optLong("pausedRemainingMillis", 0L),
+            completedAt = if (o.isNull("completedAt")) null else o.optLong("completedAt"),
+            cancelReason = if (o.isNull("cancelReason")) null else o.optString("cancelReason"),
+            pomodoroRecorded = o.optBoolean("pomodoroRecorded", false),
+            completedCycles = o.optInt("completedCycles", 0),
+            totalFocusMillis = o.optLong("totalFocusMillis", 0L)
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга протокола фокуса", e); null
+    }
+
+    private fun energySampleFromJson(o: JSONObject): EnergySampleEntity? = try {
+        EnergySampleEntity(
+            id = o.optInt("id", 0),
+            timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+            energy = o.optInt("energy", 5).coerceIn(1, 10),
+            context = o.optString("context", "BEFORE_FOCUS"),
+            protocolSessionId = if (o.isNull("protocolSessionId")) {
+                null
+            } else {
+                o.optInt("protocolSessionId")
+            }
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга энергии", e); null
     }
 
     private fun otherActivityFromJson(o: JSONObject): OtherActivityEntity? = try {

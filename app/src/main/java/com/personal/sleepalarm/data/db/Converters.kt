@@ -8,6 +8,7 @@ import com.personal.sleepalarm.domain.model.CueType
 import com.personal.sleepalarm.domain.model.DismissType
 import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.FocusProtocolPhase
 import com.personal.sleepalarm.data.db.entity.LibraryItemType
 import com.personal.sleepalarm.data.db.entity.RepeatMode
 
@@ -18,6 +19,14 @@ import com.personal.sleepalarm.data.db.entity.RepeatMode
  * ThemeMode НЕ конвертируется — он хранится в DataStore, не в Room.
  */
 class Converters {
+
+    @TypeConverter
+    fun fromFocusProtocolPhase(value: FocusProtocolPhase): String = value.name
+
+    @TypeConverter
+    fun toFocusProtocolPhase(value: String): FocusProtocolPhase =
+        runCatching { FocusProtocolPhase.valueOf(value) }
+            .getOrDefault(FocusProtocolPhase.CANCELLED)
 
     @TypeConverter
     fun fromFocusActivityType(value: FocusActivityType): String = value.name

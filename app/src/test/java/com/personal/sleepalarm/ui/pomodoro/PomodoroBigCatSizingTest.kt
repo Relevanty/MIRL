@@ -81,4 +81,20 @@ class PomodoroBigCatSizingTest {
         assertEquals(7, normalizedShort.lines().first { '.' in it }.indexOf('.'))
         assertEquals(7, normalizedWide.lines().first { '.' in it }.indexOf('.'))
     }
+
+    @Test
+    fun `new focus cat frames keep one stable wide canvas`() {
+        val shortFrame = " /\\_/\\\n( -.- )"
+        val laptopFrame = " /\\_/\\   ___\n( o.o )  /__/\n /| |\\_/ /"
+
+        val short = stableCatFrame(shortFrame)
+        val laptop = stableCatFrame(laptopFrame)
+
+        assertEquals(6, short.lines().size)
+        assertEquals(6, laptop.lines().size)
+        assertTrue(short.lines().all { it.length == 23 })
+        assertTrue(laptop.lines().all { it.length == 23 })
+        assertEquals(10, short.lines().first { '.' in it }.indexOf('.'))
+        assertEquals(10, laptop.lines().first { '.' in it }.indexOf('.'))
+    }
 }
