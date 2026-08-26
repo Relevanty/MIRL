@@ -150,6 +150,22 @@ object LauncherIconCatalog {
     fun forTheme(themeId: String, isDark: Boolean): LauncherIconSpec {
         val id = themeId.lowercase()
         val matched = when {
+            id.startsWith("pure_black_") || id.startsWith("carbon_") -> "amoled"
+            id.startsWith("black_cherry_") -> "amethyst_facet"
+            id.startsWith("cedar_") || id.startsWith("fern_") || id.startsWith("moss_rain_") -> "forest"
+            id.startsWith("abyss_") || id.startsWith("tidal_") -> "ocean"
+            id.startsWith("quasar_") || id.startsWith("pulsar_") -> "nebula"
+            id.startsWith("lunar_dust_") -> "noir"
+            id.startsWith("ultraviolet_") -> "ultraviolet_plasma"
+            id.startsWith("laser_cyan_") -> "electric_blue"
+            id.startsWith("toxic_lime_") -> "matrix_terminal"
+            id.startsWith("gunmetal_") -> "engineering_exploded"
+            id.startsWith("copper_foundry_") -> "copper_engraving"
+            id.startsWith("crt_green_") || id.startsWith("amber_console_") -> "matrix_terminal"
+            id.startsWith("velvet_wine_") -> "satin_embroidery"
+            id.startsWith("royal_ink_") -> "celestial_gold"
+            id.startsWith("cobalt_code_") -> "architectural_blueprint"
+            id.startsWith("terminal_blue_") -> "electric_blue"
             id == "amoled" || id == "black_hole" -> "amoled"
             id in setOf("matrix", "phosphor", "amber_terminal", "hacker", "netrunner") -> "matrix_terminal"
             id.contains("pixel") || id.contains("8bit") || id.contains("16bit") -> "pixel_cozy"

@@ -42,6 +42,15 @@ class LauncherIconCatalogTest {
         assertEquals("pixel_cozy", LauncherIconCatalog.forTheme("pixel_night", true).id)
         assertEquals("holographic_glass", LauncherIconCatalog.forTheme("iridescent", false).id)
         assertEquals("ice_engraved", LauncherIconCatalog.forTheme("glacier", false).id)
+        assertEquals("amoled", LauncherIconCatalog.forTheme("pure_black_depth", true).id)
+        assertEquals("forest", LauncherIconCatalog.forTheme("moss_rain_velvet", true).id)
+        assertEquals("ocean", LauncherIconCatalog.forTheme("abyss_glow", true).id)
+        assertEquals("nebula", LauncherIconCatalog.forTheme("quasar_dusk", true).id)
+        assertEquals("ultraviolet_plasma", LauncherIconCatalog.forTheme("ultraviolet_original", true).id)
+        assertEquals("matrix_terminal", LauncherIconCatalog.forTheme("crt_green_depth", true).id)
+        assertEquals("copper_engraving", LauncherIconCatalog.forTheme("copper_foundry_glow", true).id)
+        assertEquals("celestial_gold", LauncherIconCatalog.forTheme("royal_ink_velvet", true).id)
+        assertEquals("architectural_blueprint", LauncherIconCatalog.forTheme("cobalt_code_dusk", true).id)
         assertNotEquals(
             LauncherIconCatalog.forTheme("unknown_dark", true).id,
             LauncherIconCatalog.forTheme("unknown_light", false).id

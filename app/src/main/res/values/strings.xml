@@ -563,10 +563,61 @@
     <!-- ТЕМЫ ОФОРМЛЕНИЯ                                                    -->
     <!-- Выбор цветовой схемы                                               -->
     <!-- ================================================================== -->
-    <!-- === Часть 9: Темы (140 пресетов) === -->
+    <!-- === Часть 9: Темы (200 тёмных + 55 светлых пресетов) === -->
     <string name="themes_title">Темы</string>
     <string name="themes_tab_day">День</string>
-    <string name="themes_tab_night">Ночь</string>
+    <string name="themes_tab_night">Тёмные</string>
+    <string name="themes_tab_with_count">%1$s · %2$d</string>
+    <string name="themes_search">Найти тему</string>
+    <string name="themes_clear_search">Очистить поиск</string>
+    <string name="themes_filter_all">Все</string>
+    <string name="themes_filter_with_count">%1$s · %2$d</string>
+    <string name="themes_empty">Тем по этому запросу не найдено</string>
+    <string name="themes_selected">Выбрано</string>
+    <string name="theme_compound_name">%1$s · %2$s</string>
+
+    <string name="theme_category_basic">Базовые</string>
+    <string name="theme_category_amoled">AMOLED и чёрные</string>
+    <string name="theme_category_nature">Природа</string>
+    <string name="theme_category_ocean">Океан и лёд</string>
+    <string name="theme_category_space">Космос</string>
+    <string name="theme_category_neon">Неон и киберпанк</string>
+    <string name="theme_category_industrial">Индастриал</string>
+    <string name="theme_category_retro">Ретро и терминалы</string>
+    <string name="theme_category_elegant">Тёмная эстетика</string>
+    <string name="theme_category_system">Системные</string>
+    <string name="theme_category_paper">Бумага и ретро</string>
+    <string name="theme_category_pastel">Пастельные</string>
+
+    <string name="theme_variant_original">Основа</string>
+    <string name="theme_variant_depth">Глубина</string>
+    <string name="theme_variant_velvet">Бархат</string>
+    <string name="theme_variant_glow">Свечение</string>
+    <string name="theme_variant_dusk">Сумерки</string>
+
+    <string name="theme_family_pure_black">Чистый чёрный</string>
+    <string name="theme_family_carbon">Карбон</string>
+    <string name="theme_family_black_cherry">Чёрная вишня</string>
+    <string name="theme_family_cedar">Кедр</string>
+    <string name="theme_family_fern">Папоротник</string>
+    <string name="theme_family_moss_rain">Мох под дождём</string>
+    <string name="theme_family_abyss">Бездна</string>
+    <string name="theme_family_glacier">Ледник</string>
+    <string name="theme_family_tidal">Прилив</string>
+    <string name="theme_family_quasar">Квазар</string>
+    <string name="theme_family_pulsar">Пульсар</string>
+    <string name="theme_family_lunar_dust">Лунная пыль</string>
+    <string name="theme_family_ultraviolet">Ультрафиолет</string>
+    <string name="theme_family_laser_cyan">Лазерный циан</string>
+    <string name="theme_family_toxic_lime">Кислотный лайм</string>
+    <string name="theme_family_gunmetal">Оружейная сталь</string>
+    <string name="theme_family_copper_foundry">Медный цех</string>
+    <string name="theme_family_crt_green">Зелёный CRT</string>
+    <string name="theme_family_amber_console">Янтарная консоль</string>
+    <string name="theme_family_velvet_wine">Винный бархат</string>
+    <string name="theme_family_royal_ink">Королевские чернила</string>
+    <string name="theme_family_cobalt_code">Кобальтовый код</string>
+    <string name="theme_family_terminal_blue">Терминальный синий</string>
 
     <!-- Базовые -->
     <string name="theme_night">Ночная</string>
