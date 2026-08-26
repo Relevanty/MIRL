@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +23,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -60,6 +63,9 @@ fun DDayScreen(
     var day by remember { mutableStateOf("") }
     var month by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var selectedProjectId by remember { mutableStateOf<Int?>(null) }
+    var selectedTaskId by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf(false) }
 
     Column(
@@ -161,6 +167,51 @@ fun DDayScreen(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Связать с планом",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedProjectId == null && selectedTaskId == null,
+                        onClick = { selectedProjectId = null; selectedTaskId = null },
+                        label = { Text("Без связи") }
+                    )
+                    state.projects.forEach { project ->
+                        FilterChip(
+                            selected = selectedProjectId == project.id,
+                            onClick = { selectedProjectId = project.id; selectedTaskId = null },
+                            label = { Text("Проект: ${project.title}", maxLines = 1) }
+                        )
+                    }
+                    state.tasks.forEach { task ->
+                        FilterChip(
+                            selected = selectedTaskId == task.id,
+                            onClick = { selectedTaskId = task.id; selectedProjectId = null },
+                            label = { Text("Задача: ${task.title}", maxLines = 1) }
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Что должно быть готово к этой дате") },
+                    minLines = 2,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent
+                    )
+                )
+
                 if (error) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -179,8 +230,15 @@ fun DDayScreen(
                             error = true
                         } else {
                             error = false
-                            if (viewModel.addEvent(title, date)) {
-                                title = ""; day = ""; month = ""; year = ""
+                            if (viewModel.addEvent(
+                                    title = title,
+                                    targetDate = date,
+                                    projectId = selectedProjectId,
+                                    taskId = selectedTaskId,
+                                    notes = notes
+                                )) {
+                                title = ""; day = ""; month = ""; year = ""; notes = ""
+                                selectedProjectId = null; selectedTaskId = null
                             }
                         }
                     },
@@ -234,6 +292,7 @@ fun DDayScreen(
                     DDayRow(
                         event = event,
                         days = viewModel.daysUntil(event),
+                        plan = state.plans[event.id],
                         onDelete = { viewModel.deleteEvent(event.id) }
                     )
                 }
@@ -246,17 +305,18 @@ fun DDayScreen(
 private fun DDayRow(
     event: DDayEntity,
     days: Int,
+    plan: DDayPlanInfo?,
     onDelete: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
             .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = event.title,
                 style = MaterialTheme.typography.titleMedium,
@@ -267,31 +327,65 @@ private fun DDayRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-
-        Text(
-            text = if (days < 0) {
-                stringResource(R.string.dday_passed)
-            } else if (days == 0) {
-                stringResource(R.string.dday_today)
-            } else {
-                stringResource(R.string.dday_days_left, days)
-            },
-            style = MaterialTheme.typography.titleMedium,
-            color = if (days in 0..30) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+                if (event.notes.isNotBlank()) {
+                    Text(
+                        text = event.notes,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                }
             }
-        )
 
-        Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (days < 0) {
+                    stringResource(R.string.dday_passed)
+                } else if (days == 0) {
+                    stringResource(R.string.dday_today)
+                } else {
+                    stringResource(R.string.dday_days_left, days)
+                },
+                style = MaterialTheme.typography.titleMedium,
+                color = if (days in 0..30) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
 
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = stringResource(R.string.dday_delete),
-                tint = MaterialTheme.colorScheme.error
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = stringResource(R.string.dday_delete),
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+        if (plan != null) {
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { plan.readinessPercent / 100f },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = buildString {
+                    append(plan.linkedTitle)
+                    append(" · готовность ${plan.readinessPercent}%")
+                    if (plan.remainingMinutes > 0) {
+                        append(" · осталось ${plan.remainingMinutes / 60} ч ${plan.remainingMinutes % 60} мин")
+                        append(" · по ${plan.minutesPerDay} мин/день")
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (plan.isOnTrack) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error
+            )
+            Text(
+                text = if (plan.isOnTrack) "Темп достаточный" else "Нужно увеличить темп",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (plan.isOnTrack) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error
             )
         }
     }

@@ -32,7 +32,7 @@ import org.json.JSONObject
 object ProfileJsonCodec {
 
     /** Версия формата JSON. Задел на будущие миграции формата. */
-    const val SCHEMA_VERSION = 2
+    const val SCHEMA_VERSION = 3
 
     private const val KEY_SCHEMA = "schema_version"
 
@@ -60,6 +60,8 @@ object ProfileJsonCodec {
     private const val K_REM_OFFSET = "remCueOffsetPercent"
     private const val K_AUTO_DETECT = "autoDetectOnsetEnabled"
     private const val K_AUTO_CORRECT = "autoCorrectWakeEnabled"
+    private const val K_AUTO_CORRECT_CONFIDENCE = "autoCorrectMinConfidencePercent"
+    private const val K_AUTO_CORRECT_SHIFT = "autoCorrectMaxShiftMinutes"
     private const val K_SMART_ENABLED = "smartRepeatEnabled"
     private const val K_SMART_FIRST = "smartRepeatFirstDelayMinutes"
     private const val K_SMART_INTERVAL = "smartRepeatIntervalMinutes"
@@ -99,6 +101,8 @@ object ProfileJsonCodec {
         json.put(K_REM_OFFSET, profile.remCueOffsetPercent)
         json.put(K_AUTO_DETECT, profile.autoDetectOnsetEnabled)
         json.put(K_AUTO_CORRECT, profile.autoCorrectWakeEnabled)
+        json.put(K_AUTO_CORRECT_CONFIDENCE, profile.autoCorrectMinConfidencePercent)
+        json.put(K_AUTO_CORRECT_SHIFT, profile.autoCorrectMaxShiftMinutes)
         json.put(K_SMART_ENABLED, profile.smartRepeatEnabled)
         json.put(K_SMART_FIRST, profile.smartRepeatFirstDelayMinutes)
         json.put(K_SMART_INTERVAL, profile.smartRepeatIntervalMinutes)
@@ -165,6 +169,14 @@ object ProfileJsonCodec {
                 remCueOffsetPercent = obj.optInt(K_REM_OFFSET, defaults.remCueOffsetPercent),
                 autoDetectOnsetEnabled = obj.optBoolean(K_AUTO_DETECT, defaults.autoDetectOnsetEnabled),
                 autoCorrectWakeEnabled = obj.optBoolean(K_AUTO_CORRECT, defaults.autoCorrectWakeEnabled),
+                autoCorrectMinConfidencePercent = obj.optInt(
+                    K_AUTO_CORRECT_CONFIDENCE,
+                    defaults.autoCorrectMinConfidencePercent
+                ),
+                autoCorrectMaxShiftMinutes = obj.optInt(
+                    K_AUTO_CORRECT_SHIFT,
+                    defaults.autoCorrectMaxShiftMinutes
+                ),
                 smartRepeatEnabled = obj.optBoolean(K_SMART_ENABLED, defaults.smartRepeatEnabled),
                 smartRepeatFirstDelayMinutes = obj.optInt(K_SMART_FIRST, defaults.smartRepeatFirstDelayMinutes),
                 smartRepeatIntervalMinutes = obj.optInt(K_SMART_INTERVAL, defaults.smartRepeatIntervalMinutes),
@@ -218,6 +230,8 @@ object ProfileJsonCodec {
                 profile.cueVolumePercent
             ),
             notificationVolumePercent = profile.notificationVolumePercent.coerceIn(0, 100),
+            autoCorrectMinConfidencePercent = profile.autoCorrectMinConfidencePercent.coerceIn(50, 95),
+            autoCorrectMaxShiftMinutes = profile.autoCorrectMaxShiftMinutes.coerceIn(0, 120),
             remCueOffsetPercent = profile.remCueOffsetPercent.coerceIn(10, 90),
             smartRepeatFirstDelayMinutes = profile.smartRepeatFirstDelayMinutes.coerceIn(1, 10),
             smartRepeatIntervalMinutes = profile.smartRepeatIntervalMinutes.coerceIn(1, 10),

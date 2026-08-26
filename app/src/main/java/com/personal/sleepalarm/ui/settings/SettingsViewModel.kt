@@ -391,6 +391,12 @@ class SettingsViewModel(
     fun setAutoCorrectWake(enabled: Boolean) =
         updateProfile { it.copy(autoCorrectWakeEnabled = enabled) }
 
+    fun setAutoCorrectMinConfidence(value: Int) =
+        updateProfile { it.copy(autoCorrectMinConfidencePercent = value.coerceIn(50, 95)) }
+
+    fun setAutoCorrectMaxShift(value: Int) =
+        updateProfile { it.copy(autoCorrectMaxShiftMinutes = value.coerceIn(0, 120)) }
+
     // =================================================================
     // ДОБАВЛЕНО (F3): тема (DataStore, не профиль)
     // =================================================================

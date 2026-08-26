@@ -43,7 +43,7 @@ class BackupManager(private val context: Context) {
 
     companion object {
         private const val TAG = "BackupManager"
-        private const val BACKUP_VERSION = 5
+        private const val BACKUP_VERSION = 7
     }
 
     private val db: AppDatabase = AppDatabase.getInstance(context)
@@ -90,6 +90,21 @@ class BackupManager(private val context: Context) {
             })
             put("tasks", JSONArray().apply {
                 db.taskDao().getAll().forEach { put(taskToJson(it)) }
+            })
+            put("projects", JSONArray().apply {
+                db.projectDao().getAll().forEach { put(projectToJson(it)) }
+            })
+            put("taskSubtasks", JSONArray().apply {
+                db.taskSubtaskDao().getAll().forEach { put(subtaskToJson(it)) }
+            })
+            put("taskAttachments", JSONArray().apply {
+                db.taskAttachmentDao().getAll().forEach { put(attachmentToJson(it)) }
+            })
+            put("taskLibraryLinks", JSONArray().apply {
+                db.taskLibraryLinkDao().getAll().forEach { put(taskLibraryLinkToJson(it)) }
+            })
+            put("activityRecords", JSONArray().apply {
+                db.activityRecordDao().getAll().forEach { put(activityRecordToJson(it)) }
             })
             put("reminders", JSONArray().apply {
                 db.reminderDao().getAll().forEach { put(reminderToJson(it)) }
@@ -155,6 +170,11 @@ class BackupManager(private val context: Context) {
         db.withTransaction {
             // 1. Очищаем все таблицы (сначала связи, потом основные)
             db.cueEventDao().deleteAll()
+            db.taskLibraryLinkDao().deleteAll()
+            db.taskAttachmentDao().deleteAll()
+            db.taskSubtaskDao().deleteAll()
+            db.activityRecordDao().deleteAll()
+            db.projectDao().deleteAll()
             db.libraryDao().deleteAllCrossRefs()
             db.libraryDao().deleteAllItems()
             db.libraryDao().deleteAllTags()
@@ -242,6 +262,27 @@ class BackupManager(private val context: Context) {
                 if (list.isNotEmpty()) db.taskDao().insertAll(list)
             }
 
+            root.optJSONArray("projects")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull { projectFromJson(arr.getJSONObject(it)) }
+                if (list.isNotEmpty()) db.projectDao().insertAll(list)
+            }
+            root.optJSONArray("taskSubtasks")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull { subtaskFromJson(arr.getJSONObject(it)) }
+                if (list.isNotEmpty()) db.taskSubtaskDao().insertAll(list)
+            }
+            root.optJSONArray("taskAttachments")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull { attachmentFromJson(arr.getJSONObject(it)) }
+                if (list.isNotEmpty()) db.taskAttachmentDao().insertAll(list)
+            }
+            root.optJSONArray("taskLibraryLinks")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull { taskLibraryLinkFromJson(arr.getJSONObject(it)) }
+                if (list.isNotEmpty()) db.taskLibraryLinkDao().insertAll(list)
+            }
+            root.optJSONArray("activityRecords")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull { activityRecordFromJson(arr.getJSONObject(it)) }
+                if (list.isNotEmpty()) db.activityRecordDao().insertAll(list)
+            }
+
             root.optJSONArray("reminders")?.let { arr ->
                 val list =
                     (0 until arr.length()).mapNotNull { reminderFromJson(arr.getJSONObject(it)) }
@@ -325,6 +366,8 @@ class BackupManager(private val context: Context) {
         put("remCueOffsetPercent", p.remCueOffsetPercent)
         put("autoDetectOnsetEnabled", p.autoDetectOnsetEnabled)
         put("autoCorrectWakeEnabled", p.autoCorrectWakeEnabled)
+        put("autoCorrectMinConfidencePercent", p.autoCorrectMinConfidencePercent)
+        put("autoCorrectMaxShiftMinutes", p.autoCorrectMaxShiftMinutes)
         put("smartRepeatEnabled", p.smartRepeatEnabled)
         put("smartRepeatFirstDelayMinutes", p.smartRepeatFirstDelayMinutes)
         put("smartRepeatIntervalMinutes", p.smartRepeatIntervalMinutes)
@@ -351,6 +394,7 @@ class BackupManager(private val context: Context) {
         put("subjectId", s.subjectId ?: JSONObject.NULL); put("taskId", s.taskId ?: JSONObject.NULL)
         put("otherActivityId", s.otherActivityId ?: JSONObject.NULL); put("itemName", s.itemName)
         put("actualDurationMillis", s.actualDurationMillis)
+        put("recordSource", s.recordSource)
     }
 
     private fun focusProtocolToJson(s: FocusProtocolSessionEntity) = JSONObject().apply {
@@ -387,6 +431,9 @@ class BackupManager(private val context: Context) {
         put("id", e.id); put("title", e.title); put("startMillis", e.startMillis)
         put("endMillis", e.endMillis); put("allDay", e.allDay); put("repeatRule", e.repeatRule)
         put("reminderMinutes", e.reminderMinutes ?: JSONObject.NULL)
+        put("eventKind", e.eventKind)
+        put("taskId", e.taskId ?: JSONObject.NULL)
+        put("projectId", e.projectId ?: JSONObject.NULL)
         put("createdAt", e.createdAt)
     }
 
@@ -397,6 +444,34 @@ class BackupManager(private val context: Context) {
         put("doneDate", t.doneDate ?: JSONObject.NULL)
         put("streakCount", t.streakCount)
         put("reminderId", t.reminderId ?: JSONObject.NULL)
+        put("matrixQuadrant", t.matrixQuadrant)
+        put("description", t.description)
+        put("whyImportant", t.whyImportant)
+        put("definitionOfDone", t.definitionOfDone)
+        put("nextAction", t.nextAction)
+        put("imagePath", t.imagePath ?: JSONObject.NULL)
+        put("dueAtMillis", t.dueAtMillis ?: JSONObject.NULL)
+        put("estimatedMinutes", t.estimatedMinutes)
+        put("spentMillis", t.spentMillis)
+        put("sortOrder", t.sortOrder)
+        put("energyLevel", t.energyLevel)
+        put("contextTag", t.contextTag)
+        put("dependencies", t.dependencies)
+        put("obstacle", t.obstacle)
+        put("ifThenPlan", t.ifThenPlan)
+        put("checklist", t.checklist)
+        put("projectTag", t.projectTag)
+        put("assignee", t.assignee)
+        put("workBudgetMinutes", t.workBudgetMinutes)
+        put("projectId", t.projectId ?: JSONObject.NULL)
+        put("category", t.category)
+        put("tags", t.tags)
+        put("materials", t.materials)
+        put("expectedResult", t.expectedResult)
+        put("startAtMillis", t.startAtMillis ?: JSONObject.NULL)
+        put("repeatRule", t.repeatRule)
+        put("plannedFocusMinutes", t.plannedFocusMinutes)
+        put("updatedAt", t.updatedAt)
     }
 
     private fun reminderToJson(r: ReminderEntity) = JSONObject().apply {
@@ -404,12 +479,48 @@ class BackupManager(private val context: Context) {
         put("timeMinute", r.timeMinute); put("repeatMode", r.repeatMode.name)
         put("daysOfWeek", r.daysOfWeek); put("intervalDays", r.intervalDays)
         put("nextTriggerTime", r.nextTriggerTime); put("isEnabled", r.isEnabled)
+        put("linkedType", r.linkedType); put("linkedId", r.linkedId ?: JSONObject.NULL)
+        put("triggerRule", r.triggerRule); put("offsetMinutes", r.offsetMinutes)
+        put("inactivityHours", r.inactivityHours)
         put("createdAt", r.createdAt)
     }
 
     private fun ddayToJson(d: DDayEntity) = JSONObject().apply {
         put("id", d.id); put("title", d.title); put("targetDate", d.targetDate)
+        put("projectId", d.projectId ?: JSONObject.NULL); put("taskId", d.taskId ?: JSONObject.NULL)
+        put("notes", d.notes)
         put("createdAt", d.createdAt)
+    }
+
+    private fun projectToJson(p: ProjectEntity) = JSONObject().apply {
+        put("id", p.id); put("title", p.title); put("description", p.description); put("goal", p.goal)
+        put("color", p.color); put("workBudgetMinutes", p.workBudgetMinutes); put("spentMillis", p.spentMillis)
+        put("dueAtMillis", p.dueAtMillis ?: JSONObject.NULL); put("isArchived", p.isArchived)
+        put("createdAt", p.createdAt); put("updatedAt", p.updatedAt)
+    }
+
+    private fun subtaskToJson(s: TaskSubtaskEntity) = JSONObject().apply {
+        put("id", s.id); put("taskId", s.taskId); put("title", s.title); put("isDone", s.isDone)
+        put("sortOrder", s.sortOrder); put("createdAt", s.createdAt); put("completedAt", s.completedAt ?: JSONObject.NULL)
+    }
+
+    private fun attachmentToJson(a: TaskAttachmentEntity) = JSONObject().apply {
+        put("id", a.id); put("taskId", a.taskId); put("localPath", a.localPath); put("mimeType", a.mimeType)
+        put("caption", a.caption); put("createdAt", a.createdAt)
+    }
+
+    private fun taskLibraryLinkToJson(link: TaskLibraryLinkEntity) = JSONObject().apply {
+        put("taskId", link.taskId); put("libraryItemId", link.libraryItemId); put("note", link.note); put("createdAt", link.createdAt)
+    }
+
+    private fun activityRecordToJson(a: ActivityRecordEntity) = JSONObject().apply {
+        put("id", a.id); put("taskId", a.taskId ?: JSONObject.NULL); put("projectId", a.projectId ?: JSONObject.NULL)
+        put("activityType", a.activityType.name); put("subjectId", a.subjectId ?: JSONObject.NULL)
+        put("otherActivityId", a.otherActivityId ?: JSONObject.NULL); put("title", a.title); put("category", a.category)
+        put("startedAt", a.startedAt); put("endedAt", a.endedAt); put("durationMillis", a.durationMillis)
+        put("source", a.source); put("result", a.result); put("material", a.material); put("note", a.note)
+        put("pomodoroSessionId", a.pomodoroSessionId ?: JSONObject.NULL)
+        put("countsTowardProgress", a.countsTowardProgress); put("createdAt", a.createdAt); put("updatedAt", a.updatedAt)
     }
 
     private fun diaryToJson(d: DiaryEntryEntity) = JSONObject().apply {
@@ -446,6 +557,10 @@ class BackupManager(private val context: Context) {
         put("cueRingtoneUri", s.cueRingtoneUri ?: JSONObject.NULL)
         put("detectedSleepOnsetTime", s.detectedSleepOnsetTime ?: JSONObject.NULL)
         put("detectedOnsetLatencyMinutes", s.detectedOnsetLatencyMinutes ?: JSONObject.NULL)
+        put("detectedOnsetConfidencePercent", s.detectedOnsetConfidencePercent ?: JSONObject.NULL)
+        put("detectedOnsetSource", s.detectedOnsetSource ?: JSONObject.NULL)
+        put("detectedOnsetUncertaintyMinutes", s.detectedOnsetUncertaintyMinutes ?: JSONObject.NULL)
+        put("onsetReviewState", s.onsetReviewState)
     }
 
     private fun cueEventToJson(c: CueEventEntity) = JSONObject().apply {
@@ -459,6 +574,10 @@ class BackupManager(private val context: Context) {
     private fun libraryItemToJson(i: LibraryItemEntity) = JSONObject().apply {
         put("id", i.id); put("type", i.type.name); put("title", i.title)
         put("author", i.author); put("coverUri", i.coverUri ?: JSONObject.NULL)
+        put("resourceKind", i.resourceKind.name)
+        put("localFilePath", i.localFilePath ?: JSONObject.NULL)
+        put("originalFileName", i.originalFileName)
+        put("referenceUrl", i.referenceUrl)
         put("shortDescription", i.shortDescription); put("impression", i.impression)
         put("thoughts", i.thoughts); put("rating", i.rating)
         put("createdAt", i.createdAt); put("updatedAt", i.updatedAt)
@@ -521,7 +640,8 @@ class BackupManager(private val context: Context) {
             actualDurationMillis = o.optLong(
                 "actualDurationMillis",
                 o.optInt("durationMinutes", 0) * 60_000L
-            )
+            ),
+            recordSource = o.optString("recordSource", "TIMER")
         )
     } catch (e: Exception) {
         Log.e(TAG, "Ошибка парсинга pomodoro-сессии", e); null
@@ -599,6 +719,9 @@ class BackupManager(private val context: Context) {
             allDay = o.optBoolean("allDay", false),
             repeatRule = o.optString("repeatRule", "none"),
             reminderMinutes = if (o.isNull("reminderMinutes")) null else o.optInt("reminderMinutes"),
+            eventKind = o.optString("eventKind", "PLANNED"),
+            taskId = if (o.isNull("taskId")) null else o.optInt("taskId"),
+            projectId = if (o.isNull("projectId")) null else o.optInt("projectId"),
             createdAt = o.optLong("createdAt", System.currentTimeMillis())
         )
     } catch (e: Exception) {
@@ -615,7 +738,35 @@ class BackupManager(private val context: Context) {
             completedAt = if (o.isNull("completedAt")) null else o.optLong("completedAt"),
             doneDate = o.optStringOrNull("doneDate"),
             streakCount = o.optInt("streakCount", 0),
-            reminderId = if (o.isNull("reminderId")) null else o.optInt("reminderId")
+            reminderId = if (o.isNull("reminderId")) null else o.optInt("reminderId"),
+            matrixQuadrant = o.optInt("matrixQuadrant", 2).coerceIn(1, 4),
+            description = o.optString("description", ""),
+            whyImportant = o.optString("whyImportant", ""),
+            definitionOfDone = o.optString("definitionOfDone", ""),
+            nextAction = o.optString("nextAction", ""),
+            imagePath = o.optStringOrNull("imagePath"),
+            dueAtMillis = if (o.isNull("dueAtMillis")) null else o.optLong("dueAtMillis"),
+            estimatedMinutes = o.optInt("estimatedMinutes", 25).coerceIn(5, 480),
+            spentMillis = o.optLong("spentMillis", 0L).coerceAtLeast(0L),
+            sortOrder = o.optInt("sortOrder", 0),
+            energyLevel = o.optString("energyLevel", "MEDIUM"),
+            contextTag = o.optString("contextTag", ""),
+            dependencies = o.optString("dependencies", ""),
+            obstacle = o.optString("obstacle", ""),
+            ifThenPlan = o.optString("ifThenPlan", ""),
+            checklist = o.optString("checklist", ""),
+            projectTag = o.optString("projectTag", ""),
+            assignee = o.optString("assignee", ""),
+            workBudgetMinutes = o.optInt("workBudgetMinutes", 0).coerceAtLeast(0),
+            projectId = if (o.isNull("projectId")) null else o.optInt("projectId"),
+            category = o.optString("category", "WORK"),
+            tags = o.optString("tags", ""),
+            materials = o.optString("materials", ""),
+            expectedResult = o.optString("expectedResult", ""),
+            startAtMillis = if (o.isNull("startAtMillis")) null else o.optLong("startAtMillis"),
+            repeatRule = o.optString("repeatRule", ""),
+            plannedFocusMinutes = o.optInt("plannedFocusMinutes", o.optInt("estimatedMinutes", 25)).coerceIn(5, 480),
+            updatedAt = o.optLong("updatedAt", o.optLong("createdAt", System.currentTimeMillis()))
         )
     } catch (e: Exception) {
         Log.e(TAG, "Ошибка парсинга задачи", e); null
@@ -632,6 +783,11 @@ class BackupManager(private val context: Context) {
             intervalDays = o.optInt("intervalDays", 1),
             nextTriggerTime = o.optLong("nextTriggerTime"),
             isEnabled = o.optBoolean("isEnabled", true),
+            linkedType = o.optString("linkedType", ""),
+            linkedId = if (o.isNull("linkedId")) null else o.optInt("linkedId"),
+            triggerRule = o.optString("triggerRule", "AT_TIME"),
+            offsetMinutes = o.optInt("offsetMinutes", 5),
+            inactivityHours = o.optInt("inactivityHours", 24),
             createdAt = o.optLong("createdAt", System.currentTimeMillis())
         )
     } catch (e: Exception) {
@@ -643,11 +799,66 @@ class BackupManager(private val context: Context) {
             id = o.optInt("id", 0),
             title = o.optString("title"),
             targetDate = o.optString("targetDate"),
+            projectId = if (o.isNull("projectId")) null else o.optInt("projectId"),
+            taskId = if (o.isNull("taskId")) null else o.optInt("taskId"),
+            notes = o.optString("notes", ""),
             createdAt = o.optLong("createdAt", System.currentTimeMillis())
         )
     } catch (e: Exception) {
         Log.e(TAG, "Ошибка парсинга D-Day", e); null
     }
+
+    private fun projectFromJson(o: JSONObject): ProjectEntity? = try {
+        ProjectEntity(
+            id = o.optInt("id", 0), title = o.optString("title"), description = o.optString("description", ""),
+            goal = o.optString("goal", ""), color = o.optLong("color", 0xFF6574CD),
+            workBudgetMinutes = o.optInt("workBudgetMinutes", 0), spentMillis = o.optLong("spentMillis", 0L),
+            dueAtMillis = if (o.isNull("dueAtMillis")) null else o.optLong("dueAtMillis"),
+            isArchived = o.optBoolean("isArchived", false), createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = o.optLong("updatedAt", System.currentTimeMillis())
+        )
+    } catch (e: Exception) { Log.e(TAG, "Ошибка парсинга проекта", e); null }
+
+    private fun subtaskFromJson(o: JSONObject): TaskSubtaskEntity? = try {
+        TaskSubtaskEntity(
+            id = o.optInt("id", 0), taskId = o.optInt("taskId"), title = o.optString("title"),
+            isDone = o.optBoolean("isDone", false), sortOrder = o.optInt("sortOrder", 0),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+            completedAt = if (o.isNull("completedAt")) null else o.optLong("completedAt")
+        )
+    } catch (e: Exception) { Log.e(TAG, "Ошибка парсинга подзадачи", e); null }
+
+    private fun attachmentFromJson(o: JSONObject): TaskAttachmentEntity? = try {
+        TaskAttachmentEntity(
+            id = o.optInt("id", 0), taskId = o.optInt("taskId"), localPath = o.optString("localPath"),
+            mimeType = o.optString("mimeType", "application/octet-stream"), caption = o.optString("caption", ""),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis())
+        )
+    } catch (e: Exception) { Log.e(TAG, "Ошибка парсинга вложения", e); null }
+
+    private fun taskLibraryLinkFromJson(o: JSONObject): TaskLibraryLinkEntity? = try {
+        TaskLibraryLinkEntity(
+            taskId = o.optInt("taskId"), libraryItemId = o.optInt("libraryItemId"), note = o.optString("note", ""),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis())
+        )
+    } catch (e: Exception) { Log.e(TAG, "Ошибка парсинга связи библиотеки", e); null }
+
+    private fun activityRecordFromJson(o: JSONObject): ActivityRecordEntity? = try {
+        ActivityRecordEntity(
+            id = o.optInt("id", 0), taskId = if (o.isNull("taskId")) null else o.optInt("taskId"),
+            projectId = if (o.isNull("projectId")) null else o.optInt("projectId"),
+            activityType = enumValueOrDefault(o.optString("activityType"), FocusActivityType.WORK),
+            subjectId = if (o.isNull("subjectId")) null else o.optInt("subjectId"),
+            otherActivityId = if (o.isNull("otherActivityId")) null else o.optInt("otherActivityId"),
+            title = o.optString("title"), category = o.optString("category", "WORK"),
+            startedAt = o.optLong("startedAt"), endedAt = o.optLong("endedAt"), durationMillis = o.optLong("durationMillis"),
+            source = o.optString("source", "MANUAL"), result = o.optString("result", ""),
+            material = o.optString("material", ""), note = o.optString("note", ""),
+            pomodoroSessionId = if (o.isNull("pomodoroSessionId")) null else o.optInt("pomodoroSessionId"),
+            countsTowardProgress = o.optBoolean("countsTowardProgress", true),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis()), updatedAt = o.optLong("updatedAt", System.currentTimeMillis())
+        )
+    } catch (e: Exception) { Log.e(TAG, "Ошибка парсинга активности", e); null }
 
     private fun diaryFromJson(o: JSONObject): DiaryEntryEntity? = try {
         DiaryEntryEntity(
@@ -703,7 +914,14 @@ class BackupManager(private val context: Context) {
             detectedSleepOnsetTime = if (o.isNull("detectedSleepOnsetTime")) null else o.optLong("detectedSleepOnsetTime"),
             detectedOnsetLatencyMinutes = if (o.isNull("detectedOnsetLatencyMinutes")) null else o.optInt(
                 "detectedOnsetLatencyMinutes"
-            )
+            ),
+            detectedOnsetConfidencePercent = if (o.isNull("detectedOnsetConfidencePercent")) null else o.optInt(
+                "detectedOnsetConfidencePercent"
+            ),
+            detectedOnsetSource = o.optStringOrNull("detectedOnsetSource"),
+            detectedOnsetUncertaintyMinutes = if (o.isNull("detectedOnsetUncertaintyMinutes")) null
+                else o.optInt("detectedOnsetUncertaintyMinutes"),
+            onsetReviewState = o.optString("onsetReviewState", "PENDING")
         )
     } catch (e: Exception) {
         Log.e(TAG, "Ошибка парсинга sleep-сессии", e); null
@@ -735,6 +953,13 @@ class BackupManager(private val context: Context) {
             title = o.optString("title"),
             author = o.optString("author", ""),
             coverUri = o.optStringOrNull("coverUri"),
+            resourceKind = enumValueOrDefault(
+                o.optString("resourceKind"),
+                com.personal.sleepalarm.data.db.entity.LibraryResourceKind.NOTE
+            ),
+            localFilePath = o.optStringOrNull("localFilePath"),
+            originalFileName = o.optString("originalFileName", ""),
+            referenceUrl = o.optString("referenceUrl", ""),
             shortDescription = o.optString("shortDescription", ""),
             impression = o.optString("impression", ""),
             thoughts = o.optString("thoughts", ""),

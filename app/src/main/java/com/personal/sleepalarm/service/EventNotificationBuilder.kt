@@ -10,6 +10,10 @@ import androidx.core.app.NotificationManagerCompat
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
+import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
+import com.personal.sleepalarm.ui.MainActivity
+import android.app.PendingIntent
+import android.content.Intent
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -54,10 +58,20 @@ class EventNotificationBuilder(
             .atZone(ZoneId.systemDefault())
             .format(DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
 
+        val openIntent = PendingIntent.getActivity(
+            context,
+            130_000 + event.id,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(MainActivity.EXTRA_DESTINATION, MainActivity.DESTINATION_CALENDAR)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(event.title)
             .setContentText(context.getString(R.string.calendar_notification_event_time, timeText))
+            .setContentIntent(openIntent)
             .setWhen(System.currentTimeMillis())
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -72,7 +86,7 @@ class EventNotificationBuilder(
         }
         try {
             notificationManager.notify(NOTIFICATION_ID_BASE + event.id, build(event))
-            AppNotificationSoundPlayer.play(context)
+            AppNotificationSoundPlayer.play(context, PomodoroSoundPreference(context).getUri())
             Log.d(TAG, "shown id=${event.id} title=${event.title}")
         } catch (se: SecurityException) {
             Log.e(TAG, "SecurityException (POST_NOTIFICATIONS)", se)

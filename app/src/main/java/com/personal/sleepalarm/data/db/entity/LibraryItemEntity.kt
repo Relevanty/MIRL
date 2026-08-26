@@ -26,6 +26,18 @@ data class LibraryItemEntity(
 
     val coverUri: String? = null,
 
+    /** Каким рабочим ресурсом является запись: заметкой, файлом или ссылкой. */
+    val resourceKind: LibraryResourceKind = LibraryResourceKind.NOTE,
+
+    /** Копия выбранного документа в приватном хранилище MIRL. */
+    val localFilePath: String? = null,
+
+    /** Исходное имя файла для понятного отображения в интерфейсе. */
+    val originalFileName: String = "",
+
+    /** Необязательная ссылка на внешний справочный материал. */
+    val referenceUrl: String = "",
+
     val shortDescription: String = "",
 
     val impression: String = "",
@@ -38,3 +50,9 @@ data class LibraryItemEntity(
 
     val updatedAt: Long = System.currentTimeMillis()
 )
+
+enum class LibraryResourceKind {
+    NOTE,
+    DOCUMENT,
+    LINK
+}

@@ -26,6 +26,11 @@ import com.personal.sleepalarm.data.db.dao.ReminderDao
 import com.personal.sleepalarm.data.db.dao.ScheduleDao
 import com.personal.sleepalarm.data.db.dao.SleepSessionDao
 import com.personal.sleepalarm.data.db.dao.TaskDao
+import com.personal.sleepalarm.data.db.dao.ActivityRecordDao
+import com.personal.sleepalarm.data.db.dao.ProjectDao
+import com.personal.sleepalarm.data.db.dao.TaskAttachmentDao
+import com.personal.sleepalarm.data.db.dao.TaskLibraryLinkDao
+import com.personal.sleepalarm.data.db.dao.TaskSubtaskDao
 import com.personal.sleepalarm.data.db.entity.AlarmProfileEntity
 import com.personal.sleepalarm.data.db.entity.CueEventEntity
 import com.personal.sleepalarm.data.db.entity.DDayEntity
@@ -44,11 +49,16 @@ import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
 import com.personal.sleepalarm.data.db.entity.StudySessionEntity
 import com.personal.sleepalarm.data.db.entity.SubjectEntity
+import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
+import com.personal.sleepalarm.data.db.entity.ProjectEntity
+import com.personal.sleepalarm.data.db.entity.TaskAttachmentEntity
+import com.personal.sleepalarm.data.db.entity.TaskLibraryLinkEntity
+import com.personal.sleepalarm.data.db.entity.TaskSubtaskEntity
 
 /**
  * Главная база приложения.
  *
- * Версия 11:
+ * Версия 16:
  *  - tasks: задачи и утренняя рутина со стриками
  *  - reminders: напоминания с повторами (ONCE/DAILY/WEEKLY/INTERVAL)
  *  - mood_entries: настроение (одна запись в день)
@@ -87,10 +97,17 @@ import com.personal.sleepalarm.data.db.entity.SubjectEntity
 
         // ДОБАВЛЕНО (v9): устойчивый протокол фокуса и замеры энергии.
         FocusProtocolSessionEntity::class,
-        EnergySampleEntity::class
+        EnergySampleEntity::class,
+
+        // Unified offline productivity model (v17).
+        ProjectEntity::class,
+        TaskSubtaskEntity::class,
+        TaskAttachmentEntity::class,
+        TaskLibraryLinkEntity::class,
+        ActivityRecordEntity::class
 
     ],
-    version = 11,
+    version = 21,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -106,6 +123,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun focusProtocolDao(): FocusProtocolDao
     abstract fun energySampleDao(): EnergySampleDao
     abstract fun libraryDao(): LibraryDao
+    abstract fun activityRecordDao(): ActivityRecordDao
+    abstract fun projectDao(): ProjectDao
+    abstract fun taskSubtaskDao(): TaskSubtaskDao
+    abstract fun taskAttachmentDao(): TaskAttachmentDao
+    abstract fun taskLibraryLinkDao(): TaskLibraryLinkDao
 
     // ДОБАВЛЕНО (v5):
     abstract fun taskDao(): TaskDao
@@ -151,7 +173,17 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
-                    MIGRATION_10_11
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
+                    MIGRATION_14_15,
+                    MIGRATION_15_16,
+                    MIGRATION_16_17,
+                    MIGRATION_17_18,
+                    MIGRATION_18_19,
+                    MIGRATION_19_20,
+                    MIGRATION_20_21
                 )
                 .build()
         }
@@ -470,6 +502,250 @@ abstract class AppDatabase : RoomDatabase() {
                     "ALTER TABLE alarm_profiles " +
                         "ADD COLUMN notificationVolumePercent INTEGER NOT NULL DEFAULT 50"
                 )
+            }
+        }
+
+        /** Расширяет обычные задачи до карточек матрицы Эйзенхауэра. */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tasks ADD COLUMN matrixQuadrant INTEGER NOT NULL DEFAULT 2")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN whyImportant TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN definitionOfDone TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN nextAction TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN imagePath TEXT")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN dueAtMillis INTEGER")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN estimatedMinutes INTEGER NOT NULL DEFAULT 25")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN energyLevel TEXT NOT NULL DEFAULT 'MEDIUM'")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN contextTag TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN dependencies TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN obstacle TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN ifThenPlan TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN checklist TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN projectTag TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN assignee TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE tasks SET updatedAt = createdAt WHERE updatedAt = 0")
+            }
+        }
+
+        /** Добавляет фактическое время работы и стабильный порядок задач. */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tasks ADD COLUMN spentMillis INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** Хранит качество и источник оценки времени засыпания. */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sleep_sessions ADD COLUMN detectedOnsetConfidencePercent INTEGER")
+                db.execSQL("ALTER TABLE sleep_sessions ADD COLUMN detectedOnsetSource TEXT")
+            }
+        }
+
+        /** Отличает фактический таймер от ручного прошедшего события. */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pomodoro_sessions ADD COLUMN recordSource TEXT NOT NULL DEFAULT 'TIMER'")
+            }
+        }
+
+        /** Заполняет стабильный порядок шариков для уже существующих задач. */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    UPDATE tasks
+                    SET sortOrder = (
+                        SELECT COUNT(*)
+                        FROM tasks AS previous
+                        WHERE previous.matrixQuadrant = tasks.matrixQuadrant
+                          AND (
+                              previous.createdAt < tasks.createdAt
+                              OR (previous.createdAt = tasks.createdAt AND previous.id < tasks.id)
+                          )
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /**
+         * Introduces the canonical actual-work journal and relational productivity
+         * objects. Existing Pomodoro history is copied, then task totals are rebuilt.
+         */
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tasks ADD COLUMN workBudgetMinutes INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN projectId INTEGER")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN category TEXT NOT NULL DEFAULT 'WORK'")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN materials TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN expectedResult TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN startAtMillis INTEGER")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN repeatRule TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN plannedFocusMinutes INTEGER NOT NULL DEFAULT 25")
+
+                db.execSQL("ALTER TABLE events ADD COLUMN eventKind TEXT NOT NULL DEFAULT 'PLANNED'")
+                db.execSQL("ALTER TABLE events ADD COLUMN taskId INTEGER")
+                db.execSQL("ALTER TABLE events ADD COLUMN projectId INTEGER")
+                db.execSQL("ALTER TABLE reminders ADD COLUMN linkedType TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE reminders ADD COLUMN linkedId INTEGER")
+                db.execSQL("ALTER TABLE dday_events ADD COLUMN projectId INTEGER")
+                db.execSQL("ALTER TABLE dday_events ADD COLUMN taskId INTEGER")
+                db.execSQL("ALTER TABLE dday_events ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `projects` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `goal` TEXT NOT NULL,
+                        `color` INTEGER NOT NULL,
+                        `workBudgetMinutes` INTEGER NOT NULL,
+                        `spentMillis` INTEGER NOT NULL,
+                        `dueAtMillis` INTEGER,
+                        `isArchived` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_projects_isArchived` ON `projects` (`isArchived`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_projects_dueAtMillis` ON `projects` (`dueAtMillis`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `task_subtasks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `taskId` INTEGER NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `isDone` INTEGER NOT NULL,
+                        `sortOrder` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `completedAt` INTEGER
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_subtasks_taskId` ON `task_subtasks` (`taskId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `task_attachments` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `taskId` INTEGER NOT NULL,
+                        `localPath` TEXT NOT NULL,
+                        `mimeType` TEXT NOT NULL,
+                        `caption` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_attachments_taskId` ON `task_attachments` (`taskId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `task_library_links` (
+                        `taskId` INTEGER NOT NULL,
+                        `libraryItemId` INTEGER NOT NULL,
+                        `note` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`taskId`, `libraryItemId`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_library_links_libraryItemId` ON `task_library_links` (`libraryItemId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `activity_records` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `taskId` INTEGER,
+                        `projectId` INTEGER,
+                        `activityType` TEXT NOT NULL,
+                        `subjectId` INTEGER,
+                        `otherActivityId` INTEGER,
+                        `title` TEXT NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `startedAt` INTEGER NOT NULL,
+                        `endedAt` INTEGER NOT NULL,
+                        `durationMillis` INTEGER NOT NULL,
+                        `source` TEXT NOT NULL,
+                        `result` TEXT NOT NULL,
+                        `material` TEXT NOT NULL,
+                        `note` TEXT NOT NULL,
+                        `pomodoroSessionId` INTEGER,
+                        `countsTowardProgress` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_activity_records_startedAt` ON `activity_records` (`startedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_activity_records_taskId` ON `activity_records` (`taskId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_activity_records_projectId` ON `activity_records` (`projectId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_activity_records_pomodoroSessionId` ON `activity_records` (`pomodoroSessionId`)")
+
+                val now = System.currentTimeMillis()
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO activity_records (
+                        taskId, projectId, activityType, subjectId, otherActivityId,
+                        title, category, startedAt, endedAt, durationMillis, source,
+                        result, material, note, pomodoroSessionId, countsTowardProgress,
+                        createdAt, updatedAt
+                    )
+                    SELECT p.taskId, t.projectId, p.activityType, p.subjectId, p.otherActivityId,
+                        p.itemName, p.activityType, p.startedAt,
+                        COALESCE(p.completedAt, p.startedAt + p.actualDurationMillis),
+                        p.actualDurationMillis, p.recordSource, '', '', '', p.id, 1, $now, $now
+                    FROM pomodoro_sessions p
+                    LEFT JOIN tasks t ON t.id = p.taskId
+                    WHERE p.isBreak = 0 AND p.actualDurationMillis > 0
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    UPDATE tasks SET spentMillis = COALESCE((
+                        SELECT SUM(a.durationMillis) FROM activity_records a
+                        WHERE a.taskId = tasks.id AND a.countsTowardProgress = 1
+                    ), 0)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sleep_sessions ADD COLUMN detectedOnsetUncertaintyMinutes INTEGER")
+                db.execSQL("ALTER TABLE sleep_sessions ADD COLUMN onsetReviewState TEXT NOT NULL DEFAULT 'PENDING'")
+            }
+        }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE library_items ADD COLUMN resourceKind TEXT NOT NULL DEFAULT 'NOTE'")
+                db.execSQL("ALTER TABLE library_items ADD COLUMN localFilePath TEXT")
+                db.execSQL("ALTER TABLE library_items ADD COLUMN originalFileName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE library_items ADD COLUMN referenceUrl TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reminders ADD COLUMN triggerRule TEXT NOT NULL DEFAULT 'AT_TIME'")
+                db.execSQL("ALTER TABLE reminders ADD COLUMN offsetMinutes INTEGER NOT NULL DEFAULT 5")
+                db.execSQL("ALTER TABLE reminders ADD COLUMN inactivityHours INTEGER NOT NULL DEFAULT 24")
+            }
+        }
+
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarm_profiles ADD COLUMN autoCorrectMinConfidencePercent INTEGER NOT NULL DEFAULT 75")
+                db.execSQL("ALTER TABLE alarm_profiles ADD COLUMN autoCorrectMaxShiftMinutes INTEGER NOT NULL DEFAULT 30")
             }
         }
     }

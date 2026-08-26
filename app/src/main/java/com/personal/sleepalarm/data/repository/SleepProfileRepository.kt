@@ -100,6 +100,8 @@ class SleepProfileRepository(
                 profile.cueVolumePercent
             ),
             notificationVolumePercent = profile.notificationVolumePercent.coerceIn(0, 100),
+            autoCorrectMinConfidencePercent = profile.autoCorrectMinConfidencePercent.coerceIn(50, 95),
+            autoCorrectMaxShiftMinutes = profile.autoCorrectMaxShiftMinutes.coerceIn(0, 120),
 
             // === ДОБАВЛЕНО: F7 — нормализация remCueOffsetPercent ===
             remCueOffsetPercent = profile.remCueOffsetPercent.coerceIn(10, 90),

@@ -61,6 +61,7 @@ class LibraryRepository(
     suspend fun deleteItem(item: LibraryItemEntity) {
         dao.deleteItem(item.id)
         CoverHelperDelete(item.coverUri)
+        com.personal.sleepalarm.util.ResourceFileHelper.delete(item.localFilePath)
     }
 
     /** Exchanges two visible positions without changing the database schema. */

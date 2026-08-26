@@ -7,6 +7,7 @@ import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
 import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
+import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -16,6 +17,7 @@ data class ActivityStatsSource(
     val focusSessions: List<PomodoroSessionEntity> = emptyList(),
     val sleepSessions: List<SleepSessionEntity> = emptyList(),
     val completedFocusBlocks: List<FocusProtocolSessionEntity> = emptyList(),
+    val activityRecords: List<ActivityRecordEntity> = emptyList(),
     /** A stable "now" value avoids repainting every minute while this screen is open. */
     val snapshotTimeMillis: Long = System.currentTimeMillis()
 )
@@ -27,12 +29,14 @@ class ActivityStatsViewModel(application: Application) : AndroidViewModel(applic
     val source: StateFlow<ActivityStatsSource> = combine(
         database.pomodoroDao().observeAllRecordedFocus(),
         database.sleepSessionDao().observeAll(),
-        database.focusProtocolDao().observeRecentCompleted(100)
-    ) { focusSessions, sleepSessions, completedFocusBlocks ->
+        database.focusProtocolDao().observeRecentCompleted(100),
+        database.activityRecordDao().observeAll()
+    ) { focusSessions, sleepSessions, completedFocusBlocks, activityRecords ->
         ActivityStatsSource(
             focusSessions = focusSessions,
             sleepSessions = sleepSessions,
             completedFocusBlocks = completedFocusBlocks,
+            activityRecords = activityRecords,
             snapshotTimeMillis = snapshotTime
         )
     }.stateIn(

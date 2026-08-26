@@ -29,6 +29,12 @@ interface PomodoroDao {
     @Update
     suspend fun update(session: PomodoroSessionEntity)
 
+    @Query("SELECT * FROM pomodoro_sessions WHERE id = :id")
+    suspend fun getById(id: Int): PomodoroSessionEntity?
+
+    @Query("DELETE FROM pomodoro_sessions WHERE id = :id")
+    suspend fun deleteById(id: Int)
+
     /** Завершить сессию: поставить completedAt и isCompleted. */
     @Query(
         """
@@ -77,6 +83,7 @@ interface PomodoroDao {
         """
         SELECT COUNT(*) FROM pomodoro_sessions
         WHERE isBreak = 0 AND isCompleted = 1
+          AND recordSource = 'TIMER'
           AND startedAt >= :from AND startedAt < :to
         """
     )

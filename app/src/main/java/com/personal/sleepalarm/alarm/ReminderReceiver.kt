@@ -7,6 +7,8 @@ import android.util.Log
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.repository.ReminderRepository
 import com.personal.sleepalarm.service.ReminderNotificationBuilder
+import com.personal.sleepalarm.app.App
+import com.personal.sleepalarm.service.audio.VoiceScenario
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,7 +36,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
         val appContext = context.applicationContext
         val database = AppDatabase.getInstance(appContext)
-        val repository = ReminderRepository(database.reminderDao(), database.taskDao())
+        val repository = ReminderRepository(database.reminderDao(), database.taskDao(), database.activityRecordDao())
         val scheduler = ReminderScheduler(appContext)
         val builder = ReminderNotificationBuilder(appContext)
 
@@ -43,13 +45,21 @@ class ReminderReceiver : BroadcastReceiver() {
                 val pending = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        val reminder = repository.getById(reminderId)
-                        if (reminder == null) {
+                        val loadedReminder = repository.getById(reminderId)
+                        if (loadedReminder == null) {
                             Log.w(TAG, "reminder $reminderId not found")
                             return@launch
                         }
-                        if (!reminder.isEnabled) {
+                        if (!loadedReminder.isEnabled) {
                             Log.d(TAG, "reminder $reminderId disabled, skip")
+                            return@launch
+                        }
+
+                        val reminder = repository.refreshDynamic(loadedReminder)
+                        val dueWindow = if (action == ACTION_PRE) ReminderScheduler.PRE_LEAD_MS else 30_000L
+                        if (reminder.nextTriggerTime > System.currentTimeMillis() + dueWindow + 30_000L) {
+                            scheduler.schedule(reminder)
+                            Log.d(TAG, "dynamic condition moved, rescheduled")
                             return@launch
                         }
 
@@ -59,6 +69,10 @@ class ReminderReceiver : BroadcastReceiver() {
                         } else {
                             Log.d(TAG, "show FIRE")
                             builder.showFire(reminder)
+                            (appContext as? App)?.serviceLocator?.briefingCoordinator?.speak(
+                                "Напоминание: «${reminder.title}».",
+                                VoiceScenario.REMINDER
+                            ) {}
                             repository.rescheduleAfterFire(reminderId)
                             repository.getById(reminderId)?.let { updated ->
                                 if (updated.isEnabled) scheduler.schedule(updated)

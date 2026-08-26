@@ -26,8 +26,21 @@ class DDayRepository(
 
     suspend fun getById(id: Int): DDayEntity? = dao.getById(id)
 
-    suspend fun addEvent(title: String, targetDate: String): Long =
-        dao.insert(DDayEntity(title = title.trim(), targetDate = targetDate))
+    suspend fun addEvent(
+        title: String,
+        targetDate: String,
+        projectId: Int? = null,
+        taskId: Int? = null,
+        notes: String = ""
+    ): Long = dao.insert(
+        DDayEntity(
+            title = title.trim(),
+            targetDate = targetDate,
+            projectId = projectId,
+            taskId = taskId,
+            notes = notes.trim()
+        )
+    )
 
     suspend fun update(event: DDayEntity) = dao.update(event)
 

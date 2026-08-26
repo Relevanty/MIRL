@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -23,9 +24,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +56,11 @@ fun ReminderEditScreen(
     viewModel: ReminderEditViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val tasks by viewModel.tasks.collectAsStateWithLifecycle()
+    val requiresTask = state.triggerRule in setOf(
+        "BEFORE_DEADLINE", "NO_PROGRESS", "BECOMES_URGENT", "BEFORE_FOCUS"
+    )
+    var taskMenuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(editReminderId, linkedTaskId) {
         viewModel.init(editReminderId, linkedTaskId)
@@ -79,6 +91,109 @@ fun ReminderEditScreen(
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 16.sp
             )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Связь и условие",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .padding(12.dp)
+        ) {
+            Box {
+                val selectedTask = tasks.firstOrNull { it.id == state.linkedTaskId }
+                OutlinedButton(onClick = { taskMenuExpanded = true }) {
+                    Text(selectedTask?.title?.ifBlank { "Задача с изображением" } ?: "Связать с задачей")
+                }
+                DropdownMenu(
+                    expanded = taskMenuExpanded,
+                    onDismissRequest = { taskMenuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Без задачи") },
+                        onClick = {
+                            viewModel.setLinkedTask(null)
+                            taskMenuExpanded = false
+                        }
+                    )
+                    tasks.forEach { task ->
+                        DropdownMenuItem(
+                            text = { Text(task.title.ifBlank { "Задача #${task.id}" }) },
+                            onClick = {
+                                viewModel.setLinkedTask(task.id)
+                                taskMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    "AT_TIME" to "В указанное время",
+                    "BEFORE_DEADLINE" to "До дедлайна",
+                    "NO_PROGRESS" to "Нет прогресса",
+                    "BECOMES_URGENT" to "Скоро срочная",
+                    "BEFORE_FOCUS" to "Перед фокусом",
+                    "BEFORE_SLEEP" to "Перед сном"
+                ).forEach { (rule, label) ->
+                    FilterChip(
+                        selected = state.triggerRule == rule,
+                        onClick = { viewModel.setTriggerRule(rule) },
+                        label = { Text(label) }
+                    )
+                }
+            }
+            if (requiresTask && state.linkedTaskId == null) {
+                Text(
+                    "Для этого условия выберите задачу",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (state.triggerRule in setOf("BEFORE_DEADLINE", "BECOMES_URGENT") &&
+                tasks.firstOrNull { it.id == state.linkedTaskId }?.dueAtMillis == null
+            ) {
+                Text(
+                    "У выбранной задачи должен быть дедлайн",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (state.triggerRule == "BEFORE_FOCUS" &&
+                tasks.firstOrNull { it.id == state.linkedTaskId }?.startAtMillis == null
+            ) {
+                Text(
+                    "У задачи должно быть запланированное время начала",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (state.triggerRule in setOf("BEFORE_DEADLINE", "BECOMES_URGENT", "BEFORE_FOCUS")) {
+                StepperRow(
+                    label = "За ${state.offsetMinutes} мин",
+                    onMinus = { viewModel.setOffsetMinutes(state.offsetMinutes - 15) },
+                    onPlus = { viewModel.setOffsetMinutes(state.offsetMinutes + 15) }
+                )
+            }
+            if (state.triggerRule == "NO_PROGRESS") {
+                StepperRow(
+                    label = "После ${state.inactivityHours} ч без работы",
+                    onMinus = { viewModel.setInactivityHours(state.inactivityHours - 1) },
+                    onPlus = { viewModel.setInactivityHours(state.inactivityHours + 1) }
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -114,15 +229,16 @@ fun ReminderEditScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                TimeStepper(
-                    label = stringResource(R.string.reminder_field_time),
-                    hour = state.timeHour,
-                    minute = state.timeMinute,
-                    onHourChange = viewModel::setTimeHour,
-                    onMinuteChange = viewModel::setTimeMinute
-                )
+                if (state.triggerRule == "AT_TIME" || state.triggerRule == "BEFORE_SLEEP") {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TimeStepper(
+                        label = stringResource(R.string.reminder_field_time),
+                        hour = state.timeHour,
+                        minute = state.timeMinute,
+                        onHourChange = viewModel::setTimeHour,
+                        onMinuteChange = viewModel::setTimeMinute
+                    )
+                }
             }
         }
 
@@ -144,7 +260,10 @@ fun ReminderEditScreen(
                 .padding(12.dp)
         ) {
             Column {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     RepeatMode.values().forEach { mode ->
                         FilterChip(
                             selected = state.repeatMode == mode,
@@ -206,7 +325,12 @@ fun ReminderEditScreen(
             onClick = {
                 if (viewModel.save()) onBack()
             },
-            enabled = state.title.isNotBlank(),
+            enabled = state.title.isNotBlank() &&
+                (!requiresTask || state.linkedTaskId != null) &&
+                (state.triggerRule !in setOf("BEFORE_DEADLINE", "BECOMES_URGENT") ||
+                    tasks.firstOrNull { it.id == state.linkedTaskId }?.dueAtMillis != null) &&
+                (state.triggerRule != "BEFORE_FOCUS" ||
+                    tasks.firstOrNull { it.id == state.linkedTaskId }?.startAtMillis != null),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
@@ -219,6 +343,18 @@ fun ReminderEditScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun StepperRow(label: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        IconButton(onClick = onMinus) { Text("−", style = MaterialTheme.typography.titleLarge) }
+        IconButton(onClick = onPlus) { Text("+", style = MaterialTheme.typography.titleLarge) }
     }
 }
 

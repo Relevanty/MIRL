@@ -5,6 +5,7 @@ import com.personal.sleepalarm.alarm.AlarmScheduler
 import com.personal.sleepalarm.alarm.ReminderScheduler
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.preferences.BriefingPreference
+import com.personal.sleepalarm.data.preferences.LauncherIconPreference
 import com.personal.sleepalarm.data.preferences.ThemePreference
 import com.personal.sleepalarm.data.repository.DDayRepository
 import com.personal.sleepalarm.data.repository.FocusProtocolRepository
@@ -16,6 +17,7 @@ import com.personal.sleepalarm.data.repository.ScheduleRepository
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
 import com.personal.sleepalarm.data.repository.TaskRepository
+import com.personal.sleepalarm.data.repository.ActivityRecordRepository
 import com.personal.sleepalarm.service.audio.BriefingCoordinator
 import com.personal.sleepalarm.service.focus.FocusProtocolManager
 
@@ -49,6 +51,10 @@ class ServiceLocator(
 
     val themePreference: ThemePreference by lazy { ThemePreference(appContext) }
 
+    val launcherIconPreference: LauncherIconPreference by lazy {
+        LauncherIconPreference(appContext)
+    }
+
     val scheduleRepository: ScheduleRepository by lazy {
         ScheduleRepository(database.scheduleDao())
     }
@@ -75,8 +81,12 @@ class ServiceLocator(
         TaskRepository(database.taskDao())
     }
 
+    val activityRecordRepository: ActivityRecordRepository by lazy {
+        ActivityRecordRepository(database)
+    }
+
     val reminderRepository: ReminderRepository by lazy {
-        ReminderRepository(database.reminderDao(), database.taskDao())
+        ReminderRepository(database.reminderDao(), database.taskDao(), database.activityRecordDao())
     }
 
     val ddayRepository: DDayRepository by lazy {

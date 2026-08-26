@@ -2,6 +2,7 @@ package com.personal.sleepalarm.ui.stats
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,10 +21,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -80,6 +84,7 @@ private data class SleepNight(
 fun SleepStatsContent(
     state: StatsUiState,
     onExport: () -> Unit,
+    onCorrectDuration: (SleepSessionEntity, Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val zone = ZoneId.systemDefault()
@@ -89,6 +94,7 @@ fun SleepStatsContent(
     }
     var period by remember { mutableStateOf(SleepStatsPeriod.DAY) }
     var anchorDate by remember { mutableStateOf(initialDate) }
+    var editingNight by remember { mutableStateOf<SleepNight?>(null) }
     val nights = remember(state.allSessions, state.snapshotTimeMillis, zone) {
         buildSleepNights(state.allSessions, state.snapshotTimeMillis, zone)
     }
@@ -159,7 +165,7 @@ fun SleepStatsContent(
             SleepEmptyCard()
         } else {
             if (period == SleepStatsPeriod.DAY) {
-                SelectedNightCard(selectedNights.last(), zone)
+                SelectedNightCard(selectedNights.last(), zone, onEdit = { editingNight = it })
             }
             DurationComparisonChart(selectedNights)
             SleepScheduleChart(selectedNights, zone, locale)
@@ -176,7 +182,22 @@ fun SleepStatsContent(
             nights = selectedNights.sortedByDescending { it.endMillis }.take(12),
             zone = zone,
             canExport = state.allSessions.isNotEmpty(),
-            onExport = onExport
+            onExport = onExport,
+            onEdit = { editingNight = it }
+        )
+    }
+
+    editingNight?.let { night ->
+        SleepDurationEditDialog(
+            night = night,
+            onDismiss = { editingNight = null },
+            onSave = { minutes ->
+                night.sessions
+                    .filter { it.actualWakeTime != null }
+                    .maxByOrNull { it.actualWakeTime ?: Long.MIN_VALUE }
+                    ?.let { onCorrectDuration(it, minutes) }
+                editingNight = null
+            }
         )
     }
 }
@@ -251,7 +272,7 @@ private fun SleepSummaryGrid(nights: List<SleepNight>, zone: ZoneId) {
 }
 
 @Composable
-private fun SelectedNightCard(night: SleepNight, zone: ZoneId) {
+private fun SelectedNightCard(night: SleepNight, zone: ZoneId, onEdit: (SleepNight) -> Unit) {
     SleepChartCard(stringResource(R.string.sleep_stats_selected_night)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -279,6 +300,13 @@ private fun SelectedNightCard(night: SleepNight, zone: ZoneId) {
                 )
             }
             SleepOutcomeBadge(night.outcome)
+        }
+        if (night.outcome != SleepOutcome.ACTIVE) {
+            TextButton(onClick = { onEdit(night) }, modifier = Modifier.align(Alignment.End)) {
+                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("Изменить длительность")
+            }
         }
         night.latencyMinutes?.let { latency ->
             Text(
@@ -604,7 +632,8 @@ private fun SleepHistory(
     nights: List<SleepNight>,
     zone: ZoneId,
     canExport: Boolean,
-    onExport: () -> Unit
+    onExport: () -> Unit,
+    onEdit: (SleepNight) -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -630,18 +659,19 @@ private fun SleepHistory(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     } else {
-        nights.forEach { night -> SleepHistoryRow(night, zone) }
+        nights.forEach { night -> SleepHistoryRow(night, zone, onEdit) }
     }
 }
 
 @Composable
-private fun SleepHistoryRow(night: SleepNight, zone: ZoneId) {
+private fun SleepHistoryRow(night: SleepNight, zone: ZoneId, onEdit: (SleepNight) -> Unit) {
     val locale = Locale.getDefault()
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
+            .clickable(enabled = night.outcome != SleepOutcome.ACTIVE) { onEdit(night) }
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
@@ -665,6 +695,14 @@ private fun SleepHistoryRow(night: SleepNight, zone: ZoneId) {
                 color = MaterialTheme.colorScheme.tertiary
             )
             SleepOutcomeBadge(night.outcome)
+            if (night.outcome != SleepOutcome.ACTIVE) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Изменить длительность",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         if (night.cuesScheduled > 0) {
             Text(
@@ -674,6 +712,45 @@ private fun SleepHistoryRow(night: SleepNight, zone: ZoneId) {
             )
         }
     }
+}
+
+@Composable
+private fun SleepDurationEditDialog(
+    night: SleepNight,
+    onDismiss: () -> Unit,
+    onSave: (Long) -> Unit
+) {
+    var durationText by remember(night.date, night.durationMillis) {
+        mutableStateOf((night.durationMillis / MINUTE_MS).coerceAtLeast(1L).toString())
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Длительность сна") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Коррекция применяется только к выбранной ночи и сразу пересчитывает статистику.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = durationText,
+                    onValueChange = { durationText = it.filter(Char::isDigit).take(4) },
+                    label = { Text("Минуты сна") },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = durationText.toLongOrNull()?.let { it in 1..1440 } == true,
+                onClick = { durationText.toLongOrNull()?.let(onSave) }
+            ) { Text(stringResource(R.string.action_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
+    )
 }
 
 @Composable

@@ -83,8 +83,38 @@ class PersonalAssistant(
         return if (pending.isEmpty()) {
             context.getString(R.string.assistant_no_tasks)
         } else {
-            context.getString(R.string.assistant_tasks_answer, pending.size) +
-                    "\n" + pending.take(5).joinToString("\n") { "• ${it.title}" }
+            val now = System.currentTimeMillis()
+            val overdue = pending.filter { it.dueAtMillis?.let { due -> due < now } == true }
+            val dueSoon = pending
+                .filter { it.dueAtMillis?.let { due -> due >= now } == true }
+                .sortedBy { it.dueAtMillis }
+            buildString {
+                append(context.getString(R.string.assistant_tasks_answer, pending.size))
+                if (overdue.isNotEmpty()) {
+                    append("\n")
+                    append(context.getString(R.string.assistant_tasks_overdue, overdue.size))
+                }
+                append("\n")
+                append(pending.take(5).joinToString("\n") { task ->
+                    val progress = if (task.estimatedMinutes > 0) {
+                        " ${task.spentMillis / 60_000}/${task.estimatedMinutes}"
+                    } else ""
+                    "• ${task.title.ifBlank { task.description.ifBlank { task.nextAction.ifBlank { context.getString(R.string.task_untitled) } } }}$progress"
+                })
+                dueSoon.firstOrNull()?.let { next ->
+                    append("\n")
+                    append(
+                        context.getString(
+                            R.string.assistant_tasks_next_deadline,
+                            next.title.ifBlank {
+                                next.description.ifBlank {
+                                    next.nextAction.ifBlank { context.getString(R.string.task_untitled) }
+                                }
+                            }
+                        )
+                    )
+                }
+            }
         }
     }
 

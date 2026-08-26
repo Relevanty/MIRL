@@ -1,8 +1,17 @@
 package com.personal.sleepalarm.ui.home
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,22 +21,29 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -48,11 +64,15 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -60,6 +80,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
+import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.model.SleepPlan
 import com.personal.sleepalarm.ui.components.PermissionBanners
 import com.personal.sleepalarm.ui.components.WarningCard
@@ -68,11 +89,19 @@ import com.personal.sleepalarm.ui.stats.StatsScreen
 import com.personal.sleepalarm.ui.stats.StatsViewModel
 import com.personal.sleepalarm.util.PermissionChecker
 import com.personal.sleepalarm.util.TimeFormatter
+import java.time.ZoneId
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenDiary: () -> Unit = {},
+    onOpenTasks: () -> Unit = {},
+    onOpenStats: (() -> Unit)? = null,
+    onOpenMore: () -> Unit = {},
+    onOpenAssistant: () -> Unit = {},
+    openTaskCount: Int = 0,
+    upcomingTasks: List<TaskEntity> = emptyList(),
+    onStartTaskFocus: (TaskEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -126,8 +155,12 @@ fun HomeScreen(
             ) {
                 SleepTopActions(
                     isBriefingPlaying = isBriefingPlaying,
+                    openTaskCount = openTaskCount,
+                    onTasks = onOpenTasks,
                     onBriefing = viewModel::playBriefing,
-                    onStats = { showStats = true }
+                    onStats = { onOpenStats?.invoke() ?: run { showStats = true } },
+                    onMore = onOpenMore,
+                    onAssistant = onOpenAssistant
                 )
 
                 Box(
@@ -137,11 +170,32 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(vertical = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)
                     ) {
-                        SleepPlanWithCat(plan = state.plan)
+                        val activeSleepSession = state.activeSession
+                        val catState = when {
+                            activeSleepSession?.detectedSleepOnsetTime != null -> SleepCatState.SLEEPING
+                            activeSleepSession != null && state.now - activeSleepSession.bedTimePlanned < 10L * 60_000L ->
+                                SleepCatState.PREPARING
+                            activeSleepSession != null -> SleepCatState.DETECTING
+                            state.latestCompletedSession?.actualWakeTime?.let { state.now - it < 6L * 60L * 60_000L } == true ->
+                                SleepCatState.MORNING
+                            else -> SleepCatState.AWAKE
+                        }
+                        SleepPlanWithCat(plan = state.plan, catState = catState)
+                        TodayDynamicCard(
+                            activeSession = activeSleepSession,
+                            latestCompleted = state.latestCompletedSession,
+                            now = state.now,
+                            tasks = upcomingTasks,
+                            onOpenTasks = onOpenTasks,
+                            onStartFocus = onStartTaskFocus
+                        )
                         StartButtons(
                             activeSession = state.activeSession,
                             canStart = state.plan != null && state.permissions.exactAlarmsAllowed,
@@ -149,6 +203,24 @@ fun HomeScreen(
                             onCancelActive = viewModel::cancelActiveSession
                         )
                     }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    QuickAccessPill(
+                        label = stringResource(R.string.quick_notes_title),
+                        onClick = { showQuickNotes = true },
+                        accent = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickAccessPill(
+                        label = stringResource(R.string.diary_title),
+                        onClick = onOpenDiary,
+                        accent = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
@@ -184,22 +256,6 @@ fun HomeScreen(
                 )
             }
 
-            QuickAccessPill(
-                label = stringResource(R.string.quick_notes_title),
-                onClick = { showQuickNotes = true },
-                accent = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(16.dp)
-            )
-            QuickAccessPill(
-                label = stringResource(R.string.diary_title),
-                onClick = onOpenDiary,
-                accent = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-            )
         }
     }
 
@@ -213,10 +269,158 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SleepPlanWithCat(plan: SleepPlan?) {
+private fun TodayDynamicCard(
+    activeSession: SleepSessionEntity?,
+    latestCompleted: SleepSessionEntity?,
+    now: Long,
+    tasks: List<TaskEntity>,
+    onOpenTasks: () -> Unit,
+    onStartFocus: (TaskEntity) -> Unit
+) {
+    val morningResult = latestCompleted?.takeIf {
+        activeSession == null && it.actualWakeTime?.let { wake -> now - wake < 6L * 60L * 60_000L } == true
+    }
+    val task = tasks.firstOrNull()
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.94f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        when {
+            activeSession != null -> Column(Modifier.padding(14.dp)) {
+                Text(
+                    if (activeSession.detectedSleepOnsetTime == null) "Телефон наблюдает за засыпанием"
+                    else "Сон определён",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    if (activeSession.detectedSleepOnsetTime == null)
+                        "Учитываются покой, экран, зарядка и воспроизведение. Утром MIRL попросит подтверждение."
+                    else "Время можно будет подтвердить или исправить утром.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            morningResult != null -> Column(Modifier.padding(14.dp)) {
+                Text("Доброе утро", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    "Проверьте результат сна выше — после подтверждения он попадёт в аналитику дня.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            task != null -> Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Главное сейчас", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onOpenTasks) { Text("Открыть") }
+                }
+                Text(
+                    task.title.ifBlank { task.description.ifBlank { stringResource(R.string.task_untitled) } },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    val remaining = (task.workBudgetMinutes * 60_000L - task.spentMillis).coerceAtLeast(0L)
+                    val remainingText = if (task.workBudgetMinutes > 0) {
+                        val hours = remaining / 3_600_000L
+                        val minutes = remaining / 60_000L % 60
+                        "Осталось ${if (hours > 0) "$hours ч " else ""}$minutes мин · цикл ${task.plannedFocusMinutes} мин"
+                    } else "Обычный цикл ${task.plannedFocusMinutes} мин"
+                    Text(
+                        remainingText,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Button(onClick = { onStartFocus(task) }) { Text("Фокус") }
+                }
+            }
+            else -> Column(Modifier.padding(14.dp)) {
+                Text("День свободен для следующего шага", style = MaterialTheme.typography.titleSmall)
+                TextButton(onClick = onOpenTasks) { Text("Добавить задачу") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpcomingTasksStrip(tasks: List<TaskEntity>, onOpenTasks: () -> Unit) {
+    Card(
+        onClick = onOpenTasks,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.home_tasks_next),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(R.string.home_tasks_all),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            tasks.forEach { task ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        task.description.ifBlank { task.nextAction }.ifBlank { stringResource(R.string.task_untitled) },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    task.dueAtMillis?.let {
+                        Text(
+                            TimeFormatter.formatEpochMillis(it, ZoneId.systemDefault().id),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 10.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private enum class SleepCatState { AWAKE, PREPARING, DETECTING, SLEEPING, MORNING }
+
+@Composable
+private fun SleepPlanWithCat(plan: SleepPlan?, catState: SleepCatState) {
+    val isSleeping = catState == SleepCatState.DETECTING || catState == SleepCatState.SLEEPING
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val cardEdge = calculateSleepCatCardEdgeDp(maxWidth.value).dp
         val catCanvasHeight = cardEdge + 56.dp
+
+        var catPulse by remember { mutableStateOf(false) }
+        val pulseScale by animateFloatAsState(
+            targetValue = if (catPulse) 1.045f else 1f,
+            animationSpec = tween(160),
+            label = "sleep_cat_tap"
+        )
+        LaunchedEffect(catPulse) {
+            if (catPulse) {
+                kotlinx.coroutines.delay(160)
+                catPulse = false
+            }
+        }
 
         PlanSummaryCard(
             plan = plan,
@@ -224,11 +428,82 @@ private fun SleepPlanWithCat(plan: SleepPlan?) {
         )
         // The cat and the plan card now share the same coordinate system. Any
         // content above this box moves them together instead of separating them.
-        GeometricCatBackdrop(
-            modifier = Modifier
+        val catModifier = Modifier
                 .fillMaxWidth()
-                .height(catCanvasHeight),
-            cardEdgeFromTop = cardEdge
+                .height(catCanvasHeight)
+                .graphicsLayer {
+                    scaleX = pulseScale
+                    scaleY = pulseScale
+                }
+                .then(
+                    if (catState == SleepCatState.AWAKE) Modifier
+                    else Modifier.pointerInput(catState) {
+                        detectTapGestures(onTap = { catPulse = true })
+                    }
+                )
+        GeometricCatBackdrop(
+            modifier = catModifier,
+            cardEdgeFromTop = cardEdge,
+            isSleeping = isSleeping
+        )
+
+        if (isSleeping) SleepCatZzz(cardEdge = cardEdge, canvasWidth = maxWidth)
+        if (catState != SleepCatState.AWAKE) {
+            Text(
+                text = when (catState) {
+                SleepCatState.AWAKE -> ""
+                SleepCatState.PREPARING -> "Устраивается спать…"
+                SleepCatState.DETECTING -> "Наблюдает за тишиной"
+                SleepCatState.SLEEPING -> "Сон определён"
+                SleepCatState.MORNING -> "Доброе утро"
+                },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = cardEdge + 8.dp, start = 12.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun SleepCatZzz(
+    cardEdge: androidx.compose.ui.unit.Dp,
+    canvasWidth: androidx.compose.ui.unit.Dp
+) {
+    val transition = rememberInfiniteTransition(label = "sleep_cat_zzz")
+    val specs = listOf(
+        Triple(0, 18.sp, 0.0f),
+        Triple(1, 14.sp, 0.46f),
+        Triple(2, 11.sp, 0.82f)
+    )
+    specs.forEach { (index, size, phase) ->
+        val progress by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2400, delayMillis = (phase * 2400).toInt()),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "sleep_cat_z_$index"
+        )
+        Text(
+            text = "z",
+            modifier = Modifier
+                // Start at the mouth and drift up/right; no touch target or ripple.
+                .offset(
+                    x = canvasWidth * (0.68f + index * 0.055f) + (progress * 14f).dp,
+                    y = cardEdge - canvasWidth * (0.15f + index * 0.045f) - (progress * 24f).dp
+                )
+                .graphicsLayer {
+                    alpha = (1f - progress).coerceIn(0f, 1f) * 0.78f
+                    scaleX = 0.88f + progress * 0.24f
+                    scaleY = 0.88f + progress * 0.24f
+                },
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = size),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Bold
         )
     }
 }
@@ -239,7 +514,8 @@ internal fun calculateSleepCatCardEdgeDp(availableWidthDp: Float): Float =
 @Composable
 private fun GeometricCatBackdrop(
     modifier: Modifier = Modifier,
-    cardEdgeFromTop: androidx.compose.ui.unit.Dp
+    cardEdgeFromTop: androidx.compose.ui.unit.Dp,
+    isSleeping: Boolean = false
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
@@ -247,7 +523,37 @@ private fun GeometricCatBackdrop(
     val surface = MaterialTheme.colorScheme.surfaceVariant
     val backdrop = MaterialTheme.colorScheme.background
     val ink = MaterialTheme.colorScheme.onBackground
-    Canvas(modifier) {
+    val transition = rememberInfiniteTransition(label = "sleep_cat_breathing")
+    val breathingOffset by transition.animateFloat(
+        initialValue = if (isSleeping) -2.2f else -0.8f,
+        targetValue = if (isSleeping) 2.2f else 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (isSleeping) 2600 else 4200),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sleep_cat_breath"
+    )
+    val tailSwing by transition.animateFloat(
+        initialValue = -1.5f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (isSleeping) 3400 else 2200),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sleep_cat_tail"
+    )
+    val blink by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(180, delayMillis = 2800),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sleep_cat_blink"
+    )
+    Canvas(
+        modifier.graphicsLayer { translationY = breathingOffset }
+    ) {
         val cardEdge = cardEdgeFromTop.toPx()
         // Keep the head slightly forward of the reclining body.
         val center = Offset(size.width * 0.71f, cardEdge - size.width * 0.082f)
@@ -256,7 +562,7 @@ private fun GeometricCatBackdrop(
 
         // The tail rests on the card edge first, then drops softly down its left side.
         val tail = Path().apply {
-            moveTo(size.width * 0.235f, cardEdge + radius * 0.01f)
+            moveTo(size.width * 0.235f + tailSwing, cardEdge + radius * 0.01f)
             cubicTo(
                 size.width * 0.17f, cardEdge + radius * 0.01f,
                 size.width * 0.055f, cardEdge - radius * 0.01f,
@@ -480,8 +786,14 @@ private fun GeometricCatBackdrop(
                 center.y - radius * 0.10f
             )
         }
-        drawPath(leftEye, featureColor, style = featureStroke)
-        drawPath(rightEye, featureColor, style = featureStroke)
+        if (isSleeping) {
+            drawPath(leftEye, featureColor, style = featureStroke)
+            drawPath(rightEye, featureColor, style = featureStroke)
+        } else {
+            val eyeRadius = radius * (0.095f - 0.07f * blink).coerceAtLeast(0.02f)
+            drawCircle(featureColor, eyeRadius, Offset(center.x - radius * 0.39f, center.y - radius * 0.06f))
+            drawCircle(featureColor, eyeRadius, Offset(center.x + radius * 0.39f, center.y - radius * 0.06f))
+        }
 
         val nose = Path().apply {
             moveTo(center.x - 6.dp.toPx(), center.y + radius * 0.20f)
@@ -546,27 +858,80 @@ private fun GeometricCatBackdrop(
 @Composable
 private fun SleepTopActions(
     isBriefingPlaying: Boolean,
+    openTaskCount: Int,
+    onTasks: () -> Unit,
     onBriefing: () -> Unit,
-    onStats: () -> Unit
+    onStats: () -> Unit,
+    onMore: () -> Unit,
+    onAssistant: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 4.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.End
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        HeaderAction(
-            icon = if (isBriefingPlaying) Icons.Default.Stop else Icons.Default.RecordVoiceOver,
-            description = stringResource(R.string.content_description_briefing),
-            selected = isBriefingPlaying,
-            onClick = onBriefing
-        )
-        HeaderAction(
-            icon = Icons.Default.BarChart,
-            description = stringResource(R.string.action_open_stats),
-            onClick = onStats
-        )
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f))
+                .clickable(onClick = onTasks)
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Icon(
+                Icons.Default.Checklist,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Text(
+                stringResource(R.string.home_tasks_button),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (openTaskCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        openTaskCount.coerceAtMost(99).toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            }
+        }
+        Row {
+            HeaderAction(
+                icon = if (isBriefingPlaying) Icons.Default.Stop else Icons.Default.RecordVoiceOver,
+                description = stringResource(R.string.content_description_briefing),
+                selected = isBriefingPlaying,
+                onClick = onBriefing
+            )
+            HeaderAction(
+                icon = Icons.Default.BarChart,
+                description = stringResource(R.string.action_open_stats),
+                onClick = onStats
+            )
+            HeaderAction(
+                icon = Icons.Default.SmartToy,
+                description = stringResource(R.string.misc_assistant),
+                onClick = onAssistant
+            )
+            HeaderAction(
+                icon = Icons.Default.MoreHoriz,
+                description = stringResource(R.string.tab_misc),
+                onClick = onMore
+            )
+        }
     }
 }
 

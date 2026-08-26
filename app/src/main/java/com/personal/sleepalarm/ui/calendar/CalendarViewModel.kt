@@ -7,6 +7,10 @@ import com.personal.sleepalarm.alarm.EventAlarmScheduler
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
 import com.personal.sleepalarm.data.db.entity.StudySessionEntity
+import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
+import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
+import com.personal.sleepalarm.data.db.entity.DDayEntity
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -33,6 +37,19 @@ class CalendarViewModel(
 
     val studySessions: StateFlow<List<StudySessionEntity>> = studyDao
         .observeInRange(studyFrom, studyTo)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val actualActivities: StateFlow<List<ActivityRecordEntity>> = database.activityRecordDao()
+        .observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val tasks: StateFlow<List<TaskEntity>> = database.taskDao().observeByRoutineFlag(false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val sleepSessions: StateFlow<List<SleepSessionEntity>> = database.sleepSessionDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val milestones: StateFlow<List<DDayEntity>> = database.ddayDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun addEvent(event: CalendarEventEntity) {

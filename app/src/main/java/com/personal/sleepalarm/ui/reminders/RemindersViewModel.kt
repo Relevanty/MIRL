@@ -23,7 +23,7 @@ class RemindersViewModel(
 
     private val context = application.applicationContext
     private val database = AppDatabase.getInstance(context)
-    private val repository = ReminderRepository(database.reminderDao(), database.taskDao())
+    private val repository = ReminderRepository(database.reminderDao(), database.taskDao(), database.activityRecordDao())
     private val scheduler = ReminderScheduler(context)
 
     val uiState: StateFlow<List<ReminderEntity>> = repository.observeAll()

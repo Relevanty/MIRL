@@ -7,6 +7,8 @@ import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.service.ai.PersonalAssistant
 import com.personal.sleepalarm.service.ai.SleepPredictor
 import com.personal.sleepalarm.service.ai.TrainingSample
+import com.personal.sleepalarm.app.App
+import com.personal.sleepalarm.service.audio.VoiceScenario
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +35,17 @@ data class AssistantInsights(
     val snoozeLimit: Int? = null
 )
 
+data class ActivityGapSuggestion(
+    val startMillis: Long,
+    val endMillis: Long
+)
+
+data class AssistantProposedAction(
+    val taskId: Int,
+    val title: String,
+    val focusMinutes: Int
+)
+
 /**
  * ViewModel ассистента: обучает модель на истории и ведёт чат.
  */
@@ -45,12 +58,17 @@ class AssistantViewModel(
 
     private val predictor = SleepPredictor()
     private val assistant = PersonalAssistant(context, database, predictor)
+    private val voice = (application as App).serviceLocator.briefingCoordinator
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages
 
     private val _insights = MutableStateFlow(AssistantInsights())
     val insights: StateFlow<AssistantInsights> = _insights
+    private val _activityGap = MutableStateFlow<ActivityGapSuggestion?>(null)
+    val activityGap: StateFlow<ActivityGapSuggestion?> = _activityGap
+    private val _proposedAction = MutableStateFlow<AssistantProposedAction?>(null)
+    val proposedAction: StateFlow<AssistantProposedAction?> = _proposedAction
 
     private val dateFormat = DateTimeFormatter.ISO_LOCAL_DATE
     private val zone = ZoneId.systemDefault()
@@ -60,6 +78,26 @@ class AssistantViewModel(
             val samples = withContext(Dispatchers.IO) { buildTrainingSamples() }
             withContext(Dispatchers.Default) { predictor.train(samples) }
             _insights.value = buildInsights(samples.size)
+            detectUntrackedAfternoon()
+        }
+    }
+
+    fun dismissActivityGap() {
+        _activityGap.value = null
+    }
+
+    fun dismissProposedAction() {
+        _proposedAction.value = null
+    }
+
+    private suspend fun detectUntrackedAfternoon() {
+        val today = LocalDate.now()
+        val start = today.atTime(16, 0).atZone(zone).toInstant().toEpochMilli()
+        val plannedEnd = today.atTime(18, 0).atZone(zone).toInstant().toEpochMilli()
+        val end = minOf(System.currentTimeMillis(), plannedEnd)
+        if (end - start < 30L * 60_000L) return
+        if (database.activityRecordDao().findOverlaps(start, end).isEmpty()) {
+            _activityGap.value = ActivityGapSuggestion(start, end)
         }
     }
 
@@ -70,8 +108,38 @@ class AssistantViewModel(
         _messages.value = _messages.value + ChatMessage(fromUser = true, text = text)
 
         viewModelScope.launch {
+            val lower = text.lowercase()
+            if (lower.contains("что лучше") || lower.contains("что сделать") || lower.contains("следующую задачу")) {
+                val now = System.currentTimeMillis()
+                val task = database.taskDao().getAll()
+                    .filterNot { it.isDone || it.isMorningRoutine }
+                    .sortedWith(
+                        compareBy<com.personal.sleepalarm.data.db.entity.TaskEntity> { it.matrixQuadrant }
+                            .thenBy { it.dueAtMillis ?: Long.MAX_VALUE }
+                            .thenBy { it.sortOrder }
+                    )
+                    .firstOrNull()
+                if (task != null) {
+                    val title = task.title.ifBlank { task.description.ifBlank { "Задача ${task.id}" } }
+                    _proposedAction.value = AssistantProposedAction(
+                        taskId = task.id,
+                        title = title,
+                        focusMinutes = task.plannedFocusMinutes.coerceAtLeast(5)
+                    )
+                    _messages.value = _messages.value + ChatMessage(
+                        fromUser = false,
+                        text = if ((task.dueAtMillis ?: Long.MAX_VALUE) < now) {
+                            "Эта задача просрочена и сейчас важнее остальных. Я подготовил действие — проверьте его ниже."
+                        } else {
+                            "С учётом квадранта и срока это лучший следующий шаг. Я ничего не запущу без подтверждения."
+                        }
+                    )
+                    return@launch
+                }
+            }
             val answer = assistant.answer(text)
             _messages.value = _messages.value + ChatMessage(fromUser = false, text = answer)
+            voice.speak(answer, VoiceScenario.ASSISTANT) {}
         }
     }
 

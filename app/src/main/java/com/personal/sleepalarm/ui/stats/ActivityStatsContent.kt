@@ -23,6 +23,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -87,7 +88,8 @@ private data class ActivityBucket(
 @Composable
 fun ActivityStatsContent(
     modifier: Modifier = Modifier,
-    viewModel: ActivityStatsViewModel = viewModel()
+    viewModel: ActivityStatsViewModel = viewModel(),
+    onAddActivity: () -> Unit = {}
 ) {
     val source by viewModel.source.collectAsStateWithLifecycle()
     val zone = ZoneId.systemDefault()
@@ -134,6 +136,9 @@ fun ActivityStatsContent(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        OutlinedButton(onClick = onAddActivity, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.activity_add_title))
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = period == ActivityStatsPeriod.DAY,
@@ -831,7 +836,24 @@ private fun ChartCard(title: String, content: @Composable ColumnScope.() -> Unit
 }
 
 private fun ActivityStatsSource.toActivityRecords(): List<ActivityRecord> {
-    val focus = focusSessions.mapNotNull { session ->
+    val focus = if (activityRecords.isNotEmpty()) activityRecords.mapNotNull { record ->
+        val end = minOf(record.endedAt, record.startedAt + record.durationMillis)
+        if (end <= record.startedAt) return@mapNotNull null
+        ActivityRecord(
+            type = when (record.category.uppercase(Locale.ROOT)) {
+                "STUDY", "УЧЁБА", "УЧЕБА" -> TrackedActivityType.STUDY
+                "WORK", "РАБОТА" -> TrackedActivityType.WORK
+                else -> when (record.activityType) {
+                    FocusActivityType.STUDY -> TrackedActivityType.STUDY
+                    FocusActivityType.WORK -> TrackedActivityType.WORK
+                    FocusActivityType.OTHER -> TrackedActivityType.OTHER
+                }
+            },
+            startMillis = record.startedAt,
+            endMillis = end,
+            label = record.title
+        )
+    } else focusSessions.mapNotNull { session ->
         val naturalEnd = session.startedAt + session.actualDurationMillis
         val end = minOf(session.completedAt ?: naturalEnd, naturalEnd)
         if (end <= session.startedAt) return@mapNotNull null

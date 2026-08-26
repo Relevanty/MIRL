@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -83,6 +84,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     var showThemes by remember { mutableStateOf(false) }
+    var showLauncherIcons by remember { mutableStateOf(false) }
 
     var showSystemCheck by remember { mutableStateOf(false) }
     var expandedCategory by rememberSaveable {
@@ -228,6 +230,11 @@ fun SettingsScreen(
 
     if (showThemes) {
         ThemesScreen(onBack = { showThemes = false })
+        return
+    }
+
+    if (showLauncherIcons) {
+        LauncherIconsScreen(onBack = { showLauncherIcons = false })
         return
     }
 
@@ -394,8 +401,12 @@ fun SettingsScreen(
                 AutoDetectSection(
                     autoDetect = state.profile.autoDetectOnsetEnabled,
                     autoCorrect = state.profile.autoCorrectWakeEnabled,
+                    minConfidence = state.profile.autoCorrectMinConfidencePercent,
+                    maxShiftMinutes = state.profile.autoCorrectMaxShiftMinutes,
                     onAutoDetectChange = { viewModel.setAutoDetectOnset(it) },
-                    onAutoCorrectChange = { viewModel.setAutoCorrectWake(it) }
+                    onAutoCorrectChange = { viewModel.setAutoCorrectWake(it) },
+                    onMinConfidenceChange = viewModel::setAutoCorrectMinConfidence,
+                    onMaxShiftChange = viewModel::setAutoCorrectMaxShift
                 )
             }
 
@@ -408,11 +419,41 @@ fun SettingsScreen(
             ) {
                 LanguageSection()
                 Spacer(modifier = Modifier.height(16.dp))
-                OutlinedButton(
-                    onClick = { showThemes = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(text = stringResource(R.string.action_open_themes))
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    if (maxWidth >= 360.dp) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedButton(
+                                onClick = { showThemes = true },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(text = stringResource(R.string.action_choose_theme))
+                            }
+                            OutlinedButton(
+                                onClick = { showLauncherIcons = true },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(text = stringResource(R.string.action_choose_launcher_icon))
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { showThemes = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(text = stringResource(R.string.action_choose_theme))
+                            }
+                            OutlinedButton(
+                                onClick = { showLauncherIcons = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(text = stringResource(R.string.action_choose_launcher_icon))
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1101,8 +1142,12 @@ private fun AlarmSection(
 private fun AutoDetectSection(
     autoDetect: Boolean,
     autoCorrect: Boolean,
+    minConfidence: Int,
+    maxShiftMinutes: Int,
     onAutoDetectChange: (Boolean) -> Unit,
-    onAutoCorrectChange: (Boolean) -> Unit
+    onAutoCorrectChange: (Boolean) -> Unit,
+    onMinConfidenceChange: (Int) -> Unit,
+    onMaxShiftChange: (Int) -> Unit
 ) {
     SectionCard(title = stringResource(R.string.section_auto_detect)) {
         SwitchSetting(
@@ -1119,6 +1164,31 @@ private fun AutoDetectSection(
                 checked = autoCorrect,
                 onCheckedChange = onAutoCorrectChange
             )
+            if (autoCorrect) {
+                Spacer(modifier = Modifier.height(12.dp))
+                LabeledSlider(
+                    label = "Минимальная уверенность",
+                    value = minConfidence,
+                    valueText = "$minConfidence%",
+                    valueRange = 50f..95f,
+                    steps = 8,
+                    onValueChange = onMinConfidenceChange
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                LabeledSlider(
+                    label = "Максимальный сдвиг будильника",
+                    value = maxShiftMinutes,
+                    valueText = "$maxShiftMinutes мин",
+                    valueRange = 0f..120f,
+                    steps = 23,
+                    onValueChange = onMaxShiftChange
+                )
+                Text(
+                    "Будильник никогда не уйдёт позже выбранного времени подъёма.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))

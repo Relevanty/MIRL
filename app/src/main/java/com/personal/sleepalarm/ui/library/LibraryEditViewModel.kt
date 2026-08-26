@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.LibraryItemEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemType
+import com.personal.sleepalarm.data.db.entity.LibraryResourceKind
 import com.personal.sleepalarm.data.repository.LibraryRepository
 import com.personal.sleepalarm.util.CoverHelper
+import com.personal.sleepalarm.util.ResourceFileHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +28,10 @@ data class LibraryEditState(
     val title: String = "",
     val author: String = "",
     val coverPath: String? = null,
+    val resourceKind: LibraryResourceKind = LibraryResourceKind.NOTE,
+    val localFilePath: String? = null,
+    val originalFileName: String = "",
+    val referenceUrl: String = "",
     val shortDescription: String = "",
     val impression: String = "",
     val thoughts: String = "",
@@ -65,6 +71,10 @@ class LibraryEditViewModel(
                 title = item.title,
                 author = item.author,
                 coverPath = item.coverUri,
+                resourceKind = item.resourceKind,
+                localFilePath = item.localFilePath,
+                originalFileName = item.originalFileName,
+                referenceUrl = item.referenceUrl,
                 shortDescription = item.shortDescription,
                 impression = item.impression,
                 thoughts = item.thoughts,
@@ -84,6 +94,8 @@ class LibraryEditViewModel(
     fun setType(type: LibraryItemType) = _state.update { it.copy(type = type) }
     fun setTitle(v: String) = _state.update { it.copy(title = v) }
     fun setAuthor(v: String) = _state.update { it.copy(author = v) }
+    fun setResourceKind(v: LibraryResourceKind) = _state.update { it.copy(resourceKind = v) }
+    fun setReferenceUrl(v: String) = _state.update { it.copy(referenceUrl = v) }
     fun setShortDescription(v: String) = _state.update { it.copy(shortDescription = v) }
     fun setImpression(v: String) = _state.update { it.copy(impression = v) }
     fun setThoughts(v: String) = _state.update { it.copy(thoughts = v) }
@@ -97,6 +109,28 @@ class LibraryEditViewModel(
             // Удаляем старую обложку, если была.
             CoverHelper.deleteCover(_state.value.coverPath)
             _state.update { it.copy(coverPath = path) }
+        }
+    }
+
+    /** Копирует документ внутрь приложения, поэтому он останется доступным офлайн. */
+    fun pickResource(uri: Uri) {
+        viewModelScope.launch {
+            val copied = ResourceFileHelper.copyIntoApp(context, uri) ?: return@launch
+            ResourceFileHelper.delete(_state.value.localFilePath)
+            _state.update {
+                it.copy(
+                    resourceKind = LibraryResourceKind.DOCUMENT,
+                    localFilePath = copied.path,
+                    originalFileName = copied.displayName
+                )
+            }
+        }
+    }
+
+    fun removeResource() {
+        ResourceFileHelper.delete(_state.value.localFilePath)
+        _state.update {
+            it.copy(localFilePath = null, originalFileName = "", resourceKind = LibraryResourceKind.NOTE)
         }
     }
 
@@ -148,6 +182,10 @@ class LibraryEditViewModel(
                     title = s.title.trim(),
                     author = s.author.trim(),
                     coverUri = s.coverPath,
+                    resourceKind = s.resourceKind,
+                    localFilePath = s.localFilePath,
+                    originalFileName = s.originalFileName,
+                    referenceUrl = s.referenceUrl.trim(),
                     shortDescription = s.shortDescription,
                     impression = s.impression,
                     thoughts = s.thoughts,

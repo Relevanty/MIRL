@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class StatsUiState(
     val allSessions: List<SleepSessionEntity> = emptyList(),
@@ -33,6 +34,26 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             SharingStarted.WhileSubscribed(5_000),
             StatsUiState(snapshotTimeMillis = snapshotTime)
         )
+
+    fun correctSleepDuration(session: SleepSessionEntity, durationMinutes: Long) {
+        val wake = session.actualWakeTime ?: return
+        val safeDuration = durationMinutes.coerceIn(1L, 24L * 60L)
+        val correctedOnset = wake - safeDuration * 60_000L
+        viewModelScope.launch {
+            database.sleepSessionDao().update(
+                session.copy(
+                    detectedSleepOnsetTime = correctedOnset,
+                    detectedOnsetLatencyMinutes = ((correctedOnset - session.bedTimePlanned) / 60_000L)
+                        .toInt().coerceAtLeast(0),
+                    detectedOnsetConfidencePercent = 100,
+                    detectedOnsetSource = "MANUAL_CORRECTION",
+                    detectedOnsetUncertaintyMinutes = 0,
+                    onsetReviewState = "CORRECTED",
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
 
     private fun isCountable(session: SleepSessionEntity): Boolean {
         if (session.isActive) return true

@@ -10,6 +10,7 @@ import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.model.FocusProtocolPhase
 import com.personal.sleepalarm.data.db.entity.LibraryItemType
+import com.personal.sleepalarm.data.db.entity.LibraryResourceKind
 import com.personal.sleepalarm.data.db.entity.RepeatMode
 
 /**
@@ -121,5 +122,12 @@ class Converters {
     fun toLibraryItemType(value: String): LibraryItemType {
         return LibraryItemType.valueOf(value)
     }
+
+    @TypeConverter
+    fun fromLibraryResourceKind(value: LibraryResourceKind): String = value.name
+
+    @TypeConverter
+    fun toLibraryResourceKind(value: String): LibraryResourceKind =
+        runCatching { LibraryResourceKind.valueOf(value) }.getOrDefault(LibraryResourceKind.NOTE)
 
 }
