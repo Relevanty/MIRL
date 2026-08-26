@@ -508,7 +508,7 @@ class AlarmViewModel(
 
             _isBriefingPlaying.value = true
             val text = briefingTextBuilder.build(context)
-            briefingCoordinator.speak(text) {
+            briefingCoordinator.speak(text, com.personal.sleepalarm.service.audio.VoiceScenario.MORNING) {
                 viewModelScope.launch {
                     _isBriefingPlaying.value = false
                     emitFinish()

@@ -73,6 +73,10 @@ data class AlarmProfileEntity(
     // === Автоопределение засыпания ===
     val autoDetectOnsetEnabled: Boolean = false,
     val autoCorrectWakeEnabled: Boolean = false,
+    /** Автокоррекция применяется только при достаточной уверенности телефона. */
+    val autoCorrectMinConfidencePercent: Int = 75,
+    /** Максимальный сдвиг существующего будильника в любую сторону. */
+    val autoCorrectMaxShiftMinutes: Int = 30,
 
     // === Умные повторы ===
     val smartRepeatEnabled: Boolean = true,

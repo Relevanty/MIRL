@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
@@ -62,6 +64,7 @@ import com.personal.sleepalarm.data.db.entity.LibraryItemType
 import com.personal.sleepalarm.data.db.entity.LibraryTagEntity
 import com.personal.sleepalarm.ui.components.CatText
 import com.personal.sleepalarm.util.CoverHelper
+import com.personal.sleepalarm.util.ResourceFileHelper
 import kotlinx.coroutines.flow.Flow
 
 @Composable
@@ -70,6 +73,7 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var itemToDelete by remember { mutableStateOf<LibraryItemEntity?>(null) }
@@ -245,6 +249,10 @@ fun LibraryScreen(
                 showEdit = true
                 actionItem = null
             },
+            onOpen = {
+                ResourceFileHelper.open(context, item.localFilePath, item.referenceUrl)
+                actionItem = null
+            },
             onMoveUp = {
                 if (index > 0) viewModel.swapItems(item, state.items[index - 1])
                 actionItem = null
@@ -382,6 +390,19 @@ private fun LibraryCard(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+            val resourceLabel = when {
+                item.localFilePath != null -> item.originalFileName.ifBlank { "Локальный файл" }
+                item.referenceUrl.isNotBlank() -> "Ссылка · ${item.referenceUrl}"
+                else -> null
+            }
+            if (resourceLabel != null) {
+                Text(
+                    text = resourceLabel,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
         }
 
         if (item.rating > 0) {
@@ -402,6 +423,7 @@ private fun LibraryActionsDialog(
     canMoveDown: Boolean,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
+    onOpen: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onDelete: () -> Unit
@@ -411,6 +433,9 @@ private fun LibraryActionsDialog(
         title = { Text(item.title) },
         text = {
             Column {
+                if (item.localFilePath != null || item.referenceUrl.isNotBlank()) {
+                    LibraryActionRow(Icons.Default.OpenInNew, "Открыть материал", true, onOpen)
+                }
                 LibraryActionRow(Icons.Default.Edit, stringResource(R.string.library_action_edit), true, onEdit)
                 LibraryActionRow(Icons.Default.ArrowUpward, stringResource(R.string.library_action_move_up), canMoveUp, onMoveUp)
                 LibraryActionRow(Icons.Default.ArrowDownward, stringResource(R.string.library_action_move_down), canMoveDown, onMoveDown)

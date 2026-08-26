@@ -15,6 +15,9 @@ import com.personal.sleepalarm.data.db.entity.EnergySampleEntity
 import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
 import com.personal.sleepalarm.data.db.entity.StudySessionEntity
+import com.personal.sleepalarm.data.repository.TaskRepository
+import com.personal.sleepalarm.data.repository.ActivityRecordRepository
+import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.model.FocusProtocolPhase
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
@@ -45,7 +48,10 @@ class FocusProtocolManager(context: Context) {
     private val energyDao = database.energySampleDao()
     private val pomodoroDao = database.pomodoroDao()
     private val studyDao = database.studySessionDao()
+    private val taskRepository = TaskRepository(database.taskDao())
+    private val activityRepository = ActivityRecordRepository(database)
     private val scheduler = FocusProtocolScheduler(appContext)
+    private val soundPreference = PomodoroSoundPreference(appContext)
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -117,8 +123,14 @@ class FocusProtocolManager(context: Context) {
         }
     }
 
-    suspend fun advanceIfDue(sessionId: Int) {
+    suspend fun advanceIfDue(
+        sessionId: Int,
+        expectedPhase: FocusProtocolPhase? = null,
+        expectedEnd: Long? = null
+    ) {
         val session = protocolDao.getById(sessionId) ?: return
+        if (expectedPhase != null && session.phase != expectedPhase) return
+        if (expectedEnd != null && session.phaseEndsAt != expectedEnd) return
         val end = session.phaseEndsAt ?: return
         val now = System.currentTimeMillis()
         if (end > now) {
@@ -127,12 +139,20 @@ class FocusProtocolManager(context: Context) {
         }
         when (session.phase) {
             FocusProtocolPhase.RESET -> {
-                val updated = session.copy(
-                    phase = FocusProtocolPhase.ACTIVATE,
-                    phaseStartedAt = now,
-                    phaseEndsAt = null
-                )
-                protocolDao.update(updated)
+                val updated = database.withTransaction {
+                    val latest = protocolDao.getById(sessionId) ?: return@withTransaction null
+                    if (latest.phase != FocusProtocolPhase.RESET ||
+                        (expectedEnd != null && latest.phaseEndsAt != expectedEnd) ||
+                        (latest.phaseEndsAt ?: Long.MAX_VALUE) > System.currentTimeMillis()
+                    ) return@withTransaction null
+                    val updated = latest.copy(
+                        phase = FocusProtocolPhase.ACTIVATE,
+                        phaseStartedAt = System.currentTimeMillis(),
+                        phaseEndsAt = null
+                    )
+                    protocolDao.update(updated)
+                    updated
+                } ?: return
                 scheduler.cancel(sessionId)
                 showNotification(updated, alert = true)
             }
@@ -140,15 +160,28 @@ class FocusProtocolManager(context: Context) {
                 session = session,
                 focusEndAt = end,
                 transitionAt = now,
-                completed = true
-            )
+                completed = true,
+                expectedPhase = expectedPhase,
+                expectedEnd = expectedEnd
+            )?.let { updated ->
+                scheduler.schedule(updated)
+                showNotification(updated, alert = true)
+            }
             FocusProtocolPhase.RECOVERY -> {
-                val updated = session.copy(
-                    phase = FocusProtocolPhase.CYCLE_READY,
-                    phaseStartedAt = now,
-                    phaseEndsAt = null
-                )
-                protocolDao.update(updated)
+                val updated = database.withTransaction {
+                    val latest = protocolDao.getById(sessionId) ?: return@withTransaction null
+                    if (latest.phase != FocusProtocolPhase.RECOVERY ||
+                        (expectedEnd != null && latest.phaseEndsAt != expectedEnd) ||
+                        (latest.phaseEndsAt ?: Long.MAX_VALUE) > System.currentTimeMillis()
+                    ) return@withTransaction null
+                    val updated = latest.copy(
+                        phase = FocusProtocolPhase.CYCLE_READY,
+                        phaseStartedAt = System.currentTimeMillis(),
+                        phaseEndsAt = null
+                    )
+                    protocolDao.update(updated)
+                    updated
+                } ?: return
                 scheduler.cancel(sessionId)
                 showNotification(updated, alert = true)
             }
@@ -254,6 +287,10 @@ class FocusProtocolManager(context: Context) {
         ) return
         val now = System.currentTimeMillis()
         finishFocusInternal(session, focusEndAt = now, transitionAt = now, completed = true)
+            ?.let { updated ->
+                scheduler.schedule(updated)
+                showNotification(updated, alert = true)
+            }
     }
 
     suspend fun finishRecovery(sessionId: Int) {
@@ -349,11 +386,15 @@ class FocusProtocolManager(context: Context) {
         session: FocusProtocolSessionEntity,
         focusEndAt: Long,
         transitionAt: Long,
-        completed: Boolean
-    ) {
+        completed: Boolean,
+        expectedPhase: FocusProtocolPhase? = null,
+        expectedEnd: Long? = null
+    ): FocusProtocolSessionEntity? {
         var updated: FocusProtocolSessionEntity? = null
         database.withTransaction {
             val latest = protocolDao.getById(session.id) ?: return@withTransaction
+            if (expectedPhase != null && latest.phase != expectedPhase) return@withTransaction
+            if (expectedEnd != null && latest.phaseEndsAt != expectedEnd) return@withTransaction
             if (latest.phase != FocusProtocolPhase.FOCUS &&
                 latest.phase != FocusProtocolPhase.FOCUS_PAUSED
             ) return@withTransaction
@@ -374,9 +415,7 @@ class FocusProtocolManager(context: Context) {
             )
             protocolDao.update(updated!!)
         }
-        val saved = updated ?: return
-        scheduler.schedule(saved)
-        showNotification(saved, alert = true)
+        return updated
     }
 
     private suspend fun recordFocus(
@@ -387,8 +426,7 @@ class FocusProtocolManager(context: Context) {
     ) {
         if (elapsed < MIN_RECORDED_FOCUS_MS) return
         val startedAt = session.focusStartedAt ?: (completedAt - elapsed)
-        pomodoroDao.insert(
-            PomodoroSessionEntity(
+        val pomodoro = PomodoroSessionEntity(
                 startedAt = startedAt,
                 durationMinutes = ((elapsed + MINUTE_MS - 1L) / MINUTE_MS).toInt(),
                 completedAt = completedAt,
@@ -399,9 +437,11 @@ class FocusProtocolManager(context: Context) {
                 taskId = session.itemId.takeIf { session.activityType == FocusActivityType.WORK },
                 otherActivityId = session.itemId.takeIf { session.activityType == FocusActivityType.OTHER },
                 itemName = session.itemName,
-                actualDurationMillis = elapsed
+                actualDurationMillis = elapsed,
+                recordSource = "TIMER"
             )
-        )
+        val pomodoroId = pomodoroDao.insert(pomodoro).toInt()
+        activityRepository.recordTimer(pomodoro, pomodoroId)
         if (session.activityType == FocusActivityType.STUDY) {
             studyDao.insert(
                 StudySessionEntity(
@@ -440,50 +480,107 @@ class FocusProtocolManager(context: Context) {
             session.id,
             Intent(appContext, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(MainActivity.EXTRA_DESTINATION, MainActivity.DESTINATION_FOCUS_PROTOCOL)
+                putExtra(FocusProtocolReceiver.EXTRA_SESSION_ID, session.id)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val builder = NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(appContext.getString(title))
-            .setContentText(session.outcome)
+            .setSubText(session.itemName)
+            .setContentText(session.outcome.ifBlank { session.itemName })
             .setContentIntent(openIntent)
             .setOnlyAlertOnce(!alert)
             .setSilent(!alert)
             .setAutoCancel(false)
-            .setOngoing(session.phase != FocusProtocolPhase.ACTIVATE &&
-                session.phase != FocusProtocolPhase.CYCLE_READY &&
-                session.phase != FocusProtocolPhase.REVIEW)
+            .setOngoing(!session.phase.isTerminal)
             .setPriority(if (alert) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
 
+        val phaseEnd = session.phaseEndsAt
+        if (session.phase.hasCountdown && phaseEnd != null) {
+            builder
+                .setWhen(phaseEnd)
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+        } else if (session.phase == FocusProtocolPhase.FOCUS_PAUSED) {
+            builder
+                .setShowWhen(false)
+                .setContentText(
+                    appContext.getString(
+                        R.string.focus_protocol_paused_remaining,
+                        formatRemaining(session.pausedRemainingMillis)
+                    )
+                )
+        }
+
         when (session.phase) {
+            FocusProtocolPhase.RESET -> builder.addAction(
+                0,
+                appContext.getString(R.string.focus_protocol_skip_reset),
+                actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_SKIP_RESET)
+            )
+            FocusProtocolPhase.ACTIVATE -> builder.addAction(
+                0,
+                appContext.getString(R.string.focus_protocol_begin_focus),
+                actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_START_FOCUS)
+            )
             FocusProtocolPhase.FOCUS -> builder.addAction(
+                0,
+                appContext.getString(R.string.focus_protocol_mark_distraction),
+                actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_MARK_DISTRACTION)
+            ).addAction(
                 0,
                 appContext.getString(R.string.focus_protocol_pause),
                 actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_PAUSE)
+            ).addAction(
+                0,
+                appContext.getString(R.string.focus_protocol_finish_focus),
+                actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_FINISH_FOCUS)
             )
             FocusProtocolPhase.FOCUS_PAUSED -> builder.addAction(
                 0,
                 appContext.getString(R.string.focus_protocol_resume),
                 actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_RESUME)
+            ).addAction(
+                0,
+                appContext.getString(R.string.focus_protocol_finish_focus),
+                actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_FINISH_FOCUS)
+            )
+            FocusProtocolPhase.RECOVERY -> builder.addAction(
+                0,
+                appContext.getString(R.string.focus_protocol_finish_recovery),
+                actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_FINISH_RECOVERY)
             )
             FocusProtocolPhase.CYCLE_READY -> builder.addAction(
                 0,
                 appContext.getString(R.string.focus_block_one_more_cycle),
                 actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_REPEAT)
+            ).addAction(
+                0,
+                appContext.getString(R.string.focus_block_finish),
+                actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_FINISH_BLOCK)
             )
             else -> Unit
         }
-        builder.addAction(
-            0,
-            appContext.getString(R.string.action_cancel),
-            actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_CANCEL)
-        )
+        if (session.phase != FocusProtocolPhase.FOCUS &&
+            session.phase != FocusProtocolPhase.REVIEW
+        ) {
+            builder.addAction(
+                0,
+                appContext.getString(R.string.action_cancel),
+                actionPendingIntent(session.id, FocusProtocolReceiver.ACTION_CANCEL)
+            )
+        }
         val shown = runCatching {
             notificationManager.notify(notificationId(session.id), builder.build())
         }.isSuccess
         if (shown && alert) {
-            AppNotificationSoundPlayer.play(appContext)
+            AppNotificationSoundPlayer.play(
+                context = appContext,
+                soundUri = soundPreference.getUri()
+            )
         }
     }
 
@@ -506,13 +603,18 @@ class FocusProtocolManager(context: Context) {
 
     private fun notificationId(sessionId: Int): Int = NOTIFICATION_BASE + sessionId
 
+    private fun formatRemaining(millis: Long): String {
+        val totalSeconds = (millis.coerceAtLeast(0L) + 999L) / 1_000L
+        return "%02d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+    }
+
     private fun dateKeyOf(millis: Long): String = Instant.ofEpochMilli(millis)
         .atZone(ZoneId.systemDefault())
         .toLocalDate()
         .format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     companion object {
-        private const val CHANNEL_ID = "focus_protocol_channel_app_volume_v2"
+        private const val CHANNEL_ID = "focus_protocol_channel_app_volume_v3"
         private const val NOTIFICATION_BASE = 680_000
         private const val ENERGY_BEFORE = "BEFORE_FOCUS"
         private const val ENERGY_AFTER = "AFTER_FOCUS"

@@ -17,7 +17,11 @@ class FocusProtocolScheduler(private val context: Context) {
         val triggerAt = session.phaseEndsAt ?: return
         if (!session.phase.hasCountdown || triggerAt <= System.currentTimeMillis()) return
 
-        val pending = phaseEndPendingIntent(session.id)
+        val pending = phaseEndPendingIntent(
+            sessionId = session.id,
+            expectedPhase = session.phase.name,
+            expectedEnd = triggerAt
+        )
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 !alarmManager.canScheduleExactAlarms()
@@ -33,13 +37,19 @@ class FocusProtocolScheduler(private val context: Context) {
     }
 
     fun cancel(sessionId: Int) {
-        alarmManager.cancel(phaseEndPendingIntent(sessionId))
+        alarmManager.cancel(phaseEndPendingIntent(sessionId, null, null))
     }
 
-    private fun phaseEndPendingIntent(sessionId: Int): PendingIntent {
+    private fun phaseEndPendingIntent(
+        sessionId: Int,
+        expectedPhase: String?,
+        expectedEnd: Long?
+    ): PendingIntent {
         val intent = Intent(context, FocusProtocolReceiver::class.java).apply {
             action = FocusProtocolReceiver.ACTION_PHASE_END
             putExtra(FocusProtocolReceiver.EXTRA_SESSION_ID, sessionId)
+            expectedPhase?.let { putExtra(FocusProtocolReceiver.EXTRA_EXPECTED_PHASE, it) }
+            expectedEnd?.let { putExtra(FocusProtocolReceiver.EXTRA_EXPECTED_END, it) }
         }
         return PendingIntent.getBroadcast(
             context,

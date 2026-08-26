@@ -6,10 +6,14 @@ import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.alarm.ReminderScheduler
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.RepeatMode
+import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.data.repository.ReminderRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -23,7 +27,10 @@ data class ReminderEditState(
     val timeMinute: Int = 0,
     val repeatMode: RepeatMode = RepeatMode.ONCE,
     val daysOfWeek: Int = 0,
-    val intervalDays: Int = 1
+    val intervalDays: Int = 1,
+    val triggerRule: String = "AT_TIME",
+    val offsetMinutes: Int = 60,
+    val inactivityHours: Int = 24
 )
 
 /**
@@ -40,11 +47,14 @@ class ReminderEditViewModel(
 
     private val context = application.applicationContext
     private val database = AppDatabase.getInstance(context)
-    private val repository = ReminderRepository(database.reminderDao(), database.taskDao())
+    private val repository = ReminderRepository(database.reminderDao(), database.taskDao(), database.activityRecordDao())
     private val scheduler = ReminderScheduler(context)
 
     private val _state = MutableStateFlow(ReminderEditState())
     val state: StateFlow<ReminderEditState> = _state
+    val tasks: StateFlow<List<TaskEntity>> = database.taskDao().observeAll()
+        .map { items -> items.filter { !it.isMorningRoutine && !it.isDone } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Вызывается один раз из LaunchedEffect экрана. */
     fun init(editReminderId: Int?, linkedTaskId: Int?) {
@@ -60,7 +70,11 @@ class ReminderEditViewModel(
                         timeMinute = r.timeMinute,
                         repeatMode = r.repeatMode,
                         daysOfWeek = r.daysOfWeek,
-                        intervalDays = r.intervalDays
+                        intervalDays = r.intervalDays,
+                        triggerRule = r.triggerRule,
+                        offsetMinutes = r.offsetMinutes,
+                        inactivityHours = r.inactivityHours,
+                        linkedTaskId = r.linkedId.takeIf { r.linkedType == "TASK" } ?: it.linkedTaskId
                     )
                 }
             }
@@ -72,6 +86,10 @@ class ReminderEditViewModel(
     fun setTimeMinute(v: Int) = _state.update { it.copy(timeMinute = v.coerceIn(0, 59)) }
     fun setRepeatMode(v: RepeatMode) = _state.update { it.copy(repeatMode = v) }
     fun setIntervalDays(v: Int) = _state.update { it.copy(intervalDays = v.coerceIn(1, 365)) }
+    fun setLinkedTask(id: Int?) = _state.update { it.copy(linkedTaskId = id) }
+    fun setTriggerRule(v: String) = _state.update { it.copy(triggerRule = v) }
+    fun setOffsetMinutes(v: Int) = _state.update { it.copy(offsetMinutes = v.coerceIn(0, 43_200)) }
+    fun setInactivityHours(v: Int) = _state.update { it.copy(inactivityHours = v.coerceIn(1, 720)) }
 
     /** Переключает бит дня недели (Пн=1..Вс=7 → бит). */
     fun toggleDay(dayOfWeekValue: Int) {
@@ -85,6 +103,14 @@ class ReminderEditViewModel(
     fun save(): Boolean {
         val s = _state.value
         if (s.title.isBlank()) return false
+        val requiresTask = s.triggerRule in setOf("BEFORE_DEADLINE", "NO_PROGRESS", "BECOMES_URGENT", "BEFORE_FOCUS")
+        if (requiresTask && s.linkedTaskId == null) return false
+        if (s.triggerRule in setOf("BEFORE_DEADLINE", "BECOMES_URGENT") &&
+            tasks.value.firstOrNull { it.id == s.linkedTaskId }?.dueAtMillis == null
+        ) return false
+        if (s.triggerRule == "BEFORE_FOCUS" &&
+            tasks.value.firstOrNull { it.id == s.linkedTaskId }?.startAtMillis == null
+        ) return false
 
         viewModelScope.launch {
             val id: Long = if (s.reminderId == null) {
@@ -94,7 +120,12 @@ class ReminderEditViewModel(
                     timeMinute = s.timeMinute,
                     repeatMode = s.repeatMode,
                     daysOfWeek = if (s.repeatMode == RepeatMode.WEEKLY) s.daysOfWeek else 0,
-                    intervalDays = if (s.repeatMode == RepeatMode.INTERVAL) s.intervalDays else 1
+                    intervalDays = if (s.repeatMode == RepeatMode.INTERVAL) s.intervalDays else 1,
+                    linkedType = if (s.linkedTaskId != null) "TASK" else "",
+                    linkedId = s.linkedTaskId,
+                    triggerRule = s.triggerRule,
+                    offsetMinutes = s.offsetMinutes,
+                    inactivityHours = s.inactivityHours
                 )
             } else {
                 val existing = repository.getById(s.reminderId)
@@ -107,7 +138,12 @@ class ReminderEditViewModel(
                             repeatMode = s.repeatMode,
                             daysOfWeek = if (s.repeatMode == RepeatMode.WEEKLY) s.daysOfWeek else 0,
                             intervalDays = if (s.repeatMode == RepeatMode.INTERVAL) s.intervalDays else 1,
-                            isEnabled = true
+                            isEnabled = true,
+                            linkedType = if (s.linkedTaskId != null) "TASK" else existing.linkedType,
+                            linkedId = s.linkedTaskId ?: existing.linkedId,
+                            triggerRule = s.triggerRule,
+                            offsetMinutes = s.offsetMinutes,
+                            inactivityHours = s.inactivityHours
                         )
                     )
                 }

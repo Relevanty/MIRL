@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -49,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.LibraryItemType
+import com.personal.sleepalarm.data.db.entity.LibraryResourceKind
 import com.personal.sleepalarm.ui.components.CatText
 import com.personal.sleepalarm.util.CoverHelper
 
@@ -72,6 +74,12 @@ fun LibraryEditScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) viewModel.pickCover(uri)
+    }
+
+    val resourcePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.pickResource(uri)
     }
 
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -162,6 +170,67 @@ fun LibraryEditScreen(
                     )
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Рабочий материал",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                LibraryResourceKind.values().forEach { kind ->
+                    FilterChip(
+                        selected = state.resourceKind == kind,
+                        onClick = { viewModel.setResourceKind(kind) },
+                        label = {
+                            Text(
+                                when (kind) {
+                                    LibraryResourceKind.NOTE -> "Заметка"
+                                    LibraryResourceKind.DOCUMENT -> "Файл"
+                                    LibraryResourceKind.LINK -> "Ссылка"
+                                }
+                            )
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (state.resourceKind == LibraryResourceKind.DOCUMENT || state.localFilePath != null) {
+                OutlinedButton(onClick = { resourcePicker.launch(arrayOf("*/*")) }) {
+                    Text(if (state.originalFileName.isBlank()) "Выбрать файл" else state.originalFileName)
+                }
+                if (state.localFilePath != null) {
+                    TextButton(onClick = viewModel::removeResource) { Text("Убрать файл") }
+                }
+            }
+            if (state.resourceKind == LibraryResourceKind.LINK) {
+                TextField(
+                    value = state.referenceUrl,
+                    onValueChange = viewModel::setReferenceUrl,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Ссылка") },
+                    placeholder = { Text("https://…") },
+                    singleLine = true
+                )
+            }
+            Text(
+                text = "Файлы копируются в MIRL и доступны без интернета. Ресурс можно прикрепить к задаче.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

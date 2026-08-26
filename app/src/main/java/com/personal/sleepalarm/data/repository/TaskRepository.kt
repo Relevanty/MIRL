@@ -38,15 +38,25 @@ class TaskRepository(
     suspend fun getById(id: Int): TaskEntity? = dao.getById(id)
 
     suspend fun addTask(title: String, isMorningRoutine: Boolean): Long {
+        val quadrant = 2
         return dao.insert(
             TaskEntity(
                 title = title.trim(),
-                isMorningRoutine = isMorningRoutine
+                isMorningRoutine = isMorningRoutine,
+                matrixQuadrant = quadrant,
+                sortOrder = if (isMorningRoutine) 0 else dao.maxActiveSortOrder(quadrant) + 1
             )
         )
     }
 
     suspend fun update(task: TaskEntity) = dao.update(task)
+
+    suspend fun save(task: TaskEntity): Long {
+        return if (task.id == 0) dao.insert(task) else {
+            dao.update(task)
+            task.id.toLong()
+        }
+    }
 
     suspend fun delete(task: TaskEntity) = dao.delete(task)
 
@@ -104,6 +114,19 @@ class TaskRepository(
 
     suspend fun setReminderId(taskId: Int, reminderId: Int?) =
         dao.setReminderId(taskId, reminderId)
+
+    suspend fun addSpentMillis(taskId: Int, durationMillis: Long) {
+        if (durationMillis <= 0L) return
+        dao.addSpentMillis(taskId, durationMillis)
+    }
+
+    suspend fun updateSortOrder(taskId: Int, sortOrder: Int) =
+        dao.updateSortOrder(taskId, sortOrder)
+
+    suspend fun nextSortOrder(quadrant: Int): Int = dao.maxActiveSortOrder(quadrant) + 1
+
+    suspend fun getActiveInQuadrant(quadrant: Int): List<TaskEntity> =
+        dao.getActiveInQuadrant(quadrant)
 
     /**
      * Вызывается из ReminderRepository при удалении напоминания —

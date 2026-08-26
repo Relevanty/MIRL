@@ -35,6 +35,9 @@ class SleepSessionRepository(
         return sessionDao.observeActiveSession()
     }
 
+    fun observeLatestCompleted(): Flow<SleepSessionEntity?> =
+        sessionDao.observeLatestCompleted()
+
     fun observeRecentSessions(limit: Int = 14): Flow<List<SleepSessionEntity>> {
         return sessionDao.observeRecentSessions(limit)
     }
@@ -303,14 +306,32 @@ class SleepSessionRepository(
     suspend fun updateDetectedOnset(
         sessionId: Int,
         onsetTime: Long,
-        latencyMinutes: Int
+        latencyMinutes: Int,
+        confidencePercent: Int = 60,
+        source: String = "PHONE_CONTEXT_HEURISTIC",
+        uncertaintyMinutes: Int = ((100 - confidencePercent) / 3).coerceIn(5, 20)
     ) {
         sessionDao.updateDetectedOnset(
             sessionId = sessionId,
             onsetTime = onsetTime,
             latencyMinutes = latencyMinutes,
+            confidencePercent = confidencePercent,
+            source = source,
+            uncertaintyMinutes = uncertaintyMinutes,
             updatedAt = System.currentTimeMillis()
         )
+    }
+
+    suspend fun getTypicalConfirmedOnsetLatencyMinutes(): Int? {
+        val values = sessionDao.getAllSessions()
+            .asSequence()
+            .filter { it.onsetReviewState == "CONFIRMED" || it.onsetReviewState == "CORRECTED" }
+            .mapNotNull { it.detectedOnsetLatencyMinutes }
+            .filter { it in 0..240 }
+            .take(14)
+            .sorted()
+            .toList()
+        return values.getOrNull(values.size / 2)
     }
     // === ДОБАВЛЕНО: сессии короче часа не записываем ===
 

@@ -53,7 +53,7 @@ interface TaskDao {
     suspend fun deleteById(id: Int)
 
     /** Все задачи, отсортированные по времени создания (новые сверху). */
-    @Query("SELECT * FROM tasks ORDER BY createdAt DESC")
+    @Query("SELECT * FROM tasks ORDER BY isDone ASC, matrixQuadrant ASC, sortOrder ASC, createdAt DESC")
     fun observeAll(): Flow<List<TaskEntity>>
 
     /** Задачи по секции (утренняя рутина / общие). */
@@ -61,7 +61,7 @@ interface TaskDao {
         """
         SELECT * FROM tasks
         WHERE isMorningRoutine = :isMorningRoutine
-        ORDER BY createdAt DESC
+        ORDER BY isDone ASC, matrixQuadrant ASC, sortOrder ASC, createdAt DESC
         """
     )
     fun observeByRoutineFlag(isMorningRoutine: Boolean): Flow<List<TaskEntity>>
@@ -121,4 +121,29 @@ interface TaskDao {
     /** Привязка напоминания к задаче. */
     @Query("UPDATE tasks SET reminderId = :reminderId WHERE id = :id")
     suspend fun setReminderId(id: Int, reminderId: Int?)
+
+    /** Добавляет фактическое рабочее время, записанное Pomodoro или вручную. */
+    @Query(
+        """
+        UPDATE tasks
+        SET spentMillis = spentMillis + :durationMillis,
+            updatedAt = :updatedAt
+        WHERE id = :id
+        """
+    )
+    suspend fun addSpentMillis(id: Int, durationMillis: Long, updatedAt: Long = System.currentTimeMillis())
+
+    /** Replaces the cached total after activity history is edited or deleted. */
+    @Query("UPDATE tasks SET spentMillis = :spentMillis, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun setSpentMillis(id: Int, spentMillis: Long, updatedAt: Long = System.currentTimeMillis())
+
+    /** Обновляет порядок задач после перестановки шариков. */
+    @Query("UPDATE tasks SET sortOrder = :sortOrder, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateSortOrder(id: Int, sortOrder: Int, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM tasks WHERE matrixQuadrant = :quadrant AND isMorningRoutine = 0 AND isDone = 0")
+    suspend fun maxActiveSortOrder(quadrant: Int): Int
+
+    @Query("SELECT * FROM tasks WHERE matrixQuadrant = :quadrant AND isMorningRoutine = 0 AND isDone = 0 ORDER BY sortOrder ASC, createdAt DESC")
+    suspend fun getActiveInQuadrant(quadrant: Int): List<TaskEntity>
 }

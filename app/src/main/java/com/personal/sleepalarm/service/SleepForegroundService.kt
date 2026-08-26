@@ -36,6 +36,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * Foreground service активной сессии сна.
@@ -533,7 +536,11 @@ class SleepForegroundService : Service() {
                 manageSensorTracker(
                     sessionId = sessionId,
                     autoDetectEnabled = profile.autoDetectOnsetEnabled,
-                    autoCorrectEnabled = profile.autoCorrectWakeEnabled
+                    autoCorrectEnabled = profile.autoCorrectWakeEnabled,
+                    autoCorrectMinConfidence = profile.autoCorrectMinConfidencePercent,
+                    autoCorrectMaxShiftMinutes = profile.autoCorrectMaxShiftMinutes,
+                    hardWakeHour = profile.preferredWakeHour,
+                    hardWakeMinute = profile.preferredWakeMinute
                 )
             }
         }
@@ -607,7 +614,11 @@ class SleepForegroundService : Service() {
     private suspend fun manageSensorTracker(
         sessionId: Int,
         autoDetectEnabled: Boolean,
-        autoCorrectEnabled: Boolean
+        autoCorrectEnabled: Boolean,
+        autoCorrectMinConfidence: Int,
+        autoCorrectMaxShiftMinutes: Int,
+        hardWakeHour: Int,
+        hardWakeMinute: Int
     ) {
         val session = withContext(Dispatchers.IO) {
             sessionRepository.getSession(sessionId)
@@ -627,20 +638,34 @@ class SleepForegroundService : Service() {
                 withinWindow
 
         if (shouldRun && sensorTracker == null) {
-            startSensorTracker(session, autoCorrectEnabled)
+            startSensorTracker(
+                session,
+                autoCorrectEnabled,
+                autoCorrectMinConfidence,
+                autoCorrectMaxShiftMinutes,
+                hardWakeHour,
+                hardWakeMinute
+            )
         } else if (!shouldRun) {
             stopSensorTracker()
         }
     }
 
-    private fun startSensorTracker(
+    private suspend fun startSensorTracker(
         session: SleepSessionEntity,
-        autoCorrectEnabled: Boolean
+        autoCorrectEnabled: Boolean,
+        autoCorrectMinConfidence: Int,
+        autoCorrectMaxShiftMinutes: Int,
+        hardWakeHour: Int,
+        hardWakeMinute: Int
     ) {
         val tracker = SleepSensorTracker(applicationContext)
         sensorTracker = tracker
 
-        tracker.start(session.bedTimePlanned) { onsetMs, latencyMin ->
+        val expectedLatency = withContext(Dispatchers.IO) {
+            sessionRepository.getTypicalConfirmedOnsetLatencyMinutes()
+        }
+        tracker.start(session.bedTimePlanned, expectedLatency) { onsetMs, latencyMin, confidencePercent ->
             // onDetected приходит на main-потоке (слушатель без Handler).
             // Переключаемся на IO для записи в БД.
             serviceScope.launch(Dispatchers.IO) {
@@ -648,7 +673,10 @@ class SleepForegroundService : Service() {
                     sessionRepository.updateDetectedOnset(
                         sessionId = session.id,
                         onsetTime = onsetMs,
-                        latencyMinutes = latencyMin
+                        latencyMinutes = latencyMin,
+                        confidencePercent = confidencePercent,
+                        source = "PHONE_CONTEXT_HEURISTIC",
+                        uncertaintyMinutes = ((100 - confidencePercent) / 3).coerceIn(5, 20)
                     )
                 }.onFailure {
                     Log.e(TAG, "Failed to persist detected onset", it)
@@ -659,8 +687,16 @@ class SleepForegroundService : Service() {
 
                 // Опциональная автокоррекция будильника — только с явного согласия
                 // и только один раз за сессию.
-                if (autoCorrectEnabled && !wakeCorrected) {
-                    correctWakeByDetectedOnset(session.id, onsetMs)
+                if (autoCorrectEnabled && !wakeCorrected && confidencePercent >= autoCorrectMinConfidence) {
+                    correctWakeByDetectedOnset(
+                        session.id,
+                        onsetMs,
+                        autoCorrectMaxShiftMinutes,
+                        hardWakeHour,
+                        hardWakeMinute
+                    )
+                } else if (autoCorrectEnabled && confidencePercent < autoCorrectMinConfidence) {
+                    Log.i(TAG, "Auto-correct skipped: confidence=$confidencePercent < $autoCorrectMinConfidence")
                 }
             }
         }
@@ -677,13 +713,29 @@ class SleepForegroundService : Service() {
      */
     private suspend fun correctWakeByDetectedOnset(
         sessionId: Int,
-        onsetMs: Long
+        onsetMs: Long,
+        maxShiftMinutes: Int,
+        hardWakeHour: Int,
+        hardWakeMinute: Int
     ) {
         val fresh = sessionRepository.getSession(sessionId) ?: return
         if (!fresh.isActive) return
 
-        val newWake = onsetMs +
+        val rawWake = onsetMs +
                 fresh.cyclesPlanned.toLong() * fresh.cycleLengthMinutes * MINUTE_MS
+
+        val maxShift = maxShiftMinutes.coerceIn(0, 120) * MINUTE_MS
+        val boundedByShift = rawWake.coerceIn(
+            fresh.estimatedWakeTime - maxShift,
+            fresh.estimatedWakeTime + maxShift
+        )
+        val zone = ZoneId.systemDefault()
+        val bedDate = Instant.ofEpochMilli(fresh.bedTimePlanned).atZone(zone).toLocalDate()
+        var hardWake = bedDate.atTime(
+            LocalTime.of(hardWakeHour.coerceIn(0, 23), hardWakeMinute.coerceIn(0, 59))
+        ).atZone(zone)
+        if (hardWake.toInstant().toEpochMilli() <= fresh.bedTimePlanned) hardWake = hardWake.plusDays(1)
+        val newWake = minOf(boundedByShift, hardWake.toInstant().toEpochMilli())
 
         // Не двигаем будильник в прошлое.
         if (newWake <= System.currentTimeMillis()) {
@@ -879,7 +931,9 @@ class SleepForegroundService : Service() {
 
         // ДОБАВЛЕНО: F9 — не детектим засыпание, если с момента bedTime
         // прошло больше часа (поздний старт / восстановление после reboot).
-        private const val MAX_DETECT_WINDOW_MS = 60L * 60L * 1000L
+        // Give the phone-only detector enough time for a slow wind-down without
+        // keeping it alive all night; the session itself remains user-controlled.
+        private const val MAX_DETECT_WINDOW_MS = 3L * 60L * 60L * 1000L
 
         // ДОБАВЛЕНО: ключи для передачи данных сессии прямо в сервис.
         const val EXTRA_WAKE_TIME = "extra_wake_time"

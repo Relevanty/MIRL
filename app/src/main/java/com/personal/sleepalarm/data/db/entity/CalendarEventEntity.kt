@@ -14,5 +14,9 @@ data class CalendarEventEntity(
     val allDay: Boolean,
     val repeatRule: String,
     val reminderMinutes: Int?,
+    /** PLANNED events never reduce task budget; ACTUAL work lives in activity_records. */
+    val eventKind: String = "PLANNED",
+    val taskId: Int? = null,
+    val projectId: Int? = null,
     val createdAt: Long = System.currentTimeMillis()
 )

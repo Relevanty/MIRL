@@ -15,6 +15,10 @@ captures/
 *.aab
 *.apks
 
+# Local Codex diagnostics and bundled Android platform tools
+.codex-patch/
+.platform-tools/
+
 # Signing material and local secrets
 *.jks
 *.keystore

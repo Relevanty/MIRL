@@ -25,5 +25,9 @@ data class DDayEntity(
     /** Целевая дата события в формате yyyy-MM-dd. */
     val targetDate: String,
 
+    val projectId: Int? = null,
+    val taskId: Int? = null,
+    val notes: String = "",
+
     val createdAt: Long = System.currentTimeMillis()
 )

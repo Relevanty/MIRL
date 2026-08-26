@@ -58,6 +58,7 @@ class BootReceiver : BroadcastReceiver() {
                 app.serviceLocator.focusProtocolManager.reconcileActiveSessions()
 
                 val database = AppDatabase.getInstance(applicationContext)
+                TaskDeadlineScheduler(applicationContext).rescheduleAll(database.taskDao().getAll())
 
                 val repository = SleepSessionRepository(
                     database = database,

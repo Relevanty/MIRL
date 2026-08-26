@@ -50,5 +50,51 @@ data class TaskEntity(
      * ID связанного напоминания, если пользователь нажал «создать напоминание»
      * для этой задачи. null — напоминания нет.
      */
-    val reminderId: Int? = null
+    val reminderId: Int? = null,
+
+    /** Сектор матрицы Эйзенхауэра: 1 — сейчас, 2 — план, 3 — передать, 4 — отпустить. */
+    val matrixQuadrant: Int = 2,
+
+    /** Полная карточка результата и следующего действия. */
+    val description: String = "",
+    val whyImportant: String = "",
+    val definitionOfDone: String = "",
+    val nextAction: String = "",
+
+    /** Локальная копия изображения в приватном хранилище приложения. */
+    val imagePath: String? = null,
+
+    /** Необязательный срок и оценка одного рабочего захода. */
+    val dueAtMillis: Long? = null,
+    val estimatedMinutes: Int = 25,
+
+    /** Фактически отработанное время по таймеру или ручному событию. */
+    val spentMillis: Long = 0L,
+
+    /** Порядок шарика внутри квадранта матрицы. */
+    val sortOrder: Int = 0,
+
+    /** Условия выполнения: энергия, контекст, зависимости и план на случай препятствия. */
+    val energyLevel: String = "MEDIUM",
+    val contextTag: String = "",
+    val dependencies: String = "",
+    val obstacle: String = "",
+    val ifThenPlan: String = "",
+
+    /** Чек-лист хранится построчно; UI отмечает выполненные пункты префиксом [x]. */
+    val checklist: String = "",
+    val projectTag: String = "",
+    val assignee: String = "",
+
+    /** The whole task budget, separate from the duration of one focus cycle. */
+    val workBudgetMinutes: Int = 0,
+    val projectId: Int? = null,
+    val category: String = "WORK",
+    val tags: String = "",
+    val materials: String = "",
+    val expectedResult: String = "",
+    val startAtMillis: Long? = null,
+    val repeatRule: String = "",
+    val plannedFocusMinutes: Int = 25,
+    val updatedAt: Long = System.currentTimeMillis()
 )

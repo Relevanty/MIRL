@@ -53,5 +53,18 @@ data class ReminderEntity(
 
     val isEnabled: Boolean = true,
 
+    /** Optional object link: TASK, EVENT, DEADLINE, SLEEP or FOCUS. */
+    val linkedType: String = "",
+    val linkedId: Int? = null,
+
+    /** AT_TIME, BEFORE_DEADLINE или NO_PROGRESS. */
+    val triggerRule: String = "AT_TIME",
+
+    /** За сколько минут до дедлайна предупредить. */
+    val offsetMinutes: Int = 5,
+
+    /** Через сколько часов без фактической работы напомнить. */
+    val inactivityHours: Int = 24,
+
     val createdAt: Long = System.currentTimeMillis()
 )

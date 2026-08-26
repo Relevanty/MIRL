@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.util.CsvExporter
+import com.personal.sleepalarm.ui.activity.ManualActivitySheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +47,7 @@ fun StatsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var statsMode by remember { mutableStateOf("sleep") }
+    var showManualActivity by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val exportScope = rememberCoroutineScope()
@@ -102,15 +104,21 @@ fun StatsScreen(
                     onClick = { statsMode = "activity" },
                     label = { Text(stringResource(R.string.stats_tab_study)) }
                 )
+                FilterChip(
+                    selected = statsMode == "productivity",
+                    onClick = { statsMode = "productivity" },
+                    label = { Text("Задачи") }
+                )
             }
 
-            if (statsMode == "activity") {
-                ActivityStatsContent()
-            } else {
-                SleepStatsContent(
-                    state = state,
-                    onExport = { exportCsvLauncher.launch("sleep_sessions.csv") }
-                )
+            when (statsMode) {
+                "activity" -> ActivityStatsContent(onAddActivity = { showManualActivity = true })
+                "productivity" -> ProductivityStatsContent()
+                else -> SleepStatsContent(
+                        state = state,
+                        onExport = { exportCsvLauncher.launch("sleep_sessions.csv") },
+                        onCorrectDuration = viewModel::correctSleepDuration
+                    )
             }
         }
 
@@ -120,5 +128,9 @@ fun StatsScreen(
                 .align(Alignment.BottomCenter)
                 .padding(16.dp)
         )
+    }
+
+    if (showManualActivity) {
+        ManualActivitySheet(onDismiss = { showManualActivity = false })
     }
 }

@@ -13,8 +13,8 @@ android {
         applicationId = "com.personal.sleepalarm"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.2.2"
+        versionCode = 12
+        versionName = "1.5.2"
 
         resourceConfigurations += listOf("ru", "en")
 

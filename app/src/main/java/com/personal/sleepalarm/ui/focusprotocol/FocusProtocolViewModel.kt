@@ -9,6 +9,7 @@ import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.model.FocusProtocolPhase
 import com.personal.sleepalarm.service.focus.FocusProtocolConfig
+import com.personal.sleepalarm.service.audio.VoiceScenario
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -31,6 +32,7 @@ class FocusProtocolViewModel(application: Application) : AndroidViewModel(applic
     private val locator = (application as App).serviceLocator
     private val repository = locator.focusProtocolRepository
     private val manager = locator.focusProtocolManager
+    private val voice = locator.briefingCoordinator
 
     val activeSession: StateFlow<FocusProtocolSessionEntity?> = repository.observeActive()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -83,7 +85,9 @@ class FocusProtocolViewModel(application: Application) : AndroidViewModel(applic
                         .coerceAtLeast(0L)
                     _remainingMillis.value = remaining
                     if (remaining == 0L) {
-                        manager.advanceIfDue(session.id)
+                        // The AlarmManager receiver is the single transition owner.
+                        // UI only renders the countdown, so process restarts and
+                        // notification taps cannot create duplicate phase records.
                         break
                     }
                     delay(500L)
@@ -116,16 +120,26 @@ class FocusProtocolViewModel(application: Application) : AndroidViewModel(applic
                     energyBefore = energyBefore
                 )
             )
+            voice.speak("Подготовка к фокусу. Цель: «$outcome».", VoiceScenario.FOCUS) {}
         }
     }
 
     fun skipReset(id: Int) = viewModelScope.launch { manager.skipReset(id) }
-    fun startFocus(id: Int) = viewModelScope.launch { manager.startFocus(id) }
+    fun startFocus(id: Int) = viewModelScope.launch {
+        manager.startFocus(id)
+        voice.speak("Фокус начался.", VoiceScenario.FOCUS) {}
+    }
     fun pauseFocus(id: Int) = viewModelScope.launch { manager.pauseFocus(id) }
     fun resumeFocus(id: Int) = viewModelScope.launch { manager.resumeFocus(id) }
-    fun finishFocus(id: Int) = viewModelScope.launch { manager.finishFocus(id) }
+    fun finishFocus(id: Int) = viewModelScope.launch {
+        manager.finishFocus(id)
+        voice.speak("Фокус завершён. Время восстановиться.", VoiceScenario.FOCUS) {}
+    }
     fun finishRecovery(id: Int) = viewModelScope.launch { manager.finishRecovery(id) }
-    fun repeatCycle(id: Int) = viewModelScope.launch { manager.startNextCycle(id) }
+    fun repeatCycle(id: Int) = viewModelScope.launch {
+        manager.startNextCycle(id)
+        voice.speak("Следующий цикл начался.", VoiceScenario.FOCUS) {}
+    }
     fun switchTargetAndRepeat(
         id: Int,
         activityType: FocusActivityType,

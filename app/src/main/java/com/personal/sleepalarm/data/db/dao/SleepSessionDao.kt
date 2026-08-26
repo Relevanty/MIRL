@@ -33,6 +33,17 @@ interface SleepSessionDao {
         """
     )
     suspend fun getLatestCompleted(): SleepSessionEntity?
+
+    /** Последняя завершённая ночь в виде потока для утренней карточки. */
+    @Query(
+        """
+        SELECT * FROM sleep_sessions
+        WHERE actualWakeTime IS NOT NULL
+        ORDER BY actualWakeTime DESC
+        LIMIT 1
+        """
+    )
+    fun observeLatestCompleted(): Flow<SleepSessionEntity?>
     @Query("SELECT * FROM sleep_sessions")
     suspend fun getAllSessions(): List<SleepSessionEntity>
     // === Существующие методы (НЕ менять) ===
@@ -144,6 +155,10 @@ interface SleepSessionDao {
         UPDATE sleep_sessions
         SET detectedSleepOnsetTime = :onsetTime,
             detectedOnsetLatencyMinutes = :latencyMinutes,
+            detectedOnsetConfidencePercent = :confidencePercent,
+            detectedOnsetSource = :source,
+            detectedOnsetUncertaintyMinutes = :uncertaintyMinutes,
+            onsetReviewState = 'PENDING',
             updatedAt = :updatedAt
         WHERE id = :sessionId
         """
@@ -152,6 +167,9 @@ interface SleepSessionDao {
         sessionId: Int,
         onsetTime: Long,
         latencyMinutes: Int,
+        confidencePercent: Int,
+        source: String,
+        uncertaintyMinutes: Int,
         updatedAt: Long
     )
 }

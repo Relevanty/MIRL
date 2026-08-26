@@ -17,6 +17,10 @@ import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
 import com.personal.sleepalarm.data.db.entity.StudySessionEntity
 import com.personal.sleepalarm.data.db.entity.SubjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
+import com.personal.sleepalarm.data.repository.TaskRepository
+import com.personal.sleepalarm.data.repository.ActivityRecordRepository
+import com.personal.sleepalarm.data.repository.ManualActivityInput
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.calculator.ActivityDayBoundary
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
@@ -31,6 +35,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
@@ -57,10 +62,13 @@ class PomodoroViewModel(
     private val database = AppDatabase.getInstance(application.applicationContext)
     private val subjectDao = database.subjectDao()
     private val taskDao = database.taskDao()
+    private val taskRepository = TaskRepository(taskDao)
     private val otherActivityDao = database.otherActivityDao()
     private val studyDao = database.studySessionDao()
     private val pomodoroDao = database.pomodoroDao()
+    private val activityRepository = ActivityRecordRepository(database)
     private val context = application.applicationContext
+    private val soundPreference = PomodoroSoundPreference(context)
 
     val subjects: StateFlow<List<SubjectEntity>> = subjectDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -134,6 +142,9 @@ class PomodoroViewModel(
 
     init {
         createNotificationChannel()
+        viewModelScope.launch {
+            soundPreference.observeUri().collect { _notificationSoundUri.value = it }
+        }
     }
 
     fun selectActivityType(type: FocusActivityType) {
@@ -147,6 +158,14 @@ class PomodoroViewModel(
         if (_mode.value != TimerMode.IDLE) return
         selectedIds[_activityType.value] = id
         _selectedItemId.value = id
+    }
+
+    /** Подготавливает Pomodoro из карточки задачи, не запуская таймер без подтверждения. */
+    fun prepareWorkTask(task: TaskEntity) {
+        if (_mode.value != TimerMode.IDLE) return
+        selectActivityType(FocusActivityType.WORK)
+        selectItem(task.id)
+        setFocusDuration(task.plannedFocusMinutes.takeIf { it > 0 }?.toLong() ?: task.estimatedMinutes.toLong())
     }
 
     fun setResetAfterBreak(value: Boolean) {
@@ -169,10 +188,12 @@ class PomodoroViewModel(
 
     fun setNotificationSound(uri: Uri?) {
         _notificationSoundUri.value = uri
+        viewModelScope.launch { soundPreference.setUri(uri) }
     }
 
     fun resetNotificationSound() {
         _notificationSoundUri.value = null
+        viewModelScope.launch { soundPreference.setUri(null) }
     }
 
     private fun showNotification(title: String, text: String) {
@@ -186,7 +207,9 @@ class PomodoroViewModel(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, POMODORO_CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            // Launcher aliases may use colorful artwork; notifications require a
+            // dedicated single-color status-bar glyph.
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)
@@ -312,12 +335,14 @@ class PomodoroViewModel(
             taskId = focus.itemId.takeIf { focus.type == FocusActivityType.WORK },
             otherActivityId = focus.itemId.takeIf { focus.type == FocusActivityType.OTHER },
             itemName = focus.itemName,
-            actualDurationMillis = duration
+            actualDurationMillis = duration,
+            recordSource = "TIMER"
         )
 
         val recordedStart = startMillis
         viewModelScope.launch {
-            pomodoroDao.insert(session)
+            val pomodoroId = pomodoroDao.insert(session).toInt()
+            activityRepository.recordTimer(session, pomodoroId)
             if (focus.type == FocusActivityType.STUDY) {
                 studyDao.insert(
                     StudySessionEntity(
@@ -341,6 +366,38 @@ class PomodoroViewModel(
 
     fun setBreakDuration(minutes: Long) {
         _breakDuration.value = minutes.coerceIn(MIN_BREAK_MINUTES, MAX_BREAK_MINUTES) * MINUTE_MS
+    }
+
+    /** Записывает фактически выполненный фокус, если пользователь забыл включить таймер. */
+    fun addManualFocus(startMillis: Long, durationMinutes: Int) {
+        val safeMinutes = durationMinutes.coerceIn(1, MAX_FOCUS_MINUTES.toInt())
+        val duration = safeMinutes * MINUTE_MS
+        val endMillis = startMillis + duration
+        val focus = activeFocus ?: ActiveFocus(
+            type = _activityType.value,
+            itemId = _selectedItemId.value ?: 0,
+            itemName = when (_activityType.value) {
+                FocusActivityType.STUDY -> subjects.value.firstOrNull { it.id == _selectedItemId.value }?.name.orEmpty()
+                FocusActivityType.WORK -> workTasks.value.firstOrNull { it.id == _selectedItemId.value }
+                    ?.let { it.title.ifBlank { it.description.ifBlank { it.nextAction.ifBlank { "Задача #${it.id}" } } } }
+                    .orEmpty()
+                FocusActivityType.OTHER -> otherActivities.value.firstOrNull { it.id == _selectedItemId.value }?.name.orEmpty()
+            }
+        )
+        viewModelScope.launch {
+            activityRepository.saveManual(
+                ManualActivityInput(
+                    taskId = focus.itemId.takeIf { focus.type == FocusActivityType.WORK && it != 0 },
+                    activityType = focus.type,
+                    subjectId = focus.itemId.takeIf { focus.type == FocusActivityType.STUDY && it != 0 },
+                    otherActivityId = focus.itemId.takeIf { focus.type == FocusActivityType.OTHER && it != 0 },
+                    title = focus.itemName,
+                    startedAt = startMillis,
+                    endedAt = endMillis
+                ),
+                com.personal.sleepalarm.data.repository.ActivityConflictStrategy.KEEP_PARALLEL
+            )
+        }
     }
 
     fun endBreakToIdle() {
@@ -408,7 +465,7 @@ class PomodoroViewModel(
         const val MIN_BREAK_MINUTES = 1L
         const val MAX_BREAK_MINUTES = 30L
         private const val MINUTE_MS = 60L * 1000L
-        private const val POMODORO_CHANNEL = "pomodoro_channel_app_volume_v2"
+        private const val POMODORO_CHANNEL = "pomodoro_channel_app_volume_v3"
 
         fun calculateActivityDayRange(nowMillis: Long): Pair<Long, Long> {
             return ActivityDayBoundary.currentBounds(nowMillis, ZoneId.systemDefault())

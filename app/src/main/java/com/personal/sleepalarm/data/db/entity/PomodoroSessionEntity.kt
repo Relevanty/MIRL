@@ -43,5 +43,8 @@ data class PomodoroSessionEntity(
     val itemName: String = "",
 
     /** Фактически отработанное время, включая неполные фокус-сессии. */
-    val actualDurationMillis: Long = 0L
+    val actualDurationMillis: Long = 0L,
+
+    /** TIMER — таймер, MANUAL — внесённое задним числом событие. */
+    val recordSource: String = "TIMER"
 )

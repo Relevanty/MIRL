@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.pomodoro
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -32,6 +34,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -67,6 +73,12 @@ import com.personal.sleepalarm.ui.focusprotocol.FocusProtocolTarget
 import com.personal.sleepalarm.ui.focusprotocol.FocusProtocolViewModel
 import com.personal.sleepalarm.ui.focusprotocol.formatCompactDuration
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
+import com.personal.sleepalarm.ui.activity.ManualActivitySheet
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private data class HubActivityItem(
     val id: Int,
@@ -95,12 +107,30 @@ fun PomodoroScreen(
     val selectedId by viewModel.selectedItemId.collectAsStateWithLifecycle()
     val fallbackFocusDuration by viewModel.focusDuration.collectAsStateWithLifecycle()
     val fallbackBreakDuration by viewModel.breakDuration.collectAsStateWithLifecycle()
+    val notificationSoundUri by viewModel.notificationSoundUri.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val soundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+        viewModel.setNotificationSound(uri)
+    }
 
     val studyItems = remember(subjects) {
         subjects.map { HubActivityItem(it.id, it.name, it.color) }
     }
     val workItems = remember(workTasks) {
-        workTasks.map { HubActivityItem(it.id, it.title, 0xFF5C6BC0.toInt()) }
+        workTasks.filterNot { it.isDone }.map {
+            HubActivityItem(
+                it.id,
+                it.title.ifBlank { it.description.ifBlank { it.nextAction.ifBlank { "Задача #${it.id}" } } },
+                0xFF5C6BC0.toInt()
+            )
+        }
     }
     val otherItems = remember(otherActivities) {
         otherActivities.map { HubActivityItem(it.id, it.name, it.color) }
@@ -166,7 +196,7 @@ fun PomodoroScreen(
     }
     val totalToday = totalsByItem.values.sum()
     val cyclesToday = currentDaySessions.count {
-        it.activityType == activityType && !it.isBreak && it.actualDurationMillis > 0L
+        it.activityType == activityType && !it.isBreak && it.actualDurationMillis > 0L && it.recordSource == "TIMER"
     }
 
     LaunchedEffect(activityType, activityItems, selectedId) {
@@ -177,6 +207,7 @@ fun PomodoroScreen(
 
     var showSetup by remember { mutableStateOf(false) }
     var showInsights by remember { mutableStateOf(false) }
+    var showManualEntry by remember { mutableStateOf(false) }
     var showEditor by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<HubActivityItem?>(null) }
 
@@ -190,10 +221,10 @@ fun PomodoroScreen(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = stringResource(R.string.pomodoro_title),
                     style = MaterialTheme.typography.headlineSmall,
@@ -205,23 +236,39 @@ fun PomodoroScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Text(
-                text = stringResource(R.string.focus_history_button),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                    .clickable { showInsights = true }
-                    .padding(horizontal = 13.dp, vertical = 9.dp),
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
         }
 
         ActivityTypeStrip(
             selected = activityType,
             onSelected = viewModel::selectActivityType
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            HubQuickAction(
+                title = "Звук",
+                subtitle = if (notificationSoundUri == null) "системный" else "выбран",
+                onClick = { soundPicker.launch(arrayOf("audio/*")) },
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                modifier = Modifier.weight(1f)
+            )
+            HubQuickAction(
+                title = "Добавить",
+                subtitle = "время",
+                onClick = { showManualEntry = true },
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.weight(1f)
+            )
+            HubQuickAction(
+                title = "История",
+                subtitle = "$cyclesToday циклов",
+                onClick = { showInsights = true },
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -328,6 +375,17 @@ fun PomodoroScreen(
         }
     }
 
+    if (showManualEntry) {
+        ManualActivitySheet(
+            onDismiss = { showManualEntry = false },
+            initialTaskId = selectedItem?.id.takeIf { activityType == FocusActivityType.WORK },
+            initialActivityType = activityType,
+            initialSubjectId = selectedItem?.id.takeIf { activityType == FocusActivityType.STUDY },
+            initialOtherActivityId = selectedItem?.id.takeIf { activityType == FocusActivityType.OTHER },
+            initialTitle = selectedItem?.name.orEmpty()
+        )
+    }
+
     if (showEditor) {
         ActivityEditorDialog(
             initial = editing,
@@ -372,6 +430,113 @@ fun PomodoroScreen(
             },
             onDismiss = { showEditor = false }
         )
+    }
+}
+
+@Composable
+private fun HubQuickAction(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    containerColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor.copy(alpha = 0.72f))
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ManualFocusDialog(
+    onDismiss: () -> Unit,
+    onSave: (Long, Int) -> Unit
+) {
+    val zone = ZoneId.systemDefault()
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var timeText by remember { mutableStateOf(LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))) }
+    var durationText by remember { mutableStateOf("25") }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.focus_manual_entry_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    stringResource(R.string.focus_manual_entry_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(selectedDate.format(DateTimeFormatter.ofPattern("d MMMM yyyy")))
+                }
+                OutlinedTextField(
+                    value = timeText,
+                    onValueChange = { timeText = it },
+                    label = { Text(stringResource(R.string.focus_manual_time)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = durationText,
+                    onValueChange = { durationText = it.filter(Char::isDigit).take(3) },
+                    label = { Text(stringResource(R.string.focus_manual_duration)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val time = runCatching {
+                    LocalTime.parse(timeText.trim(), DateTimeFormatter.ofPattern("H:mm"))
+                }.getOrNull() ?: return@TextButton
+                val minutes = durationText.toIntOrNull()?.coerceIn(1, PomodoroViewModel.MAX_FOCUS_MINUTES.toInt())
+                    ?: return@TextButton
+                val start = LocalDateTime.of(selectedDate, time).atZone(zone).toInstant().toEpochMilli()
+                val boundedStart = minOf(start, System.currentTimeMillis() - minutes * 60_000L)
+                onSave(boundedStart, minutes)
+            }) { Text(stringResource(R.string.task_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
+    )
+
+    if (showDatePicker) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let {
+                        selectedDate = java.time.Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
+                    }
+                    showDatePicker = false
+                }) { Text(stringResource(R.string.task_date_apply)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        ) { DatePicker(state = state) }
     }
 }
 

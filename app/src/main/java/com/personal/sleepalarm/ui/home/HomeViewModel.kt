@@ -48,6 +48,7 @@ import java.time.ZoneId
 data class HomeUiState(
     val profile: AlarmProfileEntity = AlarmProfileEntity(),
     val activeSession: SleepSessionEntity? = null,
+    val latestCompletedSession: SleepSessionEntity? = null,
     val plan: SleepPlan? = null,
     val cueSchedule: CueSchedule = CueSchedule(emptyList(), emptySet()),
     val planWarnings: Set<SleepPlanWarning> = emptySet(),
@@ -114,11 +115,13 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = combine(
         profileRepository.observeProfile(),
         sessionRepository.observeActiveSession(),
+        sessionRepository.observeLatestCompleted(),
         merge(refreshTrigger, tickerFlow)
-    ) { profile, activeSession, nowMillis ->
+    ) { profile, activeSession, latestCompleted, nowMillis ->
         buildState(
             profile = profile,
             activeSession = activeSession,
+            latestCompleted = latestCompleted,
             nowMillis = nowMillis
         )
     }.stateIn(
@@ -140,6 +143,7 @@ class HomeViewModel(
     private fun buildState(
         profile: AlarmProfileEntity,
         activeSession: SleepSessionEntity?,
+        latestCompleted: SleepSessionEntity?,
         nowMillis: Long
     ): HomeUiState {
         val permissions = PermissionChecker.state(context)
@@ -180,6 +184,7 @@ class HomeViewModel(
             HomeUiState(
                 profile = profile,
                 activeSession = activeSession,
+                latestCompletedSession = latestCompleted,
                 plan = plan,
                 cueSchedule = cueSchedule,
                 planWarnings = planWarnings,
@@ -190,6 +195,7 @@ class HomeViewModel(
             HomeUiState(
                 profile = profile,
                 activeSession = activeSession,
+                latestCompletedSession = latestCompleted,
                 plan = null,
                 cueSchedule = CueSchedule(emptyList(), emptySet()),
                 planWarnings = emptySet(),
@@ -260,6 +266,33 @@ class HomeViewModel(
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    /** Ручная коррекция результата, если телефон не был поставлен на таймер. */
+    fun correctSleepDuration(session: SleepSessionEntity, durationMinutes: Long) {
+        val wake = session.actualWakeTime ?: return
+        val safeDuration = durationMinutes.coerceIn(1L, 24L * 60L)
+        viewModelScope.launch {
+            sessionRepository.updateSession(
+                session.copy(
+                    detectedSleepOnsetTime = wake - safeDuration * 60_000L,
+                    detectedOnsetLatencyMinutes = (((wake - safeDuration * 60_000L) - session.bedTimePlanned) / 60_000L)
+                        .toInt().coerceAtLeast(0),
+                    detectedOnsetConfidencePercent = 100,
+                    detectedOnsetSource = "MANUAL_CORRECTION",
+                    detectedOnsetUncertaintyMinutes = 0,
+                    onsetReviewState = "CORRECTED"
+                )
+            )
+            refresh()
+        }
+    }
+
+    fun confirmSleepOnset(session: SleepSessionEntity) {
+        viewModelScope.launch {
+            sessionRepository.updateSession(session.copy(onsetReviewState = "CONFIRMED"))
+            refresh()
+        }
     }
 
     // =================================================================

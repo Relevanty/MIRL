@@ -13,6 +13,8 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.alarm.ReminderReceiver
 import com.personal.sleepalarm.data.db.entity.ReminderEntity
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
+import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
+import com.personal.sleepalarm.ui.MainActivity
 
 /**
  * Построитель уведомлений напоминаний + каналы.
@@ -70,14 +72,16 @@ class ReminderNotificationBuilder(
 
     /** Этап 1: беззвучное уведомление за 5 минут с живым обратным отсчётом. */
     fun buildPreNotification(reminder: ReminderEntity): android.app.Notification {
+        val openIntent = openIntent(reminder)
         return NotificationCompat.Builder(context, CHANNEL_PRE)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(reminder.title)
             .setContentText(context.getString(R.string.reminder_pre_text))
             .setWhen(reminder.nextTriggerTime)
             .setUsesChronometer(true)
             .setChronometerCountDown(true)
             .setShowWhen(true)
+            .setContentIntent(openIntent)
             .setSilent(true)
             .setAutoCancel(false)
             .setOngoing(false)
@@ -104,8 +108,8 @@ class ReminderNotificationBuilder(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(context, CHANNEL_FIRE)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+        val builder = NotificationCompat.Builder(context, CHANNEL_FIRE)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(reminder.title)
             .setContentText(context.getString(R.string.reminder_fire_text))
             .setWhen(System.currentTimeMillis())
@@ -114,9 +118,23 @@ class ReminderNotificationBuilder(
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setContentIntent(openIntent(reminder))
             .addAction(0, context.getString(R.string.reminder_action_done), donePi)
             .addAction(0, context.getString(R.string.reminder_action_snooze), snoozePi)
-            .build()
+        if (reminder.linkedType == "TASK" && reminder.linkedId != null) {
+            val focusIntent = PendingIntent.getActivity(
+                context,
+                145_000 + reminder.id,
+                Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra(MainActivity.EXTRA_DESTINATION, MainActivity.DESTINATION_FOCUS_PROTOCOL)
+                    putExtra(MainActivity.EXTRA_TASK_ID, reminder.linkedId)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(0, context.getString(R.string.reminder_action_focus), focusIntent)
+        }
+        return builder.build()
     }
 
     fun preNotificationId(reminderId: Int) = PRE_NOTIFICATION_ID_BASE + reminderId
@@ -127,6 +145,21 @@ class ReminderNotificationBuilder(
 
     fun cancelFire(reminderId: Int) =
         notificationManager.cancel(fireNotificationId(reminderId))
+
+    private fun openIntent(reminder: ReminderEntity): PendingIntent = PendingIntent.getActivity(
+        context,
+        140_000 + reminder.id,
+        Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (reminder.linkedType == "TASK" && reminder.linkedId != null) {
+                putExtra(MainActivity.EXTRA_DESTINATION, MainActivity.DESTINATION_TASKS)
+                putExtra(MainActivity.EXTRA_TASK_ID, reminder.linkedId)
+            } else {
+                putExtra(MainActivity.EXTRA_DESTINATION, MainActivity.DESTINATION_REMINDERS)
+            }
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
 
     /** Безопасный show PRE с диагностикой. */
     fun showPre(reminder: ReminderEntity) {
@@ -159,7 +192,7 @@ class ReminderNotificationBuilder(
                 fireNotificationId(reminder.id),
                 buildFireNotification(reminder)
             )
-            AppNotificationSoundPlayer.play(context)
+            AppNotificationSoundPlayer.play(context, PomodoroSoundPreference(context).getUri())
             Log.d(TAG, "FIRE shown id=${reminder.id}")
         } catch (se: SecurityException) {
             Log.e(TAG, "FIRE SecurityException (POST_NOTIFICATIONS не выдан)", se)

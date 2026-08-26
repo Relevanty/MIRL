@@ -56,5 +56,11 @@ data class SleepSessionEntity(
 
     // Автоопределение засыпания.
     val detectedSleepOnsetTime: Long? = null,
-    val detectedOnsetLatencyMinutes: Int? = null
+    val detectedOnsetLatencyMinutes: Int? = null,
+    val detectedOnsetConfidencePercent: Int? = null,
+    val detectedOnsetSource: String? = null,
+    /** Honest interval around the passive phone estimate, not a medical measurement. */
+    val detectedOnsetUncertaintyMinutes: Int? = null,
+    /** PENDING, CONFIRMED or CORRECTED by the user on the morning card. */
+    val onsetReviewState: String = "PENDING"
 )

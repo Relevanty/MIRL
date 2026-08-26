@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -47,8 +49,12 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -82,6 +88,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
+import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
+import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.ui.activity.ManualActivitySheet
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import kotlinx.coroutines.CancellationException
 import java.time.Instant
@@ -97,13 +106,21 @@ import kotlinx.coroutines.launch
 @Composable
 fun CalendarScreen(
     viewModel: CalendarViewModel = viewModel(),
+    onBack: (() -> Unit)? = null,
+    onOpenTask: (Int) -> Unit = {},
+    onStartFocus: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val events by viewModel.events.collectAsStateWithLifecycle()
     val studySessions by viewModel.studySessions.collectAsStateWithLifecycle()
-    val studyByDay = remember(studySessions) {
-        studySessions.groupBy { it.dateKey }
-            .mapValues { (_, v) -> v.sumOf { it.durationMillis } }
+    val actualActivities by viewModel.actualActivities.collectAsStateWithLifecycle()
+    val tasks by viewModel.tasks.collectAsStateWithLifecycle()
+    val sleepSessions by viewModel.sleepSessions.collectAsStateWithLifecycle()
+    val milestones by viewModel.milestones.collectAsStateWithLifecycle()
+    val actualByDay = remember(actualActivities) {
+        val zone = ZoneId.systemDefault()
+        actualActivities.groupBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate().toString() }
+            .mapValues { (_, records) -> records.sumOf(ActivityRecordEntity::durationMillis) }
     }
 
     var month by remember { mutableStateOf(YearMonth.now()) }
@@ -111,6 +128,8 @@ fun CalendarScreen(
     var showEditor by remember { mutableStateOf(false) }
     var editorDate by remember { mutableStateOf<LocalDate?>(null) }
     var editingEvent by remember { mutableStateOf<CalendarEventEntity?>(null) }
+    var manualStartMillis by remember { mutableStateOf<Long?>(null) }
+    var editingActivity by remember { mutableStateOf<ActivityRecordEntity?>(null) }
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -119,6 +138,7 @@ fun CalendarScreen(
         EventEditor(
             initial = editingEvent,
             defaultDate = editorDate,
+            tasks = tasks.filterNot { it.isDone },
             onBack = {
                 showEditor = false
                 editingEvent = null
@@ -139,6 +159,21 @@ fun CalendarScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(12.dp)
     ) {
+        if (onBack != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, stringResource(R.string.action_back))
+                }
+                Text(
+                    text = stringResource(R.string.task_open_calendar),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -190,8 +225,18 @@ fun CalendarScreen(
                             modifier = Modifier.weight(1f),
                             day = day,
                             isToday = day.date == today,
-                            studyMillis = studyByDay[day.date.toString()] ?: 0L,
+                            studyMillis = actualByDay[day.date.toString()] ?: 0L,
                             events = eventsOn(events, day.date),
+                            markers = buildList {
+                                tasks.filter { task ->
+                                    task.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() == day.date } == true
+                                }.take(1).forEach { add("Срок задачи") }
+                                sleepSessions.filter { session ->
+                                    val wake = session.actualWakeTime ?: session.estimatedWakeTime
+                                    Instant.ofEpochMilli(wake).atZone(ZoneId.systemDefault()).toLocalDate() == day.date
+                                }.take(1).forEach { add("Сон") }
+                                milestones.filter { it.targetDate == day.date.toString() }.take(1).forEach { add("Этап") }
+                            },
                             onClick = { selectedDate = day.date }
                         )
                     }
@@ -215,6 +260,99 @@ fun CalendarScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 val dayEvents = eventsOn(events, date)
+                val dayActivities = activitiesOn(actualActivities, date)
+                val dayDeadlines = tasks.filter { task ->
+                    task.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() == date } == true
+                }
+                val daySleeps = sleepSessions.filter { session ->
+                    val wake = session.actualWakeTime ?: session.estimatedWakeTime
+                    Instant.ofEpochMilli(wake).atZone(ZoneId.systemDefault()).toLocalDate() == date
+                }
+                val dayMilestones = milestones.filter { it.targetDate == date.toString() }
+                if (dayActivities.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.activity_history),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    dayActivities.forEach { activity ->
+                        Surface(
+                            onClick = {
+                                if (activity.source == "MANUAL") {
+                                    editingActivity = activity
+                                    selectedDate = null
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Timer, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(activity.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        activityTimeLabel(activity),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (activity.source == "MANUAL") {
+                                    Text(
+                                        stringResource(R.string.activity_added_manually),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                daySleeps.forEach { sleep ->
+                    val wake = sleep.actualWakeTime ?: sleep.estimatedWakeTime
+                    val onset = sleep.detectedSleepOnsetTime ?: sleep.estimatedSleepStartTime
+                    Text(
+                        "Сон · ${formatDuration((wake - onset).coerceAtLeast(0L))}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+                dayMilestones.forEach { milestone ->
+                    Text(
+                        "Этап · ${milestone.title}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+                dayDeadlines.forEach { task ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                    ) {
+                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Срок · ${task.title.ifBlank { task.description.ifBlank { "Задача ${task.id}" } }}",
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            IconButton(onClick = { selectedDate = null; onOpenTask(task.id) }) {
+                                Icon(Icons.Default.Checklist, "Открыть задачу")
+                            }
+                            IconButton(onClick = { selectedDate = null; onStartFocus(task.id) }) {
+                                Icon(Icons.Default.PlayArrow, "Начать фокус")
+                            }
+                        }
+                    }
+                }
                 if (dayEvents.isEmpty()) {
                     Text(
                         text = stringResource(R.string.calendar_no_events),
@@ -276,6 +414,20 @@ fun CalendarScreen(
                                 Icon(Icons.Default.Edit, null,
                                     tint = MaterialTheme.colorScheme.primary)
                             }
+                            ev.taskId?.let { taskId ->
+                                IconButton(onClick = {
+                                    selectedDate = null
+                                    onOpenTask(taskId)
+                                }) {
+                                    Icon(Icons.Default.Checklist, "Открыть задачу")
+                                }
+                                IconButton(onClick = {
+                                    selectedDate = null
+                                    onStartFocus(taskId)
+                                }) {
+                                    Icon(Icons.Default.PlayArrow, "Начать фокус")
+                                }
+                            }
                             IconButton(onClick = { viewModel.deleteEvent(ev.id) }) {
                                 Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
                             }
@@ -284,6 +436,39 @@ fun CalendarScreen(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    stringResource(R.string.activity_add_spent),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val now = ZonedDateTime.now()
+                    val hours = (8..22 step 2).filter { hour -> date < now.toLocalDate() || hour <= now.hour }
+                    items(hours) { hour ->
+                        FilterChip(
+                            selected = false,
+                            onClick = {
+                                manualStartMillis = date.atTime(hour, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                selectedDate = null
+                            },
+                            label = { Text("%02d:00".format(hour)) }
+                        )
+                    }
+                }
+                OutlinedButton(
+                    onClick = {
+                        val now = ZonedDateTime.now()
+                        val hour = if (date == now.toLocalDate()) now.minusMinutes(25).hour else 12
+                        manualStartMillis = date.atTime(hour, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        selectedDate = null
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Timer, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.activity_add_title))
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = {
                         editingEvent = null
@@ -308,6 +493,30 @@ fun CalendarScreen(
             }
         }
     }
+
+    if (manualStartMillis != null || editingActivity != null) {
+        ManualActivitySheet(
+            initialStartMillis = manualStartMillis,
+            editing = editingActivity,
+            onDismiss = {
+                manualStartMillis = null
+                editingActivity = null
+            }
+        )
+    }
+}
+
+private fun activitiesOn(records: List<ActivityRecordEntity>, date: LocalDate): List<ActivityRecordEntity> {
+    val zone = ZoneId.systemDefault()
+    return records.filter { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate() == date }
+        .sortedBy(ActivityRecordEntity::startedAt)
+}
+
+private fun activityTimeLabel(record: ActivityRecordEntity): String {
+    val zone = ZoneId.systemDefault()
+    val start = Instant.ofEpochMilli(record.startedAt).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm"))
+    val end = Instant.ofEpochMilli(record.endedAt).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm"))
+    return "$start–$end · ${record.durationMillis / 60_000L} мин"
 }
 
 // =====================================================================
@@ -332,6 +541,7 @@ private fun DayCell(
     isToday: Boolean,
     studyMillis: Long,
     events: List<CalendarEventEntity>,
+    markers: List<String>,
     onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(8.dp)
@@ -385,9 +595,10 @@ private fun DayCell(
         }
 
         events.take(3).forEach { ev -> EventChip(ev.title) }
-        if (events.size > 3) {
+        markers.take((3 - events.size).coerceAtLeast(0)).forEach { EventChip(it) }
+        if (events.size + markers.size > 3) {
             Text(
-                "+${events.size - 3}",
+                "+${events.size + markers.size - 3}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -455,6 +666,7 @@ private fun formatDuration(ms: Long): String {
 private fun EventEditor(
     initial: CalendarEventEntity?,
     defaultDate: LocalDate?,
+    tasks: List<TaskEntity>,
     onBack: () -> Unit,
     onSave: (CalendarEventEntity) -> Unit
 ) {
@@ -482,6 +694,7 @@ private fun EventEditor(
     var repeat by remember { mutableStateOf(initial?.repeatRule ?: "none") }
     // ДЕФОЛТ: 30 минут, если напоминание не задано явно
     var reminder by remember { mutableStateOf<Int?>(initial?.reminderMinutes ?: 30) }
+    var selectedTaskId by remember { mutableStateOf(initial?.taskId) }
 
     var showStart by remember { mutableStateOf(false) }
     var showEnd by remember { mutableStateOf(false) }
@@ -514,7 +727,10 @@ private fun EventEditor(
                 endMillis = endMillis,
                 allDay = allDay,
                 repeatRule = repeat,
-                reminderMinutes = reminder
+                reminderMinutes = reminder,
+                taskId = selectedTaskId,
+                projectId = tasks.firstOrNull { it.id == selectedTaskId }?.projectId,
+                eventKind = "PLANNED"
             )
         )
     }
@@ -548,6 +764,30 @@ private fun EventEditor(
             shape = RoundedCornerShape(18.dp),
             singleLine = true
         )
+
+        Text("Связанная задача", style = MaterialTheme.typography.labelLarge)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                FilterChip(
+                    selected = selectedTaskId == null,
+                    onClick = { selectedTaskId = null },
+                    label = { Text("Без задачи") }
+                )
+            }
+            items(tasks, key = { it.id }) { task ->
+                FilterChip(
+                    selected = selectedTaskId == task.id,
+                    onClick = { selectedTaskId = task.id },
+                    label = {
+                        Text(
+                            task.title.ifBlank { task.description.ifBlank { "Задача ${task.id}" } },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+            }
+        }
 
         EditorCard {
             SwitchRow(stringResource(R.string.calendar_all_day), allDay) { allDay = it }
