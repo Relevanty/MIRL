@@ -3,7 +3,7 @@ package com.personal.sleepalarm.ui.theme
 import com.personal.sleepalarm.R
 
 /**
- * Каталог готовых тем (140 пресетов).
+ * Каталог готовых тем: 200 тёмных и 55 светлых пресетов.
  *
  * Категории:
  * - Базовые (14): night, ocean, sunset, forest, lavender, rose, graphite, amoled,
@@ -19,7 +19,7 @@ object ThemeCatalog {
 
     const val DEFAULT_ID = "night"
 
-    val all: List<ThemePreset> = listOf(
+    private val legacy: List<ThemePreset> = listOf(
 
         // ============================================================
         // БАЗОВЫЕ (оригинальные 14)
@@ -228,6 +228,72 @@ object ThemeCatalog {
         ThemePreset("latte",        R.string.theme_latte,        false, 0xFFFAF3EA, 0xFFFFFFFF, 0xFF8C5A3C, 0xFFC58B63, 0xFF3D281E),
         ThemePreset("orchid_mist",  R.string.theme_orchid_mist,  false, 0xFFF8F2FB, 0xFFFFFFFF, 0xFF7D4E9E, 0xFFB47EB3, 0xFF321D3D),
         ThemePreset("clear_sky",    R.string.theme_clear_sky,    false, 0xFFEDF7FF, 0xFFFFFFFF, 0xFF146C94, 0xFF2BA8C6, 0xFF12354A)
+    )
+
+    private val legacyCategories: Map<String, ThemeCategory> = mapOf(
+        ThemeCategory.BASIC to setOf(
+            "night", "sunset", "lavender", "rose", "graphite", "coffee", "mint", "gold",
+            "blue_hour", "plum_velvet", "midnight_ink", "deep_teal", "cocoa_night",
+            "day", "ice", "dawn", "morning_mist", "sky", "moonlight", "cloud", "snow",
+            "pearl", "starlight", "sunrise", "clear_sky", "arctic"
+        ),
+        ThemeCategory.AMOLED to setOf(
+            "amoled", "mono", "black_hole", "noir", "obsidian"
+        ),
+        ThemeCategory.NATURE to setOf(
+            "forest", "deep_forest", "swamp", "autumn_night", "winter_night", "aurora",
+            "desert_night", "volcano", "midnight_garden", "moss", "northern_lights",
+            "pine_night", "ember", "meadow", "spring", "summer", "birch", "sakura",
+            "lavender_field", "sand", "ocean_light", "autumn", "sea_breeze", "alpine",
+            "lemon", "pistachio", "honey", "sage", "coral", "terracotta", "olive",
+            "rose_garden"
+        ),
+        ThemeCategory.OCEAN to setOf(
+            "ocean", "coral_reef", "storm", "deep_blue"
+        ),
+        ThemeCategory.SPACE to setOf(
+            "deep_space", "nebula", "mars", "moon", "andromeda", "starfield", "comet",
+            "solar_flare", "eclipse"
+        ),
+        ThemeCategory.NEON to setOf(
+            "night_city", "netrunner", "synthwave", "vaporwave", "chrome", "neon_rain",
+            "acid_grid", "cyber_violet", "neon_pink"
+        ),
+        ThemeCategory.INDUSTRIAL to setOf(
+            "diesel", "rust", "brass", "smoke", "war_room", "bauhaus", "factory"
+        ),
+        ThemeCategory.RETRO to setOf(
+            "cold_wave", "gothic", "matrix", "phosphor", "amber_terminal", "hacker",
+            "retro_sun"
+        ),
+        ThemeCategory.ELEGANT to setOf(
+            "blood", "wine", "royal", "emerald", "sapphire", "ruby"
+        ),
+        ThemeCategory.SYSTEM to setOf(
+            "ubuntu", "debian", "arch", "fedora", "mint_os", "manjaro", "kali", "gentoo",
+            "nixos", "opensuse", "pop_os", "elementary", "ubuntu_light", "debian_light",
+            "fedora_light", "mint_light", "pop_os_light"
+        ),
+        ThemeCategory.PAPER to setOf(
+            "paper", "parchment", "sepia", "old_book", "cream", "ivory", "linen", "ecru",
+            "latte"
+        ),
+        ThemeCategory.PASTEL to setOf(
+            "pastel_pink", "pastel_blue", "mint_cream", "peach", "powder", "lilac", "blush",
+            "orchid_mist", "cotton"
+        )
+    ).flatMap { (category, ids) -> ids.map { it to category } }.toMap()
+
+    val all: List<ThemePreset> = (
+        legacy.map { preset ->
+            preset.copy(category = legacyCategories[preset.id] ?: ThemeCategory.BASIC)
+        } + ExpandedDarkThemes.all
+    ).sortedWith(
+        compareBy<ThemePreset>(
+            { if (it.isDark) 0 else 1 },
+            { it.category.sortOrder },
+            ThemePreset::id
+        )
     )
 
     val day: List<ThemePreset> = all.filterNot(ThemePreset::isDark)
