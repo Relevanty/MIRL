@@ -2,13 +2,27 @@ package com.personal.sleepalarm.service
 
 import android.content.Context
 import com.personal.sleepalarm.R
+import com.personal.sleepalarm.data.db.dao.ActivityRecordDao
+import com.personal.sleepalarm.data.db.dao.AlarmProfileDao
 import com.personal.sleepalarm.data.db.dao.CalendarEventDao
 import com.personal.sleepalarm.data.db.dao.DDayDao
 import com.personal.sleepalarm.data.db.dao.SleepSessionDao
 import com.personal.sleepalarm.data.db.dao.StudySessionDao
+import com.personal.sleepalarm.data.db.dao.TaskDao
+import com.personal.sleepalarm.data.preferences.DailyPlanNudgePreferences
+import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
+import com.personal.sleepalarm.domain.dailyplan.DailyPlanScheduleCalculator
+import com.personal.sleepalarm.domain.dailyplan.DailyPlanSleepAutomationInput
+import com.personal.sleepalarm.domain.calculator.StudyActivityDurationCalculator
+import com.personal.sleepalarm.domain.calculator.StudyTimeInterval
+import com.personal.sleepalarm.domain.calculator.effectiveActivityEndMillis
+import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.snapshotActivityType
+import com.personal.sleepalarm.domain.model.NextActionRanker
 import com.personal.sleepalarm.ui.calendar.eventsOn
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -17,9 +31,12 @@ import java.util.Locale
 
 class BriefingTextBuilder(
     private val calendarEventDao: CalendarEventDao,
+    private val activityRecordDao: ActivityRecordDao,
     private val studySessionDao: StudySessionDao,
     private val ddayDao: DDayDao,
-    private val sessionDao: SleepSessionDao
+    private val sessionDao: SleepSessionDao,
+    private val taskDao: TaskDao,
+    private val alarmProfileDao: AlarmProfileDao
 ) {
 
     private val dateFormat = DateTimeFormatter.ISO_LOCAL_DATE
@@ -91,14 +108,127 @@ class BriefingTextBuilder(
         // 5. Учёба за вчера.
         val yesterday = today.minusDays(1)
         val yesterdayKey = yesterday.format(dateFormat)
-        val studyList = studySessionDao.observeByDate(yesterdayKey).first()
-        val studyTotal = studyList.sumOf { it.durationMillis } / 60_000
+        val zone = ZoneId.systemDefault()
+        val periodStart = yesterday.atStartOfDay(zone).toInstant().toEpochMilli()
+        val periodEnd = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val canonicalStudy = activityRecordDao.observeOverlapping(periodStart, periodEnd)
+            .first()
+            .asSequence()
+            .filter { it.snapshotActivityType() == FocusActivityType.STUDY }
+            .mapNotNull { record ->
+                val end = record.effectiveActivityEndMillis()
+                if (end > record.startedAt) StudyTimeInterval(record.startedAt, end) else null
+            }
+            .toList()
+        val legacyStudy = if (canonicalStudy.isEmpty()) {
+            studySessionDao.observeByDate(yesterdayKey).first().mapNotNull { session ->
+                val end = minOf(session.endMillis, session.startMillis + session.durationMillis)
+                if (end > session.startMillis) StudyTimeInterval(session.startMillis, end) else null
+            }
+        } else {
+            emptyList()
+        }
+        val studyTotal = StudyActivityDurationCalculator.calculate(
+            periodStartMillis = periodStart,
+            periodEndMillis = periodEnd,
+            canonicalIntervals = canonicalStudy,
+            legacyIntervals = legacyStudy
+        ) / 60_000
 
         if (studyTotal > 0) {
             sb.append(context.getString(R.string.briefing_study_yesterday, studyTotal.toInt()))
             sb.append(' ')
         }
 
+        // 6. Required daily focus plan. Planning uses the civil local day
+        // (00:00–00:00); the separate 04:00 analytics boundary is untouched.
+        appendDailyPlanStatus(context, sb, today, zone)
+
         return sb.toString().trim()
+    }
+
+    private suspend fun appendDailyPlanStatus(
+        context: Context,
+        sb: StringBuilder,
+        today: LocalDate,
+        zone: ZoneId
+    ) {
+        val nowMillis = System.currentTimeMillis()
+        val now = Instant.ofEpochMilli(nowMillis).atZone(zone)
+        val dayStartMillis = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val nextMidnightMillis = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val settings = DailyPlanNudgePreferences(context).get()
+        if (!settings.enabled || !settings.morningReminderEnabled) return
+        val automation = SleepAutomationPreference(context).get()
+        val alarmProfile = alarmProfileDao.getProfile()
+        val cutoff = DailyPlanScheduleCalculator.effectiveCutoff(
+            now = now,
+            fallbackCutoffMinutesOfDay = settings.cutoffMinutesOfDay,
+            sleepAutomation = DailyPlanSleepAutomationInput(
+                enabled = automation.enabled && alarmProfile?.autoDetectOnsetEnabled == true,
+                windowStartMinutes = automation.windowStartMinutes,
+                windowEndMinutes = automation.windowEndMinutes,
+                skippedWindowStartEpochDay = automation.skippedWindowStartEpochDay
+            )
+        ).at.toInstant().toEpochMilli()
+        val tasks = NextActionRanker.rank(taskDao.getAll(), nowMillis)
+        val records = activityRecordDao.observeOverlapping(dayStartMillis, nextMidnightMillis).first()
+        val plan = calculateDailyBriefingPlan(
+            tasks = tasks,
+            records = records,
+            nowMillis = nowMillis,
+            dayStartMillis = dayStartMillis,
+            nextMidnightMillis = nextMidnightMillis,
+            cutoffMillis = cutoff,
+            bufferMinutes = settings.bufferMinutes
+        )
+        val snapshot = plan.snapshot
+        if (!snapshot.hasRequiredTasks) return
+
+        if (plan.unstartedTasks.isNotEmpty()) {
+            sb.append(context.getString(R.string.briefing_daily_not_started_prefix)).append(' ')
+            sb.append(
+                plan.unstartedTasks.take(MAX_BRIEFING_TASKS).joinToString(", ") { task ->
+                    context.getString(
+                        R.string.briefing_daily_task_item,
+                        task.title,
+                        task.effectiveTargetMinutes
+                    )
+                }
+            ).append(". ")
+            val hidden = plan.unstartedTasks.size - MAX_BRIEFING_TASKS
+            if (hidden > 0) {
+                sb.append(context.getString(R.string.briefing_daily_more, hidden)).append(' ')
+            }
+        }
+
+        if (snapshot.totalRemainingMinutes <= 0) {
+            sb.append(context.getString(R.string.briefing_daily_complete)).append(' ')
+            return
+        }
+        sb.append(
+            context.getString(R.string.briefing_daily_remaining, snapshot.totalRemainingMinutes)
+        ).append(' ')
+        if (snapshot.shouldNudge) {
+            if (snapshot.isOverloaded) {
+                sb.append(
+                    context.getString(
+                        R.string.briefing_daily_overloaded_warning,
+                        -snapshot.slackMinutes.toLong()
+                    )
+                ).append(' ')
+            } else {
+                sb.append(
+                    context.getString(
+                        R.string.briefing_daily_slack_warning,
+                        snapshot.slackMinutes
+                    )
+                ).append(' ')
+            }
+        }
+    }
+
+    private companion object {
+        const val MAX_BRIEFING_TASKS = 3
     }
 }

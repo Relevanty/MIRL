@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.components
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -42,15 +44,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.util.PermissionChecker
 import com.personal.sleepalarm.util.PermissionState
-
-private val DialogSurface = Color(0xFF161E38)
-private val RowSurface = Color(0xFF1D2645)
-private val BorderColor = Color(0xFF2A3558)
-private val TextPrimary = Color(0xFFE9EDF9)
-private val TextMuted = Color(0xFF8A93B2)
-private val StatusOk = Color(0xFF63D8C2)
-private val StatusWarn = Color(0xFFFFB86B)
-private val StatusError = Color(0xFFFF7B72)
 
 /**
  * Диалог системного чек-листа.
@@ -97,7 +90,7 @@ fun SystemCheckDialog(
                 .fillMaxWidth()
                 .heightIn(max = 580.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(DialogSurface)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -107,13 +100,16 @@ fun SystemCheckDialog(
                 style = TextStyle(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = TextPrimary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             )
 
             Text(
                 text = stringResource(R.string.system_check_subtitle),
-                style = TextStyle(fontSize = 13.sp, color = TextMuted)
+                style = TextStyle(
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -190,7 +186,7 @@ fun SystemCheckDialog(
 
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 8.dp),
-                color = BorderColor
+                color = MaterialTheme.colorScheme.outlineVariant
             )
 
             Text(
@@ -198,13 +194,16 @@ fun SystemCheckDialog(
                 style = TextStyle(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             )
 
             Text(
                 text = stringResource(R.string.system_check_oem_subtitle),
-                style = TextStyle(fontSize = 12.sp, color = TextMuted)
+                style = TextStyle(
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
 
             OemCard(
@@ -254,16 +253,16 @@ private fun CheckRow(
     onOpen: () -> Unit
 ) {
     val statusColor = when {
-        granted -> StatusOk
-        critical -> StatusError
-        else -> StatusWarn
+        granted -> MaterialTheme.appAccents.success.color
+        critical -> MaterialTheme.appAccents.urgent.color
+        else -> MaterialTheme.appAccents.warning.color
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(RowSurface)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -285,13 +284,16 @@ private fun CheckRow(
                 style = TextStyle(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             )
 
             Text(
                 text = subtitle,
-                style = TextStyle(fontSize = 12.sp, color = TextMuted)
+                style = TextStyle(
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
         }
 
@@ -301,7 +303,7 @@ private fun CheckRow(
                 style = TextStyle(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = StatusOk
+                    color = MaterialTheme.appAccents.success.color
                 )
             )
         } else {
@@ -326,7 +328,7 @@ private fun OemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(RowSurface)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -335,7 +337,7 @@ private fun OemCard(
             style = TextStyle(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = StatusWarn
+                color = MaterialTheme.appAccents.warning.color
             )
         )
 
@@ -343,7 +345,7 @@ private fun OemCard(
             text = steps,
             style = TextStyle(
                 fontSize = 12.sp,
-                color = TextMuted,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 17.sp
             )
         )

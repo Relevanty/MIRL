@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.tasks
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -83,7 +86,8 @@ internal fun TaskEditorScreen(
     projects: List<ProjectEntity> = emptyList(),
     modifier: Modifier = Modifier
 ) {
-    val base = remember(initialTask) { initialTask ?: TaskEntity(title = "") }
+    val base = remember(initialTask) { initialTask ?: TaskEntity(title = "", category = "") }
+    var title by remember(base.id, base.createdAt) { mutableStateOf(base.title) }
     var description by remember(base.id, base.createdAt) { mutableStateOf(base.description) }
     var whyImportant by remember(base.id, base.createdAt) { mutableStateOf(base.whyImportant) }
     var definitionOfDone by remember(base.id, base.createdAt) { mutableStateOf(base.definitionOfDone) }
@@ -101,6 +105,7 @@ internal fun TaskEditorScreen(
     var assignee by remember(base.id, base.createdAt) { mutableStateOf(base.assignee) }
     var workBudgetMinutes by remember(base.id, base.createdAt) { mutableIntStateOf(base.workBudgetMinutes) }
     var plannedFocusMinutes by remember(base.id, base.createdAt) { mutableIntStateOf(base.plannedFocusMinutes) }
+    var isDailyRequired by remember(base.id, base.createdAt) { mutableStateOf(base.isDailyRequired) }
     var projectId by remember(base.id, base.createdAt) { mutableStateOf(base.projectId) }
     var category by remember(base.id, base.createdAt) { mutableStateOf(base.category) }
     var tags by remember(base.id, base.createdAt) { mutableStateOf(base.tags) }
@@ -139,11 +144,12 @@ internal fun TaskEditorScreen(
                     TextButton(
                         // Новая задача идентифицируется фотографией; старые задачи
                         // без фото остаются редактируемыми для обратной совместимости.
-                        enabled = base.id != 0 || imagePath != null,
+                        enabled = (base.id != 0 || imagePath != null) &&
+                            category in setOf("WORK", "STUDY", "OTHER"),
                         onClick = {
                             onSave(
                                 base.copy(
-                                    title = base.title.trim(),
+                                    title = title.trim(),
                                     description = description.trim(),
                                     whyImportant = whyImportant.trim(),
                                     definitionOfDone = definitionOfDone.trim(),
@@ -161,6 +167,7 @@ internal fun TaskEditorScreen(
                                     assignee = assignee.trim(),
                                     workBudgetMinutes = workBudgetMinutes,
                                     plannedFocusMinutes = plannedFocusMinutes,
+                                    isDailyRequired = isDailyRequired,
                                     projectId = projectId,
                                     category = category,
                                     tags = tags.trim(),
@@ -181,6 +188,45 @@ internal fun TaskEditorScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 8.dp, 16.dp, 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            item {
+                TaskEditorSection(
+                    title = stringResource(R.string.task_section_activity),
+                    hint = stringResource(R.string.task_section_activity_hint)
+                ) {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.task_field_title)) },
+                        supportingText = { Text(stringResource(R.string.task_field_title_ecosystem_hint)) },
+                        singleLine = true
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "STUDY" to R.string.activity_study,
+                            "WORK" to R.string.activity_work,
+                            "OTHER" to R.string.activity_other
+                        ).forEach { (value, label) ->
+                            FilterChip(
+                                selected = category == value,
+                                onClick = { category = value },
+                                label = { Text(stringResource(label)) }
+                            )
+                        }
+                    }
+                    if (category.isBlank()) {
+                        Text(
+                            stringResource(R.string.task_activity_required),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.appAccents.warning.color
+                        )
+                    }
+                }
+            }
+
             item {
                 TaskEditorSection(
                     title = stringResource(R.string.task_section_result),
@@ -291,11 +337,11 @@ internal fun TaskEditorScreen(
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.task_field_estimate), style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.daily_focus_bout_label), style = MaterialTheme.typography.labelLarge)
                             Text(
                                 stringResource(R.string.task_estimate_value, estimatedMinutes),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.appAccents.work.color
                             )
                         }
                         Slider(
@@ -306,6 +352,11 @@ internal fun TaskEditorScreen(
                             modifier = Modifier.weight(1.4f)
                         )
                     }
+                    Text(
+                        stringResource(R.string.daily_focus_bout_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -313,7 +364,7 @@ internal fun TaskEditorScreen(
                             Text(
                                 formatBudget(workBudgetMinutes),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.appAccents.focus.color
                             )
                         }
                         Slider(
@@ -327,35 +378,45 @@ internal fun TaskEditorScreen(
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.task_field_focus_cycle), style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.daily_focus_daily_target_label), style = MaterialTheme.typography.labelLarge)
                             Text(
-                                stringResource(R.string.task_estimate_value, plannedFocusMinutes),
+                                stringResource(R.string.daily_focus_daily_target_value, plannedFocusMinutes),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.appAccents.other.color
                             )
                         }
                         Slider(
                             value = plannedFocusMinutes.toFloat(),
-                            onValueChange = { plannedFocusMinutes = ((it / 5f).roundToInt() * 5).coerceIn(5, 180) },
-                            valueRange = 5f..180f,
-                            steps = 34,
+                            onValueChange = { plannedFocusMinutes = ((it / 5f).roundToInt() * 5).coerceIn(5, 480) },
+                            valueRange = 5f..480f,
+                            steps = 94,
                             modifier = Modifier.weight(1.4f)
                         )
                     }
-
-                    Text(stringResource(R.string.task_field_category), style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        stringResource(R.string.daily_focus_daily_target_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        listOf("WORK" to R.string.activity_work, "STUDY" to R.string.activity_study, "OTHER" to R.string.activity_other)
-                            .forEach { (value, label) ->
-                                FilterChip(
-                                    selected = category == value,
-                                    onClick = { category = value },
-                                    label = { Text(stringResource(label)) }
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.daily_focus_required_label),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            Text(
+                                stringResource(R.string.daily_focus_required_help),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isDailyRequired,
+                            onCheckedChange = { isDailyRequired = it }
+                        )
                     }
 
                     Text(stringResource(R.string.task_field_energy), style = MaterialTheme.typography.labelLarge)

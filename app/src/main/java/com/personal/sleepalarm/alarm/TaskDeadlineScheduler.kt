@@ -21,7 +21,7 @@ class TaskDeadlineScheduler(private val context: Context) {
 
         val triggerAt = endOfDeadlineDay(task.dueAtMillis)
         if (triggerAt <= System.currentTimeMillis()) return
-        val pending = pendingIntent(task.id)
+        val pending = pendingIntent(task.id, task.dueAtMillis)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
                 alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
@@ -37,14 +37,16 @@ class TaskDeadlineScheduler(private val context: Context) {
     fun cancel(taskId: Int) {
         if (taskId <= 0) return
         alarmManager.cancel(pendingIntent(taskId))
+        TaskDeadlineReceiver.cancelNotification(context, taskId)
     }
 
     fun rescheduleAll(tasks: List<TaskEntity>) = tasks.forEach(::schedule)
 
-    private fun pendingIntent(taskId: Int): PendingIntent {
+    private fun pendingIntent(taskId: Int, expectedDueAt: Long? = null): PendingIntent {
         val intent = Intent(context, TaskDeadlineReceiver::class.java).apply {
             action = ACTION_FIRE
             putExtra(EXTRA_TASK_ID, taskId)
+            expectedDueAt?.let { putExtra(EXTRA_EXPECTED_DUE_AT, it) }
         }
         return PendingIntent.getBroadcast(
             context,
@@ -63,6 +65,7 @@ class TaskDeadlineScheduler(private val context: Context) {
     companion object {
         const val ACTION_FIRE = "com.personal.sleepalarm.task.DEADLINE"
         const val EXTRA_TASK_ID = "extra_task_deadline_id"
+        const val EXTRA_EXPECTED_DUE_AT = "extra_task_deadline_expected_due_at"
         private const val REQUEST_BASE = 320_000
         private const val TAG = "TaskDeadlineScheduler"
     }

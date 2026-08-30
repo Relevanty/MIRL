@@ -4,9 +4,11 @@ import android.provider.Settings
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -38,14 +40,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -61,13 +67,42 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.domain.model.remainingWorkMillisOrNull
+import com.personal.sleepalarm.ui.theme.AppAccentTone
+import com.personal.sleepalarm.ui.theme.appAccents
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val VISIBLE_TASKS_PER_QUADRANT = 4
+
+private enum class MatrixDragPhase { DRAGGING, LANDING, COMMITTING }
+
+internal data class TaskAreaGeometry(
+    val topLeftInRoot: Offset,
+    val size: Size
+)
+
+private data class DropCommitExpectation(
+    val target: TaskDropTarget,
+    val targetIndex: Int?,
+    val noOp: Boolean
+)
+
+private data class MatrixBallDrag(
+    val task: TaskEntity,
+    val source: TaskQuadrant,
+    val originCenterInRoot: Offset,
+    val centerInRoot: Offset,
+    val phase: MatrixDragPhase,
+    val dropPositionInMatrix: Offset? = null,
+    val landingCenterInRoot: Offset = centerInRoot,
+    val expectation: DropCommitExpectation? = null
+)
 
 @Composable
 internal fun EisenhowerMatrix(
@@ -89,6 +124,18 @@ internal fun EisenhowerMatrix(
     }
 
     var matrixOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+    var overlayOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+    var taskAreas by remember { mutableStateOf<Map<TaskQuadrant, TaskAreaGeometry>>(emptyMap()) }
+    var activeDrag by remember { mutableStateOf<MatrixBallDrag?>(null) }
+    val latestTasks by rememberUpdatedState(tasks)
+
+    fun clearDrag(taskId: Int) {
+        if (activeDrag?.task?.id == taskId) {
+            activeDrag = null
+            onDraggingChanged(false)
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -105,6 +152,107 @@ internal fun EisenhowerMatrix(
         val scheduleTasks = tasks.inQuadrant(TaskQuadrant.SCHEDULE)
         val delegateTasks = tasks.inQuadrant(TaskQuadrant.DELEGATE)
         val letGoTasks = tasks.inQuadrant(TaskQuadrant.LET_GO)
+        val tasksByQuadrant = mapOf(
+            TaskQuadrant.NOW to nowTasks,
+            TaskQuadrant.SCHEDULE to scheduleTasks,
+            TaskQuadrant.DELEGATE to delegateTasks,
+            TaskQuadrant.LET_GO to letGoTasks
+        )
+        val ballSizePx = with(density) { TASK_BALL_SIZE.toPx() }
+
+        val startDrag: (TaskEntity, TaskQuadrant, Offset) -> Unit = { task, source, centerInRoot ->
+            activeDrag = MatrixBallDrag(
+                task = task,
+                source = source,
+                originCenterInRoot = centerInRoot,
+                centerInRoot = centerInRoot,
+                phase = MatrixDragPhase.DRAGGING
+            )
+            onDraggingChanged(true)
+        }
+        val dragBy: (Int, Offset) -> Unit = { taskId, amount ->
+            activeDrag?.takeIf { it.task.id == taskId && it.phase == MatrixDragPhase.DRAGGING }
+                ?.let { activeDrag = it.copy(centerInRoot = it.centerInRoot + amount) }
+        }
+        val finishDrag: (Int, Offset) -> Unit = finish@{ taskId, centerInRoot ->
+            val drag = activeDrag?.takeIf {
+                it.task.id == taskId && it.phase == MatrixDragPhase.DRAGGING
+            } ?: return@finish
+            val dropPosition = centerInRoot - matrixOriginInRoot
+            val expectation = buildDropCommitExpectation(
+                task = drag.task,
+                source = drag.source,
+                tasksByQuadrant = tasksByQuadrant,
+                dropPosition = dropPosition,
+                quadrantWidthPx = quadrantWidthPx,
+                quadrantHeightPx = quadrantHeightPx
+            )
+            val landingCenter = calculateMeasuredLandingCenter(
+                drag = drag,
+                expectation = expectation,
+                taskAreas = taskAreas,
+                targetTaskCount = expectation.target.quadrant
+                    ?.let { tasksByQuadrant[it].orEmpty().size }
+                    ?: 0,
+                ballSizePx = ballSizePx,
+                quadrantWidthPx = quadrantWidthPx,
+                quadrantHeightPx = quadrantHeightPx,
+                matrixOriginInRoot = matrixOriginInRoot
+            )
+            activeDrag = drag.copy(
+                centerInRoot = centerInRoot,
+                phase = MatrixDragPhase.LANDING,
+                dropPositionInMatrix = dropPosition,
+                landingCenterInRoot = landingCenter,
+                expectation = expectation
+            )
+        }
+
+        val overlayCenter by animateOffsetAsState(
+            targetValue = activeDrag?.let { drag ->
+                if (drag.phase == MatrixDragPhase.DRAGGING) drag.centerInRoot else drag.landingCenterInRoot
+            } ?: Offset.Zero,
+            animationSpec = if (activeDrag?.phase == MatrixDragPhase.DRAGGING) {
+                snap()
+            } else {
+                spring(dampingRatio = 0.88f, stiffness = 340f)
+            },
+            finishedListener = finished@{
+                val drag = activeDrag?.takeIf { it.phase == MatrixDragPhase.LANDING }
+                    ?: return@finished
+                val expectation = drag.expectation ?: return@finished
+                val dropPosition = drag.dropPositionInMatrix ?: return@finished
+                if (expectation.noOp) {
+                    clearDrag(drag.task.id)
+                    return@finished
+                }
+                applyDrop(
+                    task = drag.task,
+                    source = drag.source,
+                    sourceTasks = latestTasks.inQuadrant(drag.source),
+                    dropPosition = dropPosition,
+                    quadrantWidthPx = quadrantWidthPx,
+                    quadrantHeightPx = quadrantHeightPx,
+                    onMoveTask = onMoveTask,
+                    onReorderTask = onReorderTask,
+                    onCompleteTask = onCompleteTask
+                )
+                activeDrag = drag.copy(phase = MatrixDragPhase.COMMITTING)
+            },
+            label = "matrix_drag_overlay"
+        )
+
+        val committingDrag = activeDrag?.takeIf { it.phase == MatrixDragPhase.COMMITTING }
+        LaunchedEffect(committingDrag?.task?.id, committingDrag?.phase) {
+            val drag = committingDrag ?: return@LaunchedEffect
+            withTimeoutOrNull(1_800L) {
+                snapshotFlow { isDropCommitVisible(latestTasks, drag) }.first { it }
+            }
+            // Let the destination node complete one layout pass underneath the
+            // overlay, then reveal it at exactly the same measured slot.
+            delay(34L)
+            clearDrag(drag.task.id)
+        }
 
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.weight(1f)) {
@@ -116,12 +264,17 @@ internal fun EisenhowerMatrix(
                     matrixOriginInRoot = matrixOriginInRoot,
                     animationsEnabled = animationsEnabled,
                     onOpenTask = onOpenTask,
-                    onDrop = { task, offset ->
-                        applyDrop(task, TaskQuadrant.NOW, nowTasks, offset, quadrantWidthPx, quadrantHeightPx, onMoveTask, onReorderTask, onCompleteTask)
-                    },
                     onAdd = { onCreateInQuadrant(TaskQuadrant.NOW) },
                     onOpenQuadrant = { onOpenQuadrant(TaskQuadrant.NOW) },
-                    onDraggingChanged = onDraggingChanged,
+                    draggedTaskId = activeDrag?.task?.id,
+                    onTaskAreaPositioned = { geometry ->
+                        if (taskAreas[TaskQuadrant.NOW] != geometry) {
+                            taskAreas = taskAreas + (TaskQuadrant.NOW to geometry)
+                        }
+                    },
+                    onBallDragStart = startDrag,
+                    onBallDragBy = dragBy,
+                    onBallDragFinished = finishDrag,
                     modifier = Modifier.weight(1f).height(quadrantHeight)
                 )
                 MatrixQuadrant(
@@ -132,12 +285,17 @@ internal fun EisenhowerMatrix(
                     matrixOriginInRoot = matrixOriginInRoot,
                     animationsEnabled = animationsEnabled,
                     onOpenTask = onOpenTask,
-                    onDrop = { task, offset ->
-                        applyDrop(task, TaskQuadrant.SCHEDULE, scheduleTasks, offset, quadrantWidthPx, quadrantHeightPx, onMoveTask, onReorderTask, onCompleteTask)
-                    },
                     onAdd = { onCreateInQuadrant(TaskQuadrant.SCHEDULE) },
                     onOpenQuadrant = { onOpenQuadrant(TaskQuadrant.SCHEDULE) },
-                    onDraggingChanged = onDraggingChanged,
+                    draggedTaskId = activeDrag?.task?.id,
+                    onTaskAreaPositioned = { geometry ->
+                        if (taskAreas[TaskQuadrant.SCHEDULE] != geometry) {
+                            taskAreas = taskAreas + (TaskQuadrant.SCHEDULE to geometry)
+                        }
+                    },
+                    onBallDragStart = startDrag,
+                    onBallDragBy = dragBy,
+                    onBallDragFinished = finishDrag,
                     modifier = Modifier.weight(1f).height(quadrantHeight)
                 )
             }
@@ -150,12 +308,17 @@ internal fun EisenhowerMatrix(
                     matrixOriginInRoot = matrixOriginInRoot,
                     animationsEnabled = animationsEnabled,
                     onOpenTask = onOpenTask,
-                    onDrop = { task, offset ->
-                        applyDrop(task, TaskQuadrant.DELEGATE, delegateTasks, offset, quadrantWidthPx, quadrantHeightPx, onMoveTask, onReorderTask, onCompleteTask)
-                    },
                     onAdd = { onCreateInQuadrant(TaskQuadrant.DELEGATE) },
                     onOpenQuadrant = { onOpenQuadrant(TaskQuadrant.DELEGATE) },
-                    onDraggingChanged = onDraggingChanged,
+                    draggedTaskId = activeDrag?.task?.id,
+                    onTaskAreaPositioned = { geometry ->
+                        if (taskAreas[TaskQuadrant.DELEGATE] != geometry) {
+                            taskAreas = taskAreas + (TaskQuadrant.DELEGATE to geometry)
+                        }
+                    },
+                    onBallDragStart = startDrag,
+                    onBallDragBy = dragBy,
+                    onBallDragFinished = finishDrag,
                     modifier = Modifier.weight(1f).height(quadrantHeight)
                 )
                 MatrixQuadrant(
@@ -166,17 +329,194 @@ internal fun EisenhowerMatrix(
                     matrixOriginInRoot = matrixOriginInRoot,
                     animationsEnabled = animationsEnabled,
                     onOpenTask = onOpenTask,
-                    onDrop = { task, offset ->
-                        applyDrop(task, TaskQuadrant.LET_GO, letGoTasks, offset, quadrantWidthPx, quadrantHeightPx, onMoveTask, onReorderTask, onCompleteTask)
-                    },
                     onAdd = { onCreateInQuadrant(TaskQuadrant.LET_GO) },
                     onOpenQuadrant = { onOpenQuadrant(TaskQuadrant.LET_GO) },
-                    onDraggingChanged = onDraggingChanged,
+                    draggedTaskId = activeDrag?.task?.id,
+                    onTaskAreaPositioned = { geometry ->
+                        if (taskAreas[TaskQuadrant.LET_GO] != geometry) {
+                            taskAreas = taskAreas + (TaskQuadrant.LET_GO to geometry)
+                        }
+                    },
+                    onBallDragStart = startDrag,
+                    onBallDragBy = dragBy,
+                    onBallDragFinished = finishDrag,
                     modifier = Modifier.weight(1f).height(quadrantHeight)
                 )
             }
         }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { overlayOriginInRoot = it.positionInRoot() }
+                .zIndex(20f)
+        ) {
+            activeDrag?.let { drag ->
+                val centerInMatrix = overlayCenter - matrixOriginInRoot
+                val hoverTarget = calculateDropTargetAtPosition(
+                    centerInMatrix,
+                    quadrantWidthPx,
+                    quadrantHeightPx
+                )
+                val overlayColor = hoverTarget.quadrant
+                    ?.let { quadrantColors(it).ball }
+                    ?: MaterialTheme.appAccents.other.color
+                val localCenter = overlayCenter - overlayOriginInRoot
+                val overlayScale by animateFloatAsState(
+                    targetValue = if (drag.phase == MatrixDragPhase.COMMITTING) 1f else 1.08f,
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f),
+                    label = "matrix_drag_overlay_scale"
+                )
+                TaskBallSurface(
+                    task = drag.task,
+                    color = overlayColor,
+                    contentColor = readableContentColor(overlayColor),
+                    shadowElevation = 12.dp,
+                    modifier = Modifier
+                        .size(TASK_BALL_SIZE)
+                        .graphicsLayer {
+                            translationX = localCenter.x - ballSizePx / 2f
+                            translationY = localCenter.y - ballSizePx / 2f
+                            scaleX = overlayScale
+                            scaleY = overlayScale
+                        }
+                )
+            }
+        }
     }
+}
+
+private fun buildDropCommitExpectation(
+    task: TaskEntity,
+    source: TaskQuadrant,
+    tasksByQuadrant: Map<TaskQuadrant, List<TaskEntity>>,
+    dropPosition: Offset,
+    quadrantWidthPx: Float,
+    quadrantHeightPx: Float
+): DropCommitExpectation {
+    val target = calculateDropTargetAtPosition(dropPosition, quadrantWidthPx, quadrantHeightPx)
+    if (target.completed || target.quadrant == null) {
+        return DropCommitExpectation(target = target, targetIndex = null, noOp = false)
+    }
+    val targetQuadrant = target.quadrant
+    if (targetQuadrant != source) {
+        val appendIndex = tasksByQuadrant[targetQuadrant].orEmpty().size
+            .coerceIn(0, VISIBLE_TASKS_PER_QUADRANT - 1)
+        return DropCommitExpectation(target, appendIndex, noOp = false)
+    }
+
+    val ordered = tasksByQuadrant[source].orEmpty()
+    val currentIndex = ordered.indexOfFirst { it.id == task.id }
+    val targetIndex = calculateReorderTargetIndex(
+        source = source,
+        taskCount = ordered.size,
+        dropPosition = dropPosition,
+        quadrantWidthPx = quadrantWidthPx,
+        quadrantHeightPx = quadrantHeightPx
+    )
+    return DropCommitExpectation(
+        target = target,
+        targetIndex = targetIndex,
+        noOp = currentIndex < 0 || currentIndex == targetIndex
+    )
+}
+
+private fun calculateMeasuredLandingCenter(
+    drag: MatrixBallDrag,
+    expectation: DropCommitExpectation,
+    taskAreas: Map<TaskQuadrant, TaskAreaGeometry>,
+    targetTaskCount: Int,
+    ballSizePx: Float,
+    quadrantWidthPx: Float,
+    quadrantHeightPx: Float,
+    matrixOriginInRoot: Offset
+): Offset {
+    if (expectation.noOp) return drag.originCenterInRoot
+    if (expectation.target.completed) {
+        return drag.centerInRoot + Offset(0f, quadrantHeightPx * 0.22f)
+    }
+    val targetQuadrant = expectation.target.quadrant ?: return drag.originCenterInRoot
+    val targetIndex = expectation.targetIndex ?: return drag.originCenterInRoot
+    val geometry = taskAreas[targetQuadrant]
+    if (geometry != null) {
+        val countAfterDrop = if (targetQuadrant == drag.source) {
+            targetTaskCount
+        } else {
+            targetTaskCount + 1
+        }.coerceIn(1, VISIBLE_TASKS_PER_QUADRANT)
+        return calculateTaskSlotCenter(geometry, countAfterDrop, targetIndex, ballSizePx)
+    }
+
+    // The area is normally measured before any gesture. Keep a safe fallback
+    // for the very first frame after screen creation.
+    val column = if (
+        targetQuadrant == TaskQuadrant.SCHEDULE || targetQuadrant == TaskQuadrant.LET_GO
+    ) 1 else 0
+    val row = if (
+        targetQuadrant == TaskQuadrant.DELEGATE || targetQuadrant == TaskQuadrant.LET_GO
+    ) 1 else 0
+    return matrixOriginInRoot + Offset(
+        (column + 0.5f) * quadrantWidthPx,
+        (row + 0.54f) * quadrantHeightPx
+    )
+}
+
+/** Exact center produced by the matrix's two-column SpaceEvenly layout. */
+internal fun calculateTaskSlotCenter(
+    geometry: TaskAreaGeometry,
+    taskCount: Int,
+    targetIndex: Int,
+    ballSizePx: Float
+): Offset {
+    val visibleCount = taskCount.coerceIn(1, VISIBLE_TASKS_PER_QUADRANT)
+    val index = targetIndex.coerceIn(0, visibleCount - 1)
+    val horizontalGap = ((geometry.size.width - ballSizePx * 2f) / 3f).coerceAtLeast(0f)
+    val centerX = if (index % 2 == 0) {
+        horizontalGap + ballSizePx / 2f
+    } else {
+        horizontalGap * 2f + ballSizePx * 1.5f
+    }
+    val rowCount = if (visibleCount <= 2) 1 else 2
+    val row = index / 2
+    val centerY = if (rowCount == 1) {
+        geometry.size.height / 2f
+    } else {
+        val verticalGap = ((geometry.size.height - ballSizePx * 2f) / 3f).coerceAtLeast(0f)
+        if (row == 0) {
+            verticalGap + ballSizePx / 2f
+        } else {
+            verticalGap * 2f + ballSizePx * 1.5f
+        }
+    }
+    return geometry.topLeftInRoot + Offset(centerX, centerY)
+}
+
+private fun isDropCommitVisible(tasks: List<TaskEntity>, drag: MatrixBallDrag): Boolean {
+    val expectation = drag.expectation ?: return true
+    if (expectation.target.completed) return tasks.none { it.id == drag.task.id && !it.isDone }
+    val targetQuadrant = expectation.target.quadrant ?: return true
+    val current = tasks.firstOrNull { it.id == drag.task.id } ?: return false
+    if (current.matrixQuadrant != targetQuadrant.storageValue) return false
+    if (targetQuadrant != drag.source) return true
+    val ordered = tasks.inQuadrant(targetQuadrant)
+    return ordered.indexOfFirst { it.id == drag.task.id } == expectation.targetIndex
+}
+
+private fun calculateReorderTargetIndex(
+    source: TaskQuadrant,
+    taskCount: Int,
+    dropPosition: Offset,
+    quadrantWidthPx: Float,
+    quadrantHeightPx: Float
+): Int {
+    if (taskCount <= 1) return 0
+    val sourceColumn = if (source == TaskQuadrant.SCHEDULE || source == TaskQuadrant.LET_GO) 1 else 0
+    val sourceRow = if (source == TaskQuadrant.DELEGATE || source == TaskQuadrant.LET_GO) 1 else 0
+    val localX = dropPosition.x - sourceColumn * quadrantWidthPx
+    val localY = dropPosition.y - sourceRow * quadrantHeightPx
+    val column = if (localX < quadrantWidthPx / 2f) 0 else 1
+    val row = if (localY < quadrantHeightPx * 0.58f) 0 else 1
+    return (row * 2 + column).coerceIn(0, taskCount - 1)
 }
 
 private fun applyDrop(
@@ -197,13 +537,13 @@ private fun applyDrop(
             val ordered = sourceTasks.sortedWith(compareBy<TaskEntity> { it.sortOrder }.thenByDescending { it.createdAt })
             val current = ordered.indexOfFirst { it.id == task.id }
             if (current >= 0) {
-                val sourceColumn = if (source == TaskQuadrant.SCHEDULE || source == TaskQuadrant.LET_GO) 1 else 0
-                val sourceRow = if (source == TaskQuadrant.DELEGATE || source == TaskQuadrant.LET_GO) 1 else 0
-                val localX = dropPosition.x - sourceColumn * quadrantWidthPx
-                val localY = dropPosition.y - sourceRow * quadrantHeightPx
-                val column = if (localX < quadrantWidthPx / 2f) 0 else 1
-                val row = if (localY < quadrantHeightPx * 0.58f) 0 else 1
-                val targetIndex = (row * 2 + column).coerceIn(0, ordered.lastIndex)
+                val targetIndex = calculateReorderTargetIndex(
+                    source,
+                    ordered.size,
+                    dropPosition,
+                    quadrantWidthPx,
+                    quadrantHeightPx
+                )
                 onReorderTask(task, targetIndex)
             }
         } else {
@@ -261,6 +601,32 @@ internal fun calculateDropTarget(
     return TaskDropTarget(target, false)
 }
 
+/** One landing vector keeps both axes in the same animation and completion callback. */
+internal fun calculateDropLandingOffset(
+    source: TaskQuadrant,
+    target: TaskDropTarget,
+    dragOffset: Offset,
+    baseCenterInMatrix: Offset,
+    quadrantWidthPx: Float,
+    quadrantHeightPx: Float
+): Offset = when {
+    target.completed -> dragOffset + Offset(0f, quadrantHeightPx * 0.22f)
+    target.quadrant == source -> dragOffset
+    target.quadrant != null -> {
+        val column = if (
+            target.quadrant == TaskQuadrant.SCHEDULE || target.quadrant == TaskQuadrant.LET_GO
+        ) 1 else 0
+        val row = if (
+            target.quadrant == TaskQuadrant.DELEGATE || target.quadrant == TaskQuadrant.LET_GO
+        ) 1 else 0
+        Offset(
+            (column + 0.5f) * quadrantWidthPx,
+            (row + 0.54f) * quadrantHeightPx
+        ) - baseCenterInMatrix
+    }
+    else -> dragOffset
+}
+
 @Composable
 private fun MatrixQuadrant(
     quadrant: TaskQuadrant,
@@ -270,10 +636,13 @@ private fun MatrixQuadrant(
     matrixOriginInRoot: Offset,
     animationsEnabled: Boolean,
     onOpenTask: (TaskEntity) -> Unit,
-    onDrop: (TaskEntity, Offset) -> Unit,
     onAdd: () -> Unit,
     onOpenQuadrant: () -> Unit,
-    onDraggingChanged: (Boolean) -> Unit,
+    draggedTaskId: Int?,
+    onTaskAreaPositioned: (TaskAreaGeometry) -> Unit,
+    onBallDragStart: (TaskEntity, TaskQuadrant, Offset) -> Unit,
+    onBallDragBy: (Int, Offset) -> Unit,
+    onBallDragFinished: (Int, Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = quadrantColors(quadrant)
@@ -324,6 +693,17 @@ private fun MatrixQuadrant(
             Box(
                 Modifier
                     .fillMaxSize()
+                    .onGloballyPositioned { coordinates ->
+                        onTaskAreaPositioned(
+                            TaskAreaGeometry(
+                                topLeftInRoot = coordinates.positionInRoot(),
+                                size = Size(
+                                    coordinates.size.width.toFloat(),
+                                    coordinates.size.height.toFloat()
+                                )
+                            )
+                        )
+                    }
                     .clickable(onClick = onOpenQuadrant),
                 contentAlignment = Alignment.Center
             ) {
@@ -339,6 +719,17 @@ private fun MatrixQuadrant(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
+                    .onGloballyPositioned { coordinates ->
+                        onTaskAreaPositioned(
+                            TaskAreaGeometry(
+                                topLeftInRoot = coordinates.positionInRoot(),
+                                size = Size(
+                                    coordinates.size.width.toFloat(),
+                                    coordinates.size.height.toFloat()
+                                )
+                            )
+                        )
+                    }
                     // Открытие полного списка происходит по свободной области.
                     // Нажатия на сами шарики перехватывает FloatingTaskBall.
                     .clickable(onClick = onOpenQuadrant),
@@ -351,18 +742,22 @@ private fun MatrixQuadrant(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         rowTasks.forEach { task ->
-                            FloatingTaskBall(
-                                task = task,
-                                source = quadrant,
-                                baseColor = colors.ball,
-                                quadrantWidthPx = quadrantWidthPx,
-                                quadrantHeightPx = quadrantHeightPx,
-                                matrixOriginInRoot = matrixOriginInRoot,
-                                animationsEnabled = animationsEnabled,
-                                onClick = { onOpenTask(task) },
-                                onDraggingChanged = onDraggingChanged,
-                                onDrop = { onDrop(task, it) }
-                            )
+                            key(task.id) {
+                                FloatingTaskBall(
+                                    task = task,
+                                    source = quadrant,
+                                    baseColor = colors.ball,
+                                    quadrantWidthPx = quadrantWidthPx,
+                                    quadrantHeightPx = quadrantHeightPx,
+                                    matrixOriginInRoot = matrixOriginInRoot,
+                                    animationsEnabled = animationsEnabled,
+                                    isHidden = draggedTaskId == task.id,
+                                    onClick = { onOpenTask(task) },
+                                    onDragStart = { center -> onBallDragStart(task, quadrant, center) },
+                                    onDragBy = { amount -> onBallDragBy(task.id, amount) },
+                                    onDragFinished = { center -> onBallDragFinished(task.id, center) }
+                                )
+                            }
                         }
                         if (rowTasks.size == 1 && tasks.size <= VISIBLE_TASKS_PER_QUADRANT) {
                             Spacer(Modifier.size(TASK_BALL_SIZE))
@@ -392,19 +787,21 @@ private fun FloatingTaskBall(
     quadrantHeightPx: Float,
     matrixOriginInRoot: Offset,
     animationsEnabled: Boolean,
+    isHidden: Boolean,
     onClick: () -> Unit,
-    onDraggingChanged: (Boolean) -> Unit,
-    onDrop: (Offset) -> Unit
+    onDragStart: (Offset) -> Unit,
+    onDragBy: (Offset) -> Unit,
+    onDragFinished: (Offset) -> Unit
 ) {
     var dragOffset by remember(task.id) { mutableStateOf(Offset.Zero) }
-    var settling by remember(task.id) { mutableStateOf(false) }
-    var landingTarget by remember(task.id) { mutableStateOf(Offset.Zero) }
-    var pendingDropPosition by remember(task.id) { mutableStateOf<Offset?>(null) }
     var ballCenterInRoot by remember(task.id) { mutableStateOf(Offset.Zero) }
     var dragging by remember(task.id) { mutableStateOf(false) }
     var previousHover by remember(task.id) { mutableStateOf(source) }
+    val latestMatrixOrigin by rememberUpdatedState(matrixOriginInRoot)
+    val latestOnDragStart by rememberUpdatedState(onDragStart)
+    val latestOnDragBy by rememberUpdatedState(onDragBy)
+    val latestOnDragFinished by rememberUpdatedState(onDragFinished)
     val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
     val transition = rememberInfiniteTransition(label = "task_${task.id}_float")
     val floatY by transition.animateFloat(
         initialValue = if (animationsEnabled) -3.5f else 0f,
@@ -424,70 +821,44 @@ private fun FloatingTaskBall(
         ),
         label = "task_float_x"
     )
-    val settleX by animateFloatAsState(
-        targetValue = if (settling) landingTarget.x else dragOffset.x,
-        animationSpec = if (settling) tween(durationMillis = 380) else snap(),
-        label = "task_settle_x"
+    val ambientFactor by animateFloatAsState(
+        targetValue = if (dragging || isHidden) 0f else 1f,
+        animationSpec = tween(durationMillis = 170),
+        label = "task_ambient_factor"
     )
-    val settleY by animateFloatAsState(
-        targetValue = if (settling) landingTarget.y else dragOffset.y,
-        animationSpec = if (settling) tween(durationMillis = 380) else snap(),
-        finishedListener = {
-            if (settling) {
-                val droppedAt = pendingDropPosition
-                dragOffset = landingTarget
-                settling = false
-                dragging = false
-                pendingDropPosition = null
-                droppedAt?.let(onDrop)
-                onDraggingChanged(false)
-                scope.launch {
-                    delay(140)
-                    dragOffset = Offset.Zero
-                    landingTarget = Offset.Zero
-                }
-            }
-        },
-        label = "task_settle_y"
-    )
-    val offset = if (settling) Offset(settleX, settleY) else dragOffset
-    val baseCenterInMatrix = ballCenterInRoot - matrixOriginInRoot
-    val currentCenterInMatrix = baseCenterInMatrix + offset
-    val hoverTarget = calculateDropTargetAtPosition(currentCenterInMatrix, quadrantWidthPx, quadrantHeightPx)
-    val liveColor = hoverTarget.quadrant?.let { quadrantColors(it).ball } ?: MaterialTheme.colorScheme.secondary
-
-    Surface(
+    TaskBallSurface(
+        task = task,
+        color = baseColor,
+        contentColor = readableContentColor(baseColor),
+        shadowElevation = 3.dp,
         onClick = onClick,
         modifier = Modifier
             .size(TASK_BALL_SIZE)
             .onGloballyPositioned { coordinates ->
-                if (!dragging && !settling) {
+                if (!dragging && !isHidden) {
                     val topLeft = coordinates.positionInRoot()
                     ballCenterInRoot = topLeft + Offset(coordinates.size.width / 2f, coordinates.size.height / 2f)
                 }
             }
             .graphicsLayer {
-                translationX = offset.x + floatX
-                translationY = offset.y + floatY
-                scaleX = if (offset == Offset.Zero) 1f else 1.07f
-                scaleY = if (offset == Offset.Zero) 1f else 1.07f
+                translationX = floatX * ambientFactor
+                translationY = floatY * ambientFactor
+                alpha = if (isHidden) 0f else 1f
             }
             .pointerInput(task.id, source) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = {
+                        dragOffset = Offset.Zero
                         dragging = true
-                        onDraggingChanged(true)
-                        if (settling) {
-                            dragOffset = offset
-                            settling = false
-                        }
+                        latestOnDragStart(ballCenterInRoot)
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     },
                     onDrag = { change, amount ->
                         change.consume()
                         dragOffset += amount
+                        latestOnDragBy(amount)
                         val hover = calculateDropTargetAtPosition(
-                            baseCenterInMatrix + dragOffset,
+                            ballCenterInRoot - latestMatrixOrigin + dragOffset,
                             quadrantWidthPx,
                             quadrantHeightPx
                         ).quadrant
@@ -498,51 +869,84 @@ private fun FloatingTaskBall(
                     },
                     onDragCancel = {
                         previousHover = source
-                        landingTarget = Offset.Zero
-                        pendingDropPosition = null
-                        settling = true
+                        dragging = false
+                        // A system pointer cancellation commits the section under
+                        // the ball instead of exposing a confusing undo action.
+                        latestOnDragFinished(ballCenterInRoot + dragOffset)
                     },
                     onDragEnd = {
-                        val droppedAt = baseCenterInMatrix + dragOffset
-                        val target = calculateDropTargetAtPosition(droppedAt, quadrantWidthPx, quadrantHeightPx)
-                        pendingDropPosition = droppedAt
-                        landingTarget = when {
-                            target.completed -> dragOffset + Offset(0f, quadrantHeightPx * 0.22f)
-                            target.quadrant != null && target.quadrant != source -> {
-                                val column = if (target.quadrant == TaskQuadrant.SCHEDULE || target.quadrant == TaskQuadrant.LET_GO) 1 else 0
-                                val row = if (target.quadrant == TaskQuadrant.DELEGATE || target.quadrant == TaskQuadrant.LET_GO) 1 else 0
-                                Offset(
-                                    (column + 0.5f) * quadrantWidthPx,
-                                    (row + 0.54f) * quadrantHeightPx
-                                ) - baseCenterInMatrix
-                            }
-                            else -> Offset.Zero
-                        }
                         previousHover = source
-                        settling = true
+                        dragging = false
+                        latestOnDragFinished(ballCenterInRoot + dragOffset)
                     }
                 )
-            },
-        shape = CircleShape,
-            color = if (offset == Offset.Zero) baseColor else liveColor,
-            shadowElevation = if (offset == Offset.Zero) 3.dp else 10.dp
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(7.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            if (task.imagePath != null) {
-                LocalTaskImage(path = task.imagePath, modifier = Modifier.size(50.dp), circular = true)
-            } else {
-                Icon(
-                    Icons.Default.Image,
-                    contentDescription = null,
-                    modifier = Modifier.size(25.dp),
-                    tint = readableContentColor(if (offset == Offset.Zero) baseColor else liveColor)
-                )
+            }
+    )
+}
+
+@Composable
+private fun TaskBallSurface(
+    task: TaskEntity,
+    color: Color,
+    contentColor: Color,
+    shadowElevation: Dp,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    val content: @Composable () -> Unit = {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                if (task.imagePath != null) {
+                    LocalTaskImage(path = task.imagePath, modifier = Modifier.size(50.dp), circular = true)
+                } else {
+                    Icon(
+                        Icons.Default.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(25.dp),
+                        tint = contentColor
+                    )
+                }
+            }
+            if (task.isDailyRequired) {
+                val requiredTone = MaterialTheme.appAccents.warning
+                Surface(
+                    modifier = Modifier.align(Alignment.TopEnd).size(18.dp),
+                    shape = CircleShape,
+                    color = requiredTone.color
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            "!",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = requiredTone.onColor,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
+    }
+    if (onClick != null) {
+        Surface(
+            onClick = onClick,
+            modifier = modifier,
+            shape = CircleShape,
+            color = color,
+            shadowElevation = shadowElevation,
+            content = content
+        )
+    } else {
+        Surface(
+            modifier = modifier,
+            shape = CircleShape,
+            color = color,
+            shadowElevation = shadowElevation,
+            content = content
+        )
     }
 }
 
@@ -552,10 +956,9 @@ private fun List<TaskEntity>.inQuadrant(quadrant: TaskQuadrant): List<TaskEntity
 
 @Composable
 private fun quadrantSummary(tasks: List<TaskEntity>): String {
-    val remainingMinutes = tasks.sumOf { task ->
-        val budget = task.workBudgetMinutes.takeIf { it > 0 } ?: task.estimatedMinutes
-        (budget - task.spentMillis / 60_000L).coerceAtLeast(0L)
-    }
+    val remainingMinutes = tasks.mapNotNull { task ->
+        task.remainingWorkMillisOrNull()?.let { (it + 59_999L) / 60_000L }
+    }.sum()
     val overdue = tasks.count { (it.dueAtMillis ?: Long.MAX_VALUE) < System.currentTimeMillis() }
     return if (overdue > 0) {
         stringResource(R.string.task_quadrant_summary_overdue, tasks.size, remainingMinutes, overdue)
@@ -564,27 +967,35 @@ private fun quadrantSummary(tasks: List<TaskEntity>): String {
     }
 }
 
-private data class QuadrantColors(val container: Color, val ball: Color, val content: Color)
+private data class QuadrantColors(
+    val container: Color,
+    val ball: Color,
+    val content: Color
+)
 
 @Composable
 private fun quadrantColors(quadrant: TaskQuadrant): QuadrantColors {
-    val scheme = MaterialTheme.colorScheme
-    return when (quadrant) {
-        TaskQuadrant.NOW -> QuadrantColors(scheme.errorContainer, scheme.error, scheme.onErrorContainer)
-        TaskQuadrant.SCHEDULE -> QuadrantColors(scheme.primaryContainer, scheme.primary, scheme.onPrimaryContainer)
-        TaskQuadrant.DELEGATE -> QuadrantColors(scheme.tertiaryContainer, scheme.tertiary, scheme.onTertiaryContainer)
-        TaskQuadrant.LET_GO -> QuadrantColors(scheme.surfaceContainerHighest, scheme.secondary, scheme.onSurfaceVariant)
+    val accents = MaterialTheme.appAccents
+    val tone = when (quadrant) {
+        TaskQuadrant.NOW -> accents.urgent
+        TaskQuadrant.SCHEDULE -> accents.study
+        TaskQuadrant.DELEGATE -> accents.other
+        TaskQuadrant.LET_GO -> accents.calm
     }
+    return tone.toQuadrantColors()
 }
 
 @Composable
 private fun readableContentColor(background: Color): Color {
-    val scheme = MaterialTheme.colorScheme
-    return if (background == scheme.error) scheme.onError
-    else if (background == scheme.primary) scheme.onPrimary
-    else if (background == scheme.tertiary) scheme.onTertiary
-    else scheme.onSecondary
+    return MaterialTheme.appAccents.all.firstOrNull { it.color == background }?.onColor
+        ?: MaterialTheme.appAccents.other.onColor
 }
+
+private fun AppAccentTone.toQuadrantColors() = QuadrantColors(
+    container = container,
+    ball = color,
+    content = onContainer
+)
 
 private fun quadrantIcon(quadrant: TaskQuadrant) = when (quadrant) {
     TaskQuadrant.NOW -> Icons.Default.Bolt

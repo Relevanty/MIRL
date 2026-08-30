@@ -34,6 +34,7 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.ui.diary.MarkdownVisualTransformation
 import com.personal.sleepalarm.ui.diary.ThemedMarkdownText
 import com.personal.sleepalarm.ui.theme.ThemedAlertDialog
+import com.personal.sleepalarm.ui.theme.appAccents
 
 @Composable
 internal fun QuickNotesDialog(
@@ -44,24 +45,25 @@ internal fun QuickNotesDialog(
     var value by remember(initialText) { mutableStateOf(TextFieldValue(initialText)) }
     var preview by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
+    val accents = MaterialTheme.appAccents
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    val noteAccent = colors.secondary
+    val noteAccent = accents.calm.color
     val noteSurface = lerp(colors.surface, noteAccent, 0.13f)
     val noteButtonColors = ButtonDefaults.textButtonColors(
         contentColor = noteAccent,
         disabledContentColor = colors.onSurfaceVariant.copy(alpha = 0.48f)
     )
-    val markdownTransformation = remember(colors) {
+    val markdownTransformation = remember(colors, accents) {
         MarkdownVisualTransformation(
-            headingColor = colors.primary,
+            headingColor = accents.study.color,
             quoteColor = colors.onSurfaceVariant,
-            listColor = colors.tertiary,
-            codeColor = colors.error,
+            listColor = accents.other.color,
+            codeColor = accents.urgent.color,
             codeBackground = colors.surfaceVariant.copy(alpha = 0.55f),
             boldColor = colors.onSurface,
             italicColor = colors.onSurfaceVariant,
-            mathColor = colors.tertiary
+            mathColor = accents.focus.color
         )
     }
 
@@ -136,7 +138,7 @@ internal fun QuickNotesDialog(
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 color = colors.onSurface
                             ),
-                            cursorBrush = SolidColor(colors.primary),
+                            cursorBrush = SolidColor(accents.calm.color),
                             visualTransformation = markdownTransformation,
                             decorationBox = { field ->
                                 if (value.text.isEmpty()) {

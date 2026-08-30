@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.personal.sleepalarm.data.db.AppDatabase
-import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
 import com.personal.sleepalarm.service.EventNotificationBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,25 +38,74 @@ class EventAlarmReceiver : BroadcastReceiver() {
                 val event = all.firstOrNull { it.id == eventId }
                 if (event == null) {
                     Log.w(TAG, "event $eventId not found")
+                    notifier.cancel(eventId)
+                    return@launch
+                }
+                val linkedTaskDone = event.taskId
+                    ?.let { taskId -> database.taskDao().getById(taskId)?.isDone }
+                    ?: false
+                if (linkedTaskDone) {
+                    notifier.cancel(eventId)
+                    scheduler.cancel(eventId)
+                    Log.d(TAG, "linked task completed, occurrence skipped id=$eventId")
                     return@launch
                 }
 
-                notifier.show(event)
-
-                // Если повторяющееся — переставляем на следующий день/неделю.
-                val shiftMs = when (event.repeatRule) {
-                    "daily" -> 24L * 60 * 60 * 1000
-                    "weekly" -> 7L * 24 * 60 * 60 * 1000
-                    else -> null
+                val expectedMasterStart = intent.getLongExtra(
+                    EventAlarmScheduler.EXTRA_MASTER_START,
+                    Long.MIN_VALUE
+                )
+                if (expectedMasterStart != Long.MIN_VALUE &&
+                    (event.startMillis != expectedMasterStart ||
+                        event.endMillis != intent.getLongExtra(
+                            EventAlarmScheduler.EXTRA_MASTER_END,
+                            Long.MIN_VALUE
+                        ) ||
+                        event.reminderMinutes != intent.getIntExtra(
+                            EventAlarmScheduler.EXTRA_MASTER_REMINDER,
+                            Int.MIN_VALUE
+                        ).takeUnless { it == Int.MIN_VALUE } ||
+                        event.repeatRule != intent.getStringExtra(
+                            EventAlarmScheduler.EXTRA_MASTER_REPEAT
+                        ))
+                ) {
+                    // Android may already have queued the previous PendingIntent
+                    // while the user edits this series. Never present that old
+                    // occurrence as if it belonged to the updated event.
+                    notifier.cancel(eventId)
+                    scheduler.schedule(event)
+                    Log.d(TAG, "stale occurrence skipped id=$eventId")
+                    return@launch
                 }
-                if (shiftMs != null) {
-                    val updated = event.copy(
-                        startMillis = event.startMillis + shiftMs,
-                        endMillis = event.endMillis + shiftMs
+
+                val occurrenceStart = intent.getLongExtra(
+                    EventAlarmScheduler.EXTRA_OCCURRENCE_START,
+                    event.startMillis
+                )
+                val occurrenceEnd = intent.getLongExtra(
+                    EventAlarmScheduler.EXTRA_OCCURRENCE_END,
+                    event.endMillis
+                )
+                val firedTrigger = intent.getLongExtra(
+                    EventAlarmScheduler.EXTRA_OCCURRENCE_TRIGGER,
+                    System.currentTimeMillis()
+                )
+
+                // Показываем конкретный occurrence, но recurrence master в БД
+                // остаётся неизменным и продолжает отображать всю серию.
+                notifier.show(
+                    event.copy(
+                        startMillis = occurrenceStart,
+                        endMillis = occurrenceEnd
                     )
-                    eventDao.update(updated)
-                    scheduler.schedule(updated)
-                    Log.d(TAG, "rescheduled id=$eventId to next ${event.repeatRule}")
+                )
+
+                if (event.repeatRule == "daily" || event.repeatRule == "weekly") {
+                    scheduler.schedule(
+                        event = event,
+                        nowMillis = maxOf(System.currentTimeMillis(), firedTrigger)
+                    )
+                    Log.d(TAG, "scheduled next occurrence id=$eventId rule=${event.repeatRule}")
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "error in onReceive", e)

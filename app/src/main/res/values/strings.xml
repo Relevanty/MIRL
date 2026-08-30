@@ -23,6 +23,7 @@
     <string name="tab_plan">План</string>
     <string name="tab_focus">Фокус</string>
     <string name="tab_analytics">Аналитика</string>
+    <string name="tab_calendar">Календарь</string>
     <string name="tab_settings">Настройки</string>
 
 
@@ -71,7 +72,10 @@
     <string name="action_go_to_sleep_now">Я ложусь спать сейчас</string>
     <string name="action_recalculate">Пересчитать</string>
     <string name="action_cancel_sleep">Отменить сон</string>
+    <string name="action_skip_sleep_automation_tonight">Пропустить сегодня</string>
     <string name="active_session_text">Сон активен. Подъём в %1$s</string>
+    <string name="sleep_automation_waiting_card">Автоожидание · подъём в %1$s</string>
+    <string name="sleep_onset_not_asleep">Это было не засыпание</string>
     <string name="home_sleep_result_title">Доброе утро — ночь сохранена</string>
     <string name="home_sleep_result_body">Оценка сна: %1$s · подъём в %2$s</string>
     <string name="home_sleep_result_detected">Засыпание найдено по неподвижности телефона · уверенность %1$d%%</string>
@@ -103,12 +107,45 @@
     <string name="alarm_loading">Загрузка будильника…</string>
 
     <!-- Математическая задача -->
-    <string name="alarm_solve_to_disable">Решите пример, чтобы выключить будильник</string>
+    <string name="alarm_solve_to_disable">Решите задачу, чтобы выключить будильник</string>
     <string name="alarm_answer_label">Ответ</string>
-    <string name="alarm_error_empty_answer">Введите число</string>
+    <string name="alarm_error_empty_answer">Введите ответ</string>
+    <string name="alarm_error_answer_format">Проверьте формат ответа по подсказке под полем</string>
     <string name="alarm_wrong_answer">Неправильно. Попробуйте ещё раз.</string>
-    <string name="alarm_hint_answer">Подсказка: правильный ответ — %1$d</string>
+    <string name="alarm_hint_answer">Подсказка: правильный ответ — %1$s</string>
     <string name="alarm_answer_correct">Верно! Теперь будильник можно выключить.</string>
+    <string name="alarm_answer_format_integer">Введите целое число. Знак минус допустим.</string>
+    <string name="alarm_answer_format_set">Множество: {-2; 0; 3}. Порядок и повторы не важны.</string>
+    <string name="alarm_answer_format_intervals">Промежутки: x∈(-∞; 2] ∪ [5; +∞). Вместо ∪ можно U, вместо ∞ — inf.</string>
+    <string name="alarm_answer_format_pair">Упорядоченная пара: (-2; 5). Порядок координат важен.</string>
+    <string name="alarm_kind_arithmetic">Арифметика</string>
+    <string name="alarm_kind_linear">Линейное уравнение</string>
+    <string name="alarm_kind_fraction">Уравнение с дробью</string>
+    <string name="alarm_kind_proportion">Пропорция</string>
+    <string name="alarm_kind_system">Система уравнений</string>
+    <string name="alarm_kind_absolute">Уравнение с модулем</string>
+    <string name="alarm_kind_quadratic">Квадратное уравнение</string>
+    <string name="alarm_kind_radical">Уравнение с корнем</string>
+    <string name="alarm_kind_power">Степенное уравнение</string>
+    <string name="alarm_kind_logarithm">Логарифмическое уравнение</string>
+    <string name="alarm_kind_rational">Рациональное уравнение</string>
+    <string name="alarm_kind_trigonometry">Тригонометрическое уравнение</string>
+    <string name="alarm_kind_factorial">Уравнение с факториалом</string>
+    <string name="alarm_kind_biquadratic">Биквадратное уравнение</string>
+    <string name="alarm_kind_exponential">Показательное уравнение</string>
+    <string name="alarm_kind_polynomial">Многочлены</string>
+    <string name="alarm_kind_inequality">Неравенство</string>
+    <string name="alarm_kind_parameter">Задача с параметром</string>
+    <string name="alarm_kind_number_set">Множества чисел</string>
+    <string name="alarm_kind_function">Функции и графики</string>
+    <string name="alarm_kind_coordinate">Координатная задача</string>
+    <string name="alarm_kind_geometry">Геометрия</string>
+    <string name="alarm_kind_number_theory">Теория чисел</string>
+    <string name="alarm_kind_divisors">Делители и остатки</string>
+    <string name="alarm_kind_combinatorics">Комбинаторика</string>
+    <string name="alarm_kind_sequence">Последовательности</string>
+    <string name="alarm_kind_analysis">Математический анализ</string>
+    <string name="alarm_kind_digit">Задача о цифрах</string>
 
     <!-- Кнопки действий -->
     <string name="alarm_action_check">Проверить</string>
@@ -139,7 +176,7 @@
     <string name="settings_category_alarm">Пробуждение</string>
     <string name="settings_category_alarm_summary">Мелодия, вибрация, задача и повторы будильника</string>
     <string name="settings_category_signals">Сигналы приложения</string>
-    <string name="settings_category_signals_summary">Громкость Pomodoro, концентрации, напоминаний и календаря</string>
+    <string name="settings_category_signals_summary">Отдельные звуки и громкость для Pomodoro, напоминаний и календаря</string>
     <string name="pomodoro_notification_channel_name">Таймер Pomodoro</string>
     <string name="pomodoro_notification_channel_description">Сигналы завершения фокуса и отдыха</string>
     <string name="settings_category_automation">Автоматизация сна</string>
@@ -199,14 +236,37 @@
 
     <!-- Будильник -->
     <string name="section_alarm">Будильник</string>
-    <string name="section_notification_sounds">Звуки уведомлений</string>
-    <string name="setting_notification_volume">Громкость сигналов приложения</string>
-    <string name="setting_notification_volume_hint" formatted="false">Не зависит от системной громкости уведомлений. Итоговая громкость ограничена уровнем будильника Android. При 0% сигналы будут беззвучными.</string>
+    <string name="section_notification_sounds">Микшер сигналов</string>
+    <string name="setting_notification_volume">Громкость</string>
+    <string name="setting_notification_volume_hint" formatted="false">Не зависит от системной громкости уведомлений. Во время сигнала MIRL использует полный диапазон громкости будильника, а затем возвращает прежний системный уровень. При 0% сигналы беззвучны.</string>
     <string name="action_test_notification_sound">Проверить звук</string>
+    <string name="app_signals_mixer_hint" formatted="false">Каждый сигнал настраивается отдельно. Уведомление Android всегда беззвучное: выбранный звук запускает только MIRL, поэтому двойного сигнала не будет. Шкала 0–100% использует полный диапазон громкости устройства; прежний системный уровень возвращается после сигнала. У длинного файла проигрываются первые 8 секунд.</string>
+    <string name="app_signal_pomodoro">Pomodoro и фокус</string>
+    <string name="app_signal_reminders">Напоминания</string>
+    <string name="app_signal_calendar">Календарь</string>
+    <string name="app_signal_pomodoro_description">Завершение концентрации и переход к восстановлению</string>
+    <string name="app_signal_reminders_description">Срабатывание задач и обычных напоминаний</string>
+    <string name="app_signal_calendar_description">Сигнал перед событиями календаря</string>
+    <string name="app_signal_current_sound">Сейчас выбран</string>
+    <string name="app_signal_system_default">Системный звук уведомления</string>
+    <string name="app_signal_silent">Без звука</string>
+    <string name="app_signal_choose_system">Система</string>
+    <string name="app_signal_choose_file">Файл</string>
+    <string name="app_signal_make_silent">Выключить звук</string>
+    <string name="app_signal_choose_system_title">%1$s: выберите системный звук</string>
     <string name="setting_math_difficulty">Сложность задачи</string>
     <string name="math_difficulty_easy">Легко</string>
     <string name="math_difficulty_medium">Средне</string>
     <string name="math_difficulty_hard">Сложно</string>
+    <string name="math_difficulty_expert">Уравнения</string>
+    <string name="math_difficulty_extreme">Экстремально</string>
+    <string name="math_difficulty_easy_hint">Сложение и вычитание небольших чисел.</string>
+    <string name="math_difficulty_medium_hint">Все четыре арифметических действия.</string>
+    <string name="math_difficulty_hard_hint">Большие числа, умножение, деление и скобки.</string>
+    <string name="math_difficulty_expert_hint">Многошаговые рациональные, полиномиальные, показательные и логарифмические уравнения, системы и последовательности.</string>
+    <string name="math_difficulty_extreme_hint">Олимпиадные уравнения, неравенства, параметры, множества, функции, теория чисел, комбинаторика и последовательности. Возможны графики. Без дифференциальных уравнений.</string>
+    <string name="setting_math_challenge_count">Задач для пробуждения</string>
+    <string name="setting_math_challenge_count_hint">Будильник выключится только после решения всех задач.</string>
     <string name="setting_quiet_alarm">Тихий режим будильника</string>
     <string name="setting_vibration">Вибрация при пробуждении</string>
     <string name="setting_ringtone">Мелодия будильника</string>
@@ -214,7 +274,7 @@
     <string name="action_pick_ringtone">Выбрать мелодию</string>
     <string name="ringtone_picker_title">Мелодия будильника</string>
     <string name="sound_file_unavailable">Файл звука недоступен. Выберите другой файл.</string>
-    <string name="notification_sound_preview_failed">Не удалось воспроизвести системный звук уведомления.</string>
+    <string name="notification_sound_preview_failed">Не удалось воспроизвести выбранный звук.</string>
     <string name="sound_permission_error">Не удалось сохранить доступ к файлу. Выберите звук через системное хранилище.</string>
     <string name="setting_smart_repeat_enabled">Повторять, пока не проснусь</string>
     <string name="setting_smart_repeat_first">Первый повтор через</string>
@@ -228,6 +288,14 @@
     <string name="setting_auto_detect_onset">Определять засыпание по неподвижности</string>
     <string name="setting_auto_correct_wake">Сдвигать подъём по факту засыпания</string>
     <string name="hint_auto_detect">Экспериментально. Во время активной сессии MIRL учитывает только выключенный экран и длительную неподвижность телефона, затем оценивает момент засыпания. Это бытовая оценка, а не медицинское измерение: утром проверьте результат и при необходимости поправьте его. Без второго тумблера будильник НЕ сдвигается.</string>
+    <string name="setting_auto_start_sleep">Полностью автоматический старт ночью</string>
+    <string name="setting_auto_start_window_begin">Начинать наблюдение</string>
+    <string name="setting_auto_start_window_end">Заканчивать наблюдение</string>
+    <string name="setting_auto_min_confidence">Минимальная уверенность</string>
+    <string name="setting_auto_max_shift">Максимальный сдвиг будильника</string>
+    <string name="setting_auto_hard_wake_hint">Будильник никогда не уйдёт позже выбранного времени подъёма.</string>
+    <string name="hint_auto_start_sleep">В выбранном окне MIRL сам включает локальное определение сна. Сначала ставится резервный будильник на выбранное время подъёма; подсказки появятся только после определения засыпания. Кнопка «Я ложусь спать сейчас» остаётся ручным приоритетным запуском.</string>
+    <string name="sleep_automation_exact_alarm_required">Сначала разрешите MIRL устанавливать точные будильники в системных настройках.</string>
 
     <!-- Данные (экспорт/импорт) -->
     <string name="section_data">Данные</string>
@@ -339,6 +407,8 @@
     <string name="sleep_notification_wake_format">подъём в %1$s</string>
     <string name="sleep_notification_status_format">%1$s · %2$s · %3$s</string>
     <string name="sleep_notification_action_cancel">Отменить</string>
+    <string name="sleep_notification_automation_title">MIRL ожидает засыпания</string>
+    <string name="sleep_notification_automation_waiting">Экран можно выключить. Резервный подъём в %1$s; после определения сна расписание обновится.</string>
     <string name="sleep_notification_start_with_cue">Будильник на %1$s · ближайший пиип в %2$s</string>
     <string name="sleep_notification_start_no_cue">Будильник установлен на %1$s</string>
 
@@ -958,6 +1028,7 @@
     <string name="calendar_all_day">Весь день</string>
     <string name="calendar_start">Начало</string>
     <string name="calendar_end">Конец</string>
+    <string name="calendar_error_end_after_start">Время окончания должно быть позже начала</string>
     <string name="calendar_repeat">Повторение</string>
     <string name="calendar_reminder">Напоминание</string>
     <string name="calendar_repeat_none">Нет</string>
@@ -1043,6 +1114,8 @@
     <string name="pomodoro_activity_change_after_timer">Категорию можно сменить после таймера</string>
     <string name="pomodoro_subjects">Предметы</string>
     <string name="pomodoro_tasks">Задачи</string>
+    <string name="pomodoro_study_targets">Предметы и учебные задачи</string>
+    <string name="pomodoro_other_targets">Дела и другие задачи</string>
     <string name="pomodoro_other_items">Дела</string>
     <string name="pomodoro_empty_category">Здесь пока пусто. Нажмите ^+^, чтобы добавить.</string>
     <string name="pomodoro_new_task">Новая задача</string>
@@ -1123,6 +1196,8 @@
     <string name="focus_block_more_settings">Настроить</string>
     <string name="focus_block_less_settings">Свернуть</string>
     <string name="focus_block_begin">Начать блок</string>
+    <string name="focus_block_starting">Запуск…</string>
+    <string name="focus_block_start_failed">Не удалось начать фокус. Завершите ручную сессию сна или выберите доступную задачу.</string>
     <string name="focus_protocol_phase_cycle_ready">Продолжим?</string>
     <string name="focus_protocol_paused_remaining">Пауза · осталось %1$s</string>
     <string name="task_deadline_notification_title">Дедлайн задачи</string>
@@ -1308,6 +1383,8 @@
     <string name="task_matrix_active_count">Активных: %1$d · удерживайте шарик для переноса</string>
     <string name="task_open_calendar">Открыть календарь</string>
     <string name="task_open_done_board">Открыть доску готового</string>
+    <string name="task_projects_hub">Проекты</string>
+    <string name="task_projects_count">Активных: %1$d</string>
     <string name="task_done_dock">Доска готового</string>
     <string name="task_done_dock_hint">Перетащите сюда выполненный шарик</string>
     <string name="task_quadrant_now">Сейчас</string>
@@ -1335,6 +1412,9 @@
     <string name="task_start_focus">В фокус</string>
     <string name="task_minutes_short">мин</string>
     <string name="task_section_result">Что должно получиться</string>
+    <string name="task_section_activity">Сфера задачи</string>
+    <string name="task_section_activity_hint">Выберите, где учитывать время: в учёбе, работе или другой деятельности.</string>
+    <string name="task_activity_required">Сфера обязательна — без неё задача не попадёт в правильный фокус.</string>
     <string name="task_section_result_hint">Чёткий результат и одно физическое следующее действие снимают лишний стартовый барьер.</string>
     <string name="task_section_visual">Образ задачи</string>
     <string name="task_section_conditions">Когда и где делать</string>
@@ -1342,6 +1422,11 @@
     <string name="task_section_plan">План выполнения</string>
     <string name="task_section_plan_hint">Разбейте работу и заранее решите, что делать при препятствии.</string>
     <string name="task_field_title">Название</string>
+    <string name="task_field_title_ecosystem_hint">Одно название для задачи, фокуса, календаря и напоминаний</string>
+    <string name="focus_hub_task_badge">задача</string>
+    <string name="focus_hub_open_task">Открыть задачу</string>
+    <string name="task_unlink_material">Отвязать материал</string>
+    <string name="library_linked_tasks">Для задач: %1$s</string>
     <string name="task_field_description">Полное описание</string>
     <string name="task_field_why">Почему это важно</string>
     <string name="task_field_why_hint">Какой результат или ценность изменится?</string>
@@ -1429,11 +1514,83 @@
     <string name="projects_open_tasks">Открытых задач: %1$d</string>
     <string name="task_quadrant_summary">%1$d · осталось %2$d мин</string>
     <string name="task_quadrant_summary_overdue">%1$d · %2$d мин · просрочено %3$d</string>
-    <string name="task_undo_move">Отменить перенос</string>
     <string name="task_search">Поиск задач</string>
     <string name="task_sort_manual">Порядок</string>
     <string name="task_sort_deadline">Срок</string>
     <string name="task_sort_remaining">Остаток</string>
     <string name="task_filter_overdue">Просрочено</string>
     <string name="task_library_materials">Материалы из библиотеки</string>
+    <string name="alarm_challenge_progress">Задача %1$d из %2$d</string>
+    <string name="math_practice_title">Математическая разминка</string>
+    <string name="math_practice_setup_title">Решить задачи без будильника</string>
+    <string name="math_practice_setup_description">Выберите сложность и длину серии. Здесь доступны те же задачи, форматы ответов и схемы, что и при пробуждении.</string>
+    <string name="math_practice_count">Количество задач</string>
+    <string name="math_practice_start">Начать разминку</string>
+    <string name="math_practice_offline_note">Все задачи создаются на устройстве и работают без интернета.</string>
+    <string name="math_practice_progress">Задача %1$d из %2$d</string>
+    <string name="math_practice_elapsed">Время: %1$s</string>
+    <string name="math_practice_result_title">Серия решена</string>
+    <string name="math_practice_result_solved">Решено</string>
+    <string name="math_practice_result_attempts">Всего попыток</string>
+    <string name="math_practice_result_errors">Ошибок</string>
+    <string name="math_practice_result_time">Время</string>
+    <string name="math_practice_retry">Ещё раз</string>
+    <string name="math_practice_change_parameters">Изменить параметры</string>
+    <string name="math_practice_open">Математическая разминка</string>
+    <string name="focus_soundscape_title">Звук для концентрации</string>
+    <string name="focus_sound_library_count">%1$d звуков и мелодий</string>
+    <string name="focus_sound_offline_badge">Офлайн</string>
+    <string name="focus_sound_search_hint">Найти звук или мелодию</string>
+    <string name="focus_sound_clear_search">Очистить поиск</string>
+    <string name="focus_sound_section_catalogue">Каталог</string>
+    <string name="focus_sound_session_options">Для этого сеанса</string>
+    <string name="focus_soundscape_subtitle">Выберите спокойный фон для рабочего блока. Всё доступно без интернета.</string>
+    <string name="focus_sound_off">Без звука</string>
+    <string name="focus_sound_summary">%1$s · %2$d%%</string>
+    <string name="focus_sound_mix_summary">%1$s + %2$s</string>
+    <string name="focus_sound_play">Включить звуковую среду</string>
+    <string name="focus_sound_pause">Приостановить звуковую среду</string>
+    <string name="focus_sound_volume">Громкость</string>
+    <string name="focus_sound_volume_percent">%1$d%%</string>
+    <string name="focus_sound_one_layer">Один звуковой слой</string>
+    <string name="focus_sound_two_layers">Основной звук + фоновый шум</string>
+    <string name="focus_sound_mix_action">Добавить фоновый шум</string>
+    <string name="focus_sound_mix_title">Основной звук и шум</string>
+    <string name="focus_sound_single_mode">Без фонового шума</string>
+    <string name="focus_sound_add_second_layer">Выбрать фоновый шум</string>
+    <string name="focus_sound_primary_selected">Выбран как основной слой</string>
+    <string name="focus_sound_secondary_selected">Выбран как второй слой</string>
+    <string name="focus_sound_add_favorite">Добавить в избранное</string>
+    <string name="focus_sound_remove_favorite">Убрать из избранного</string>
+    <string name="focus_sound_add_custom">Добавить свой звук</string>
+    <string name="focus_sound_add_files">Добавить аудио</string>
+    <string name="focus_sound_add_files_hint">Можно выбрать сразу несколько файлов с устройства</string>
+    <string name="focus_sound_add_more_files_hint">Добавить ещё файлы в «Мою музыку»</string>
+    <string name="focus_sound_remove_custom">Убрать из MIRL</string>
+    <string name="focus_sound_removed_from_library">Файл убран из MIRL; оригинал остался на устройстве</string>
+    <string name="focus_sound_import_result">Добавлено: %1$d · не удалось: %2$d</string>
+    <string name="focus_sound_importing">Читаю названия, исполнителей и длительность…</string>
+    <string name="focus_sound_import_cancelled">Добавление отменено</string>
+    <string name="focus_sound_search_empty">По этому запросу ничего не найдено</string>
+    <string name="focus_sound_favorites_empty">Здесь появятся отмеченные атмосферы</string>
+    <string name="focus_sound_category_empty">В этой категории пока нет звуков</string>
+    <string name="focus_sound_active_button">Звуковая среда: %1$s</string>
+    <string name="focus_sound_long_press_play">Удерживайте, чтобы включить</string>
+    <string name="focus_sound_long_press_pause">Удерживайте, чтобы приостановить</string>
+    <string name="focus_sound_category_all">Все</string>
+    <string name="focus_sound_category_recent">Недавние</string>
+    <string name="focus_sound_category_favorites">Избранное</string>
+    <string name="focus_sound_category_noise">Шумы</string>
+    <string name="focus_sound_category_study">Учёба</string>
+    <string name="focus_sound_category_spaces">Места</string>
+    <string name="focus_sound_category_weather">Погода</string>
+    <string name="focus_sound_category_nature">Природа</string>
+    <string name="focus_sound_category_cozy">Уют</string>
+    <string name="focus_sound_category_travel">В пути</string>
+    <string name="focus_sound_category_melody">Мелодии</string>
+    <string name="focus_sound_category_custom">Мои</string>
+    <string name="focus_sound_remember_task">Запомнить для этой задачи</string>
+    <string name="focus_sound_remember_task_hint">При следующем запуске задачи MIRL выберет эту среду</string>
+    <string name="focus_sound_during_recovery">Продолжать во время отдыха</string>
+    <string name="focus_sound_during_recovery_hint">По умолчанию восстановление проходит в тишине</string>
 </resources>

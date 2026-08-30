@@ -46,4 +46,32 @@ interface ReminderDao {
 
     @Query("UPDATE reminders SET nextTriggerTime = :next WHERE id = :id")
     suspend fun setNextTriggerTime(id: Int, next: Long)
+
+    @Query("SELECT * FROM reminders WHERE linkedType = 'TASK' AND linkedId = :taskId")
+    suspend fun getLinkedToTask(taskId: Int): List<ReminderEntity>
+
+    @Query(
+        """
+        UPDATE reminders
+        SET title = CASE
+            WHEN TRIM(title) = '' OR title = :oldTaskLabel THEN :newTaskLabel
+            ELSE title
+        END
+        WHERE linkedType = 'TASK' AND linkedId = :taskId
+        """
+    )
+    suspend fun syncTaskTitle(taskId: Int, oldTaskLabel: String, newTaskLabel: String)
+
+    @Query("DELETE FROM reminders WHERE linkedType = 'TASK' AND linkedId = :taskId")
+    suspend fun deleteLinkedToTask(taskId: Int)
+
+    @Query(
+        """
+        UPDATE reminders
+        SET isEnabled = 0, linkedType = '', linkedId = NULL
+        WHERE linkedType = 'TASK' AND linkedId IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = reminders.linkedId)
+        """
+    )
+    suspend fun disableMissingTaskLinks()
 }

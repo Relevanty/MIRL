@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.alarm.EventAlarmScheduler
+import com.personal.sleepalarm.service.EventNotificationBuilder
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
 import com.personal.sleepalarm.data.db.entity.StudySessionEntity
@@ -27,6 +28,7 @@ class CalendarViewModel(
     private val eventDao = database.calendarEventDao()
     private val studyDao = database.studySessionDao()
     private val eventScheduler = EventAlarmScheduler(application.applicationContext)
+    private val eventNotifications = EventNotificationBuilder(application.applicationContext)
 
     val events: StateFlow<List<CalendarEventEntity>> = eventDao
         .observeAll()
@@ -56,22 +58,32 @@ class CalendarViewModel(
         viewModelScope.launch {
             val id = eventDao.insert(event).toInt()
             val saved = event.copy(id = id)
-            eventScheduler.schedule(saved)
+            scheduleIfLive(saved)
         }
     }
 
     fun updateEvent(event: CalendarEventEntity) {
         viewModelScope.launch {
+            eventNotifications.cancel(event.id)
             eventDao.update(event)
-            eventScheduler.schedule(event)
+            scheduleIfLive(event)
         }
     }
 
     fun deleteEvent(id: Int) {
         viewModelScope.launch {
             eventScheduler.cancel(id)
+            eventNotifications.cancel(id)
             eventDao.deleteById(id)
         }
+    }
+
+    private suspend fun scheduleIfLive(event: CalendarEventEntity) {
+        val linkedTaskDone = event.taskId
+            ?.let { database.taskDao().getById(it)?.isDone }
+            ?: false
+        if (linkedTaskDone) eventScheduler.cancel(event.id)
+        else eventScheduler.schedule(event)
     }
 }
 

@@ -1,23 +1,36 @@
 package com.personal.sleepalarm.ui.settings
 
 import android.app.Application
-import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.alarm.AlarmScheduler
+import com.personal.sleepalarm.alarm.DailyPlanNudgeScheduler
 import com.personal.sleepalarm.alarm.EventAlarmScheduler
 import com.personal.sleepalarm.alarm.ReminderScheduler
+import com.personal.sleepalarm.alarm.SleepAutomationScheduler
+import com.personal.sleepalarm.alarm.TaskDeadlineScheduler
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.AlarmProfileEntity
+import com.personal.sleepalarm.data.preferences.AppSignalPreferences
+import com.personal.sleepalarm.data.preferences.AppSignalSettings
+import com.personal.sleepalarm.data.preferences.AppSignalType
+import com.personal.sleepalarm.data.preferences.AppSoundMode
+import com.personal.sleepalarm.data.preferences.AppSoundSelection
+import com.personal.sleepalarm.data.preferences.DailyPlanNudgePreferences
+import com.personal.sleepalarm.data.preferences.DailyPlanNudgeSettings
+import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
+import com.personal.sleepalarm.data.preferences.SleepAutomationSettings
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
+import com.personal.sleepalarm.data.repository.TaskEcosystemRepository
+import com.personal.sleepalarm.data.repository.ReminderRepository
 import com.personal.sleepalarm.domain.calculator.CueScheduleCalculator
 import com.personal.sleepalarm.domain.calculator.SleepCalculator
+import com.personal.sleepalarm.domain.automation.isAutomationArmed
 import com.personal.sleepalarm.domain.model.CueSchedule
 import com.personal.sleepalarm.domain.model.CueScheduleMode
 import com.personal.sleepalarm.domain.model.DismissType
@@ -25,16 +38,29 @@ import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.domain.model.SleepPlan
 import com.personal.sleepalarm.domain.model.SleepPlanWarning
 import com.personal.sleepalarm.service.SleepForegroundService
+import com.personal.sleepalarm.service.SleepNotificationBuilder
+import com.personal.sleepalarm.service.EventNotificationBuilder
+import com.personal.sleepalarm.service.ReminderNotificationBuilder
+import com.personal.sleepalarm.service.focus.FocusProtocolManager
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
+import com.personal.sleepalarm.service.audio.AppAudioAttributes
+import com.personal.sleepalarm.service.audio.AlarmStreamVolumeController
+import com.personal.sleepalarm.service.audio.AppVolumeScale
 import com.personal.sleepalarm.util.ProfileJsonCodec
+import com.personal.sleepalarm.util.PermissionChecker
+import com.personal.sleepalarm.util.ManagedSoundImport
+import com.personal.sleepalarm.util.LatestSoundOperationPolicy
+import com.personal.sleepalarm.util.RingtonePickerHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -50,8 +76,8 @@ data class SettingsUiState(
     val profile: AlarmProfileEntity = AlarmProfileEntity(),
     val plan: SleepPlan? = null,
     val cueSchedule: CueSchedule = CueSchedule(emptyList(), emptySet()),
-    val planWarnings: Set<SleepPlanWarning> = emptySet()
-
+    val planWarnings: Set<SleepPlanWarning> = emptySet(),
+    val sleepAutomation: SleepAutomationSettings = SleepAutomationSettings()
 )
 
 /**
@@ -70,6 +96,11 @@ class SettingsViewModel(
     private var previewPlayer: MediaPlayer? = null
     private var previewJob: Job? = null
     private var notificationPreviewJob: Job? = null
+    private var previewVolumeLease: AutoCloseable? = null
+    private val previewLock = Any()
+
+    private val soundOperationPolicy = LatestSoundOperationPolicy()
+    private val soundOperationMutexes = mutableMapOf<String, Mutex>()
 
     private val _isPreviewPlaying = MutableStateFlow(false)
     val isPreviewPlaying: StateFlow<Boolean> = _isPreviewPlaying
@@ -77,6 +108,15 @@ class SettingsViewModel(
     private val context = application.applicationContext
 
     private val database = AppDatabase.getInstance(context)
+    private val signalPreferences = AppSignalPreferences(context)
+    private val dailyPlanNudgePreferences = DailyPlanNudgePreferences(context)
+    private val dailyPlanNudgeScheduler = DailyPlanNudgeScheduler(
+        context = context,
+        database = database,
+        preferences = dailyPlanNudgePreferences
+    )
+    private val sleepAutomationPreference = SleepAutomationPreference(context)
+    private val sleepAutomationScheduler = SleepAutomationScheduler(context, sleepAutomationPreference)
 
     private val profileRepository = SleepProfileRepository(
         profileDao = database.alarmProfileDao()
@@ -92,8 +132,45 @@ class SettingsViewModel(
 
     val message: StateFlow<String?> = _message
 
-    val uiState: StateFlow<SettingsUiState> = profileRepository.observeProfile()
-        .map { profile -> buildPreview(profile) }
+    val pomodoroSignalSettings: StateFlow<AppSignalSettings> =
+        signalPreferences.observe(AppSignalType.POMODORO).stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            AppSignalSettings()
+        )
+
+    val reminderSignalSettings: StateFlow<AppSignalSettings> =
+        signalPreferences.observe(AppSignalType.REMINDER).stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            AppSignalSettings()
+        )
+
+    val calendarSignalSettings: StateFlow<AppSignalSettings> =
+        signalPreferences.observe(AppSignalType.CALENDAR).stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            AppSignalSettings()
+        )
+
+    val dailyPlanSignalSettings: StateFlow<AppSignalSettings> =
+        signalPreferences.observe(AppSignalType.DAILY_PLAN).stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            AppSignalSettings()
+        )
+
+    val dailyPlanNudgeSettings: StateFlow<DailyPlanNudgeSettings> =
+        dailyPlanNudgePreferences.observe().stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            DailyPlanNudgeSettings()
+        )
+
+    val uiState: StateFlow<SettingsUiState> = combine(
+        profileRepository.observeProfile(),
+        sleepAutomationPreference.observe()
+    ) { profile, automation -> buildPreview(profile).copy(sleepAutomation = automation) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
@@ -178,24 +255,7 @@ class SettingsViewModel(
      * для файлов из хранилища — через DISPLAY_NAME.
      */
     fun getRingtoneName(uriString: String?): String? {
-        if (uriString.isNullOrBlank()) return null
-        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return null
-
-        // Сначала пробуем RingtoneManager (системные и media).
-        val ringtoneTitle = runCatching {
-            RingtoneManager.getRingtone(context, uri)?.getTitle(context)
-        }.getOrNull()
-        if (!ringtoneTitle.isNullOrBlank()) return ringtoneTitle
-
-        // Fallback: имя файла через DISPLAY_NAME.
-        return runCatching {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0 && cursor.moveToFirst()) {
-                    cursor.getString(nameIndex)
-                } else null
-            }
-        }.getOrNull()
+        return RingtonePickerHelper.getSoundTitle(context, uriString)
     }
 
     /**
@@ -203,52 +263,52 @@ class SettingsViewModel(
      * Без нарастания и без зацикливания — как есть.
      * Канал USAGE_ALARM, чтобы слышно было как в будильнике.
      */
-    fun previewRingtone(uriString: String?) {
-        if (uriString.isNullOrBlank()) return
-        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return
-
+    fun previewRingtone(uriString: String?, volumePercent: Int = 100) {
+        val uri = resolvePreviewRingtoneUri(uriString)
+        if (uri == null) {
+            _message.value = context.getString(R.string.notification_sound_preview_failed)
+            return
+        }
         stopPreview()
         val player = MediaPlayer()
-        previewPlayer = player
+        synchronized(previewLock) { previewPlayer = player }
 
-        previewJob = viewModelScope.launch(Dispatchers.IO) {
+        val job = viewModelScope.launch(Dispatchers.IO) {
             try {
-                player.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
+                val gain = AppVolumeScale.gainForPercent(volumePercent)
+                player.setAudioAttributes(AppAudioAttributes.sonification)
                 player.setDataSource(context, uri)
                 player.isLooping = false
+                player.setVolume(gain, gain)
 
                 player.setOnCompletionListener { mp ->
-                    _isPreviewPlaying.value = false
-                    mp.release()
-                    if (previewPlayer === mp) previewPlayer = null
-                    previewJob = null
+                    finishRingtonePreview(mp, reportFailure = false)
                 }
                 player.setOnErrorListener { mp, _, _ ->
-                    _isPreviewPlaying.value = false
-                    mp.release()
-                    if (previewPlayer === mp) previewPlayer = null
-                    previewJob = null
+                    finishRingtonePreview(mp, reportFailure = true)
                     true
                 }
 
                 player.prepare()
-                if (previewPlayer !== player) {
-                    runCatching { player.release() }
+                if (!isCurrentPreview(player)) return@launch
+
+                val lease = if (gain > 0f) {
+                    AlarmStreamVolumeController.acquire(context)
+                } else {
+                    null
+                }
+                if (!attachPreviewLease(player, lease)) {
+                    lease?.close()
                     return@launch
                 }
                 player.start()
-                _isPreviewPlaying.value = true
+                if (isCurrentPreview(player)) _isPreviewPlaying.value = true
             } catch (_: Throwable) {
-                runCatching { player.release() }
-                if (previewPlayer === player) previewPlayer = null
-                _isPreviewPlaying.value = false
-                previewJob = null
+                finishRingtonePreview(player, reportFailure = true)
             }
+        }
+        synchronized(previewLock) {
+            if (previewPlayer === player) previewJob = job else job.cancel()
         }
     }
 
@@ -256,16 +316,63 @@ class SettingsViewModel(
      * Останавливает прослушивание.
      */
     fun stopPreview() {
-        previewJob?.cancel()
-        previewJob = null
-        previewPlayer?.let { player ->
-            runCatching {
-                if (player.isPlaying) player.stop()
-                player.release()
-            }
+        val resources = synchronized(previewLock) {
+            val current = Triple(previewJob, previewPlayer, previewVolumeLease)
+            previewJob = null
+            previewPlayer = null
+            previewVolumeLease = null
+            current
         }
-        previewPlayer = null
+        resources.first?.cancel()
+        releasePreviewPlayer(resources.second)
+        resources.third?.close()
         _isPreviewPlaying.value = false
+    }
+
+    private fun resolvePreviewRingtoneUri(uriString: String?): Uri? {
+        if (!uriString.isNullOrBlank()) {
+            return runCatching { Uri.parse(uriString) }.getOrNull()
+        }
+        return runCatching {
+            RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        }.getOrNull()
+    }
+
+    private fun isCurrentPreview(player: MediaPlayer): Boolean = synchronized(previewLock) {
+        previewPlayer === player
+    }
+
+    private fun attachPreviewLease(player: MediaPlayer, lease: AutoCloseable?): Boolean =
+        synchronized(previewLock) {
+            if (previewPlayer !== player) return@synchronized false
+            previewVolumeLease = lease
+            true
+        }
+
+    private fun finishRingtonePreview(player: MediaPlayer, reportFailure: Boolean) {
+        val resources = synchronized(previewLock) {
+            if (previewPlayer !== player) return
+            val current = Pair(previewJob, previewVolumeLease)
+            previewJob = null
+            previewPlayer = null
+            previewVolumeLease = null
+            current
+        }
+        resources.first?.cancel()
+        releasePreviewPlayer(player)
+        resources.second?.close()
+        _isPreviewPlaying.value = false
+        if (reportFailure) {
+            _message.value = context.getString(R.string.notification_sound_preview_failed)
+        }
+    }
+
+    private fun releasePreviewPlayer(player: MediaPlayer?) {
+        player ?: return
+        runCatching { if (player.isPlaying) player.stop() }
+        runCatching { player.reset() }
+        runCatching { player.release() }
     }
 
     override fun onCleared() {
@@ -302,15 +409,95 @@ class SettingsViewModel(
         it.copy(notificationVolumePercent = value.coerceIn(0, 100))
     }
 
-    fun previewAppNotificationSound() {
+    fun setAppSignalSound(type: AppSignalType, mode: AppSoundMode, uriString: String? = null) {
+        val slot = signalSoundSlot(type)
+        launchSoundOperation(slot) { generation ->
+            val sound = AppSoundSelection(mode, uriString).normalized()
+            if (sound.uriString != null && !isAudioUriReadable(sound.uriString)) {
+                reportUnavailableIfLatest(slot, generation)
+                return@launchSoundOperation
+            }
+            if (!soundOperationPolicy.isLatest(slot, generation)) return@launchSoundOperation
+            signalPreferences.setSound(type, sound)
+            if (!soundOperationPolicy.isLatest(slot, generation)) return@launchSoundOperation
+            if (sound.uriString == null || !ManagedSoundImport.isOwnedUri(context, sound.uriString)) {
+                deleteAllManagedCopies(slot)
+            }
+        }
+    }
+
+    fun importAppSignalSound(type: AppSignalType, mode: AppSoundMode, uri: Uri) {
+        val slot = signalSoundSlot(type)
+        launchSoundOperation(slot) { generation ->
+            val imported = ManagedSoundImport.copyIntoApp(context, uri, slot)
+            if (imported == null) {
+                reportUnavailableIfLatest(slot, generation)
+                return@launchSoundOperation
+            }
+            if (!soundOperationPolicy.isLatest(slot, generation)) {
+                ManagedSoundImport.deleteImportedCopy(context, imported.filePath)
+                return@launchSoundOperation
+            }
+            signalPreferences.setSound(
+                type,
+                AppSoundSelection(mode, imported.uriString).normalized()
+            )
+            if (soundOperationPolicy.isLatest(slot, generation)) {
+                deleteOlderManagedCopies(slot, imported.filePath)
+            }
+        }
+    }
+
+    fun setAppSignalVolume(type: AppSignalType, value: Int) {
+        viewModelScope.launch {
+            signalPreferences.setVolume(type, value)
+        }
+    }
+
+    fun previewAppNotificationSound(type: AppSignalType) {
         if (notificationPreviewJob?.isActive == true) return
         stopPreview()
         notificationPreviewJob = viewModelScope.launch {
-            val played = AppNotificationSoundPlayer.play(context)
+            val played = AppNotificationSoundPlayer.play(
+                context = context,
+                settings = signalPreferences.get(type),
+                allowSystemFallback = false
+            )
             if (!played) {
                 _message.value = context.getString(R.string.notification_sound_preview_failed)
             }
             notificationPreviewJob = null
+        }
+    }
+
+    fun setDailyPlanNudgesEnabled(enabled: Boolean) = updateDailyPlanNudges {
+        dailyPlanNudgePreferences.setEnabled(enabled)
+    }
+
+    fun setDailyPlanMorningEnabled(enabled: Boolean) = updateDailyPlanNudges {
+        dailyPlanNudgePreferences.setMorningReminderEnabled(enabled)
+    }
+
+    fun setDailyPlanBufferMinutes(minutes: Int) = updateDailyPlanNudges {
+        dailyPlanNudgePreferences.setBufferMinutes(minutes)
+    }
+
+    fun setDailyPlanRepeatEnabled(enabled: Boolean) = updateDailyPlanNudges {
+        dailyPlanNudgePreferences.setRepeatEnabled(enabled)
+    }
+
+    fun setDailyPlanRepeatIntervalMinutes(minutes: Int) = updateDailyPlanNudges {
+        dailyPlanNudgePreferences.setRepeatIntervalMinutes(minutes)
+    }
+
+    fun setDailyPlanCutoffMinutesOfDay(minutes: Int) = updateDailyPlanNudges {
+        dailyPlanNudgePreferences.setCutoffMinutesOfDay(minutes)
+    }
+
+    private fun updateDailyPlanNudges(update: suspend () -> Unit) {
+        viewModelScope.launch {
+            update()
+            dailyPlanNudgeScheduler.refreshNow(playSoundIfDue = false)
         }
     }
 
@@ -327,44 +514,139 @@ class SettingsViewModel(
     fun setMathDifficulty(difficulty: MathDifficulty) =
         updateProfile { it.copy(mathDifficulty = difficulty) }
 
+    fun setMathChallengeCount(count: Int) =
+        updateProfile { it.copy(mathChallengeCount = count) }
+
     fun setQuietAlarm(enabled: Boolean) = updateProfile { it.copy(quietAlarmEnabled = enabled) }
 
     // ДОБАВЛЕНО (F1): вибрация.
     fun setVibration(enabled: Boolean) = updateProfile { it.copy(vibrationEnabled = enabled) }
 
     // ДОБАВЛЕНО (F2): URI мелодии (null = системная по умолчанию).
-    fun setAlarmRingtoneUri(uri: String?) = saveSoundUri(uri) { profile, savedUri ->
+    fun setAlarmRingtoneUri(uri: String?) = saveSoundUri(uri, ALARM_SOUND_SLOT) { profile, savedUri ->
+        profile.copy(alarmRingtoneUri = savedUri)
+    }
+
+    fun importAlarmRingtone(uri: Uri) = importProfileSound(
+        source = uri,
+        slot = ALARM_SOUND_SLOT
+    ) { profile, savedUri ->
         profile.copy(alarmRingtoneUri = savedUri)
     }
 
     // ДОБАВЛЕНО: свой звук для ночного пиипа.
-    fun setCueRingtoneUri(uri: String?) = saveSoundUri(uri) { profile, savedUri ->
+    fun setCueRingtoneUri(uri: String?) = saveSoundUri(uri, CUE_SOUND_SLOT) { profile, savedUri ->
         profile.copy(cueRingtoneUri = savedUri)
+    }
+
+    fun importCueRingtone(uri: Uri) = importProfileSound(
+        source = uri,
+        slot = CUE_SOUND_SLOT
+    ) { profile, savedUri ->
+        profile.copy(cueRingtoneUri = savedUri)
+    }
+
+    private fun importProfileSound(
+        source: Uri,
+        slot: String,
+        transform: (AlarmProfileEntity, String) -> AlarmProfileEntity
+    ) {
+        launchSoundOperation(slot) { generation ->
+            val imported = ManagedSoundImport.copyIntoApp(context, source, slot)
+            if (imported == null) {
+                reportUnavailableIfLatest(slot, generation)
+                return@launchSoundOperation
+            }
+            if (!soundOperationPolicy.isLatest(slot, generation)) {
+                ManagedSoundImport.deleteImportedCopy(context, imported.filePath)
+                return@launchSoundOperation
+            }
+            profileRepository.updateProfile { profile -> transform(profile, imported.uriString) }
+            if (soundOperationPolicy.isLatest(slot, generation)) {
+                deleteOlderManagedCopies(slot, imported.filePath)
+            }
+        }
     }
 
     private fun saveSoundUri(
         uriString: String?,
+        managedSlot: String,
         transform: (AlarmProfileEntity, String?) -> AlarmProfileEntity
     ) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchSoundOperation(managedSlot) { generation ->
             val normalized = uriString?.trim()?.takeIf { it.isNotEmpty() }
             if (normalized != null && !isAudioUriReadable(normalized)) {
-                _message.value = context.getString(R.string.sound_file_unavailable)
-                return@launch
+                reportUnavailableIfLatest(managedSlot, generation)
+                return@launchSoundOperation
             }
+            if (!soundOperationPolicy.isLatest(managedSlot, generation)) return@launchSoundOperation
             profileRepository.updateProfile { profile -> transform(profile, normalized) }
+            if (
+                soundOperationPolicy.isLatest(managedSlot, generation) &&
+                (normalized == null || !ManagedSoundImport.isOwnedUri(context, normalized))
+            ) {
+                deleteAllManagedCopies(managedSlot)
+            }
         }
     }
 
     private fun isAudioUriReadable(uriString: String): Boolean {
-        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return false
-        val isSystemRingtone = runCatching {
-            RingtoneManager.getRingtone(context, uri) != null
-        }.getOrDefault(false)
-        if (isSystemRingtone) return true
-        return runCatching {
-            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
-        }.getOrDefault(false)
+        return RingtonePickerHelper.isSoundReadable(context, uriString)
+    }
+
+    private fun signalSoundSlot(type: AppSignalType): String =
+        "signal_${type.storagePrefix}"
+
+    private fun launchSoundOperation(
+        slot: String,
+        operation: suspend (generation: Long) -> Unit
+    ) {
+        val generation = soundOperationPolicy.begin(slot)
+        viewModelScope.launch(Dispatchers.IO) {
+            soundOperationMutex(slot).withLock {
+                if (!soundOperationPolicy.isLatest(slot, generation)) return@withLock
+                operation(generation)
+            }
+        }
+    }
+
+    private fun soundOperationMutex(slot: String): Mutex = synchronized(soundOperationMutexes) {
+        soundOperationMutexes.getOrPut(slot) { Mutex() }
+    }
+
+    private fun reportUnavailableIfLatest(slot: String, generation: Long) {
+        if (soundOperationPolicy.isLatest(slot, generation)) {
+            _message.value = context.getString(R.string.sound_file_unavailable)
+        }
+    }
+
+    private suspend fun deleteOlderManagedCopies(slot: String, keepFilePath: String) {
+        ManagedSoundImport.deleteOlderCopies(
+            context = context,
+            slot = slot,
+            keepFilePath = keepFilePath,
+            protectedFilePaths = protectedManagedFilePaths(slot)
+        )
+    }
+
+    private suspend fun deleteAllManagedCopies(slot: String) {
+        ManagedSoundImport.deleteAllCopies(
+            context = context,
+            slot = slot,
+            protectedFilePaths = protectedManagedFilePaths(slot)
+        )
+    }
+
+    private suspend fun protectedManagedFilePaths(slot: String): Set<String> {
+        if (slot != CUE_SOUND_SLOT) return emptySet()
+        val activeCueUri = sessionRepository.getActiveSession()?.cueRingtoneUri
+        val activeCuePath = ManagedSoundImport.ownedFilePath(context, activeCueUri)
+        return activeCuePath?.let(::setOf).orEmpty()
+    }
+
+    private companion object {
+        const val ALARM_SOUND_SLOT = "alarm"
+        const val CUE_SOUND_SLOT = "cue"
     }
 
     // ДОБАВЛЕНО (F10): smart-repeat.
@@ -385,8 +667,16 @@ class SettingsViewModel(
         updateProfile { it.copy(mirrorToSystemClock = enabled) }
 
     // ДОБАВЛЕНО (F9): автоопределение засыпания.
-    fun setAutoDetectOnset(enabled: Boolean) =
-        updateProfile { it.copy(autoDetectOnsetEnabled = enabled) }
+    fun setAutoDetectOnset(enabled: Boolean) {
+        viewModelScope.launch {
+            profileRepository.updateProfile { it.copy(autoDetectOnsetEnabled = enabled) }
+            if (!enabled) {
+                sleepAutomationPreference.setEnabled(false)
+                cancelWaitingAutomationIfNeeded()
+                sleepAutomationScheduler.scheduleNext()
+            }
+        }
+    }
 
     fun setAutoCorrectWake(enabled: Boolean) =
         updateProfile { it.copy(autoCorrectWakeEnabled = enabled) }
@@ -396,6 +686,62 @@ class SettingsViewModel(
 
     fun setAutoCorrectMaxShift(value: Int) =
         updateProfile { it.copy(autoCorrectMaxShiftMinutes = value.coerceIn(0, 120)) }
+
+    fun setAutomaticNightStart(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled) {
+                if (!PermissionChecker.state(context).exactAlarmsAllowed) {
+                    _message.value = context.getString(R.string.sleep_automation_exact_alarm_required)
+                    return@launch
+                }
+                // Автоматический режим обязан уметь определять onset. Системный
+                // дублёр отключаем: Android не позволяет надёжно сдвинуть его
+                // после пассивного определения, иначе возможен двойной звонок.
+                profileRepository.updateProfile {
+                    it.copy(
+                        autoDetectOnsetEnabled = true,
+                        autoCorrectWakeEnabled = true,
+                        mirrorToSystemClock = false
+                    )
+                }
+            }
+            sleepAutomationPreference.setEnabled(enabled)
+            if (!enabled) cancelWaitingAutomationIfNeeded()
+            sleepAutomationScheduler.scheduleNext()
+        }
+    }
+
+    private suspend fun cancelWaitingAutomationIfNeeded() {
+        val active = sessionRepository.getActiveSession()
+        if (active?.isAutomationArmed() != true) return
+        alarmScheduler.cancelAllAlarmsForSession(active.id)
+        sessionRepository.cancelSession(active.id)
+        SleepForegroundService.stop(context = context, cancelSession = false)
+    }
+
+    fun setAutomaticWindowStart(hour: Int, minute: Int) {
+        viewModelScope.launch {
+            val value = hour.coerceIn(0, 23) * 60 + minute.coerceIn(0, 59)
+            val current = sleepAutomationPreference.get()
+            sleepAutomationPreference.setWindowStart(value)
+            if (value == current.windowEndMinutes) {
+                sleepAutomationPreference.setWindowEnd((value + 60) % (24 * 60))
+            }
+            sleepAutomationScheduler.scheduleNext()
+        }
+    }
+
+    fun setAutomaticWindowEnd(hour: Int, minute: Int) {
+        viewModelScope.launch {
+            val value = hour.coerceIn(0, 23) * 60 + minute.coerceIn(0, 59)
+            val current = sleepAutomationPreference.get()
+            sleepAutomationPreference.setWindowEnd(value)
+            if (value == current.windowStartMinutes) {
+                sleepAutomationPreference.setWindowStart((value - 60 + 24 * 60) % (24 * 60))
+            }
+            sleepAutomationScheduler.scheduleNext()
+        }
+    }
 
     // =================================================================
     // ДОБАВЛЕНО (F3): тема (DataStore, не профиль)
@@ -452,7 +798,14 @@ class SettingsViewModel(
                 }.orEmpty()
                 val oldReminders = database.reminderDao().getAll()
                 val oldEvents = database.calendarEventDao().getAll()
+                val oldTasks = database.taskDao().getAll()
 
+                if (oldActive != null) {
+                    // Stop the runtime bound to the database snapshot that is
+                    // about to be replaced; the imported active session is
+                    // started again below with its own identity.
+                    SleepForegroundService.stop(context, cancelSession = false)
+                }
                 backupManager.importFromUri(uri)
 
                 // URI из резервной копии другого телефона не имеют выданных
@@ -473,14 +826,42 @@ class SettingsViewModel(
                     }
                 }
                 val reminderScheduler = ReminderScheduler(context)
-                oldReminders.forEach { reminderScheduler.cancel(it.id) }
+                val reminderNotifications = ReminderNotificationBuilder(context)
+                oldReminders.forEach {
+                    reminderScheduler.cancel(it.id)
+                    reminderNotifications.cancelPre(it.id)
+                    reminderNotifications.cancelFire(it.id)
+                }
                 val eventScheduler = EventAlarmScheduler(context)
-                oldEvents.forEach { eventScheduler.cancel(it.id) }
+                val eventNotifications = EventNotificationBuilder(context)
+                oldEvents.forEach {
+                    eventScheduler.cancel(it.id)
+                    eventNotifications.cancel(it.id)
+                }
+                val deadlineScheduler = TaskDeadlineScheduler(context)
+                oldTasks.forEach { deadlineScheduler.cancel(it.id) }
 
-                database.reminderDao().getAll()
-                    .filter { it.isEnabled }
-                    .forEach { reminderScheduler.schedule(it) }
-                eventScheduler.rescheduleAll(database.calendarEventDao().getAll())
+                TaskEcosystemRepository(database).repairIntegrity()
+                FocusProtocolManager(context).reconcileActiveSessions()
+
+                val reminderRepository = ReminderRepository(
+                    database.reminderDao(),
+                    database.taskDao(),
+                    database.activityRecordDao()
+                )
+                val importedReminders = database.reminderDao().getAll()
+                    .mapNotNull { reminderRepository.reconcileForScheduling(it) }
+                importedReminders.forEach { reminderScheduler.schedule(it) }
+                eventScheduler.rescheduleAll(database.calendarEventDao().getSchedulableForAlarms())
+                val explicitDeadlineTaskIds = importedReminders.asSequence()
+                    .filter { it.linkedType == "TASK" }
+                    .filter { it.triggerRule in setOf("BEFORE_DEADLINE", "BECOMES_URGENT") }
+                    .mapNotNull { it.linkedId }
+                    .toSet()
+                database.taskDao().getAll().forEach { task ->
+                    if (task.id in explicitDeadlineTaskIds) deadlineScheduler.cancel(task.id)
+                    else deadlineScheduler.schedule(task)
+                }
 
                 val importedProfile = profileRepository.getProfile()
                 sessionRepository.getActiveSession()?.let { importedSession ->
@@ -499,7 +880,8 @@ class SettingsViewModel(
                             context = context,
                             sessionId = session.id,
                             wakeTime = session.estimatedWakeTime,
-                            firstCueTime = firstCue
+                            firstCueTime = firstCue,
+                            showStartConfirmation = false
                         )
                     } else {
                         alarmScheduler.cancelAllAlarmsForSession(session.id)
@@ -509,6 +891,11 @@ class SettingsViewModel(
                             dismissType = DismissType.MISSED
                         )
                     }
+                }
+                if (sessionRepository.getActiveSession() == null) {
+                    SleepNotificationBuilder.cancelSleepNotification(context)
+                    SleepNotificationBuilder.cancelAlarmNotification(context)
+                    SleepNotificationBuilder.cancelTransientNotifications(context)
                 }
                 _message.value = context.getString(R.string.import_all_success)
             }.onFailure {

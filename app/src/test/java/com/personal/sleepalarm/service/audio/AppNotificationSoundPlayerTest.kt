@@ -14,7 +14,7 @@ class AppNotificationSoundPlayerTest {
     @Test
     fun `notification volume converts to player fraction`() {
         assertEquals(0f, AppNotificationSoundPlayer.volumeFraction(0), 0.0001f)
-        assertEquals(0.5f, AppNotificationSoundPlayer.volumeFraction(50), 0.0001f)
+        assertEquals(0.25f, AppNotificationSoundPlayer.volumeFraction(50), 0.0001f)
         assertEquals(1f, AppNotificationSoundPlayer.volumeFraction(100), 0.0001f)
     }
 }

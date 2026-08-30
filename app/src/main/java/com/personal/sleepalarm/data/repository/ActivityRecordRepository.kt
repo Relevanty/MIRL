@@ -4,7 +4,10 @@ import androidx.room.withTransaction
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
+import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.alarm.TaskLinkedReminderCoordinator
+import com.personal.sleepalarm.domain.model.focusActivityType
 import kotlinx.coroutines.flow.Flow
 
 data class ManualActivityInput(
@@ -30,11 +33,61 @@ sealed interface SaveActivityResult {
     data class Invalid(val reason: String) : SaveActivityResult
 }
 
+/** Canonical relational fields used by both manual history and its Pomodoro mirror. */
+internal data class CanonicalManualActivityLinks(
+    val taskId: Int?,
+    val projectId: Int?,
+    val activityType: FocusActivityType,
+    val subjectId: Int?,
+    val otherActivityId: Int?,
+    val category: String
+)
+
+internal fun canonicalizeManualActivityLinks(
+    input: ManualActivityInput,
+    linkedTask: TaskEntity?
+): CanonicalManualActivityLinks {
+    if (linkedTask != null) {
+        val taskType = linkedTask.focusActivityType()
+        return CanonicalManualActivityLinks(
+            taskId = linkedTask.id,
+            projectId = linkedTask.projectId,
+            activityType = taskType,
+            subjectId = null,
+            otherActivityId = null,
+            category = taskType.name
+        )
+    }
+
+    return CanonicalManualActivityLinks(
+        taskId = null,
+        projectId = input.projectId,
+        activityType = input.activityType,
+        subjectId = input.subjectId.takeIf { input.activityType == FocusActivityType.STUDY },
+        otherActivityId = input.otherActivityId.takeIf { input.activityType == FocusActivityType.OTHER },
+        category = input.activityType.name
+    )
+}
+
+internal fun manualActivityCountsTowardProgress(
+    taskId: Int?,
+    conflicts: List<ActivityRecordEntity>,
+    strategy: ActivityConflictStrategy
+): Boolean {
+    if (strategy != ActivityConflictStrategy.KEEP_PARALLEL || taskId == null) return true
+    return conflicts.none { conflict ->
+        conflict.taskId == taskId && conflict.countsTowardProgress
+    }
+}
+
 /**
  * Single write boundary for actual work. It keeps TaskEntity/ProjectEntity totals
  * as disposable caches that are always rebuilt from activity_records.
  */
-class ActivityRecordRepository(private val database: AppDatabase) {
+class ActivityRecordRepository(
+    private val database: AppDatabase,
+    private val reminderCoordinator: TaskLinkedReminderCoordinator? = null
+) {
     private val activities = database.activityRecordDao()
     private val pomodoros = database.pomodoroDao()
     private val tasks = database.taskDao()
@@ -70,9 +123,20 @@ class ActivityRecordRepository(private val database: AppDatabase) {
             return SaveActivityResult.Conflicts(conflicts)
         }
 
-        return database.withTransaction {
+        val affectedTaskIds = linkedSetOf<Int>()
+        val result = database.withTransaction {
             val old: ActivityRecordEntity? = if (input.id != 0) activities.getById(input.id) else null
-            val affectedTasks = linkedSetOf<Int>()
+            if (input.id != 0 && old == null) {
+                return@withTransaction SaveActivityResult.Invalid("missing_record")
+            }
+
+            val linkedTask = input.taskId?.let { taskId ->
+                tasks.getById(taskId)
+                    ?: return@withTransaction SaveActivityResult.Invalid("missing_task")
+            }
+            val canonical = canonicalizeManualActivityLinks(input, linkedTask)
+
+            val affectedTasks = affectedTaskIds
             val affectedProjects = linkedSetOf<Int>()
             old?.taskId?.let { affectedTasks.add(it) }
             old?.projectId?.let { affectedProjects.add(it) }
@@ -92,12 +156,14 @@ class ActivityRecordRepository(private val database: AppDatabase) {
                 }
             }
 
-            val inputTaskId = input.taskId
-            val task = if (inputTaskId != null) tasks.getById(inputTaskId) else null
-            val resolvedProjectId = input.projectId ?: task?.projectId
-            input.taskId?.let { affectedTasks.add(it) }
-            resolvedProjectId?.let { affectedProjects.add(it) }
+            canonical.taskId?.let { affectedTasks.add(it) }
+            canonical.projectId?.let { affectedProjects.add(it) }
             val actualDuration = actualEnd - actualStart
+            val countsTowardProgress = manualActivityCountsTowardProgress(
+                taskId = canonical.taskId,
+                conflicts = conflicts,
+                strategy = strategy
+            )
 
             val oldPomodoroId = old?.pomodoroSessionId
             val pomodoro = PomodoroSessionEntity(
@@ -105,12 +171,13 @@ class ActivityRecordRepository(private val database: AppDatabase) {
                 startedAt = actualStart,
                 durationMinutes = ((actualDuration + 59_999L) / 60_000L).toInt(),
                 completedAt = actualEnd,
-                isCompleted = true,
+                // Manual time is real work, but it is not a completed timer cycle.
+                isCompleted = false,
                 isBreak = false,
-                activityType = input.activityType,
-                subjectId = input.subjectId,
-                taskId = input.taskId,
-                otherActivityId = input.otherActivityId,
+                activityType = canonical.activityType,
+                subjectId = canonical.subjectId,
+                taskId = canonical.taskId,
+                otherActivityId = canonical.otherActivityId,
                 itemName = input.title.trim(),
                 actualDurationMillis = actualDuration,
                 recordSource = "MANUAL"
@@ -125,13 +192,13 @@ class ActivityRecordRepository(private val database: AppDatabase) {
             val now = System.currentTimeMillis()
             val record = ActivityRecordEntity(
                 id = input.id,
-                taskId = input.taskId,
-                projectId = resolvedProjectId,
-                activityType = input.activityType,
-                subjectId = input.subjectId,
-                otherActivityId = input.otherActivityId,
+                taskId = canonical.taskId,
+                projectId = canonical.projectId,
+                activityType = canonical.activityType,
+                subjectId = canonical.subjectId,
+                otherActivityId = canonical.otherActivityId,
                 title = input.title.trim(),
-                category = task?.category?.ifBlank { input.activityType.name } ?: input.activityType.name,
+                category = canonical.category,
                 startedAt = actualStart,
                 endedAt = actualEnd,
                 durationMillis = actualDuration,
@@ -140,7 +207,7 @@ class ActivityRecordRepository(private val database: AppDatabase) {
                 material = input.material.trim(),
                 note = input.note.trim(),
                 pomodoroSessionId = pomodoroId,
-                countsTowardProgress = true,
+                countsTowardProgress = countsTowardProgress,
                 createdAt = old?.createdAt ?: now,
                 updatedAt = now
             )
@@ -151,6 +218,8 @@ class ActivityRecordRepository(private val database: AppDatabase) {
             rebuildTotals(affectedTasks, affectedProjects)
             SaveActivityResult.Saved(id)
         }
+        affectedTaskIds.forEach { reminderCoordinator?.taskChanged(it) }
+        return result
     }
 
     suspend fun recordTimer(pomodoro: PomodoroSessionEntity, pomodoroId: Int) {
@@ -158,42 +227,63 @@ class ActivityRecordRepository(private val database: AppDatabase) {
         database.withTransaction {
             val timerTaskId = pomodoro.taskId
             val task = if (timerTaskId != null) tasks.getById(timerTaskId) else null
-            val end = pomodoro.completedAt ?: (pomodoro.startedAt + pomodoro.actualDurationMillis)
+            val canonicalPomodoro = if (task != null) {
+                pomodoro.copy(
+                    id = pomodoroId,
+                    activityType = task.focusActivityType(),
+                    subjectId = null,
+                    taskId = task.id,
+                    otherActivityId = null
+                )
+            } else {
+                pomodoro.copy(id = pomodoroId)
+            }
+            // The timer row and canonical activity history must never disagree
+            // about which task/category the same focus interval belongs to.
+            pomodoros.update(canonicalPomodoro)
+            val end = canonicalPomodoro.completedAt
+                ?: (canonicalPomodoro.startedAt + canonicalPomodoro.actualDurationMillis)
             activities.insert(
                 ActivityRecordEntity(
-                    taskId = pomodoro.taskId,
+                    taskId = canonicalPomodoro.taskId,
                     projectId = task?.projectId,
-                    activityType = pomodoro.activityType,
-                    subjectId = pomodoro.subjectId,
-                    otherActivityId = pomodoro.otherActivityId,
-                    title = pomodoro.itemName,
-                    category = task?.category?.ifBlank { pomodoro.activityType.name }
-                        ?: pomodoro.activityType.name,
-                    startedAt = pomodoro.startedAt,
+                    activityType = canonicalPomodoro.activityType,
+                    subjectId = canonicalPomodoro.subjectId,
+                    otherActivityId = canonicalPomodoro.otherActivityId,
+                    title = canonicalPomodoro.itemName,
+                    category = canonicalPomodoro.activityType.name,
+                    startedAt = canonicalPomodoro.startedAt,
                     endedAt = end,
-                    durationMillis = pomodoro.actualDurationMillis,
-                    source = pomodoro.recordSource,
+                    durationMillis = canonicalPomodoro.actualDurationMillis,
+                    source = canonicalPomodoro.recordSource,
                     pomodoroSessionId = pomodoroId,
                     countsTowardProgress = true
                 )
             )
             rebuildTotals(
-                pomodoro.taskId?.let { setOf(it) } ?: emptySet(),
+                canonicalPomodoro.taskId?.let { setOf(it) } ?: emptySet(),
                 task?.projectId?.let { setOf(it) } ?: emptySet()
             )
         }
+        pomodoro.taskId?.let { reminderCoordinator?.taskChanged(it) }
     }
 
-    suspend fun deleteManual(id: Int): Boolean = database.withTransaction {
-        val record = activities.getById(id) ?: return@withTransaction false
-        if (record.source != "MANUAL") return@withTransaction false
-        activities.deleteById(id)
-        record.pomodoroSessionId?.let { pomodoros.deleteById(it) }
-        rebuildTotals(
-            record.taskId?.let { setOf(it) } ?: emptySet(),
-            record.projectId?.let { setOf(it) } ?: emptySet()
-        )
-        true
+    suspend fun deleteManual(id: Int): Boolean {
+        var affectedTaskId: Int? = null
+        val deleted = database.withTransaction {
+            val record = activities.getById(id) ?: return@withTransaction false
+            if (record.source != "MANUAL") return@withTransaction false
+            affectedTaskId = record.taskId
+            activities.deleteById(id)
+            record.pomodoroSessionId?.let { pomodoros.deleteById(it) }
+            rebuildTotals(
+                record.taskId?.let { setOf(it) } ?: emptySet(),
+                record.projectId?.let { setOf(it) } ?: emptySet()
+            )
+            true
+        }
+        if (deleted) affectedTaskId?.let { reminderCoordinator?.taskChanged(it) }
+        return deleted
     }
 
     private suspend fun rebuildTotals(taskIds: Set<Int>, projectIds: Set<Int>) {

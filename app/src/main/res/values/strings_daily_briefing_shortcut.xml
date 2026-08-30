@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="briefing_daily_plan_voice_action">Настроить дневной план голосом</string>
+    <string name="briefing_daily_plan_voice_hint">Откроется ассистент с безопасным подтверждением каждого изменения. Распознавание работает только локально, если на устройстве установлен офлайн-модуль Android.</string>
+</resources>

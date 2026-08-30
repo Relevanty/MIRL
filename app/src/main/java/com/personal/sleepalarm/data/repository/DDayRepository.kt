@@ -3,6 +3,10 @@ package com.personal.sleepalarm.data.repository
 import com.personal.sleepalarm.data.db.dao.DDayDao
 import com.personal.sleepalarm.data.db.entity.DDayEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -22,7 +26,12 @@ class DDayRepository(
 
     /** Ближайшее будущее событие (Flow, пересчитывается от текущей даты). */
     fun observeNearest(): Flow<DDayEntity?> =
-        dao.observeNearest(todayString())
+        flow {
+            while (true) {
+                emit(todayString())
+                delay(60_000L)
+            }
+        }.distinctUntilChanged().flatMapLatest(dao::observeNearest)
 
     suspend fun getById(id: Int): DDayEntity? = dao.getById(id)
 

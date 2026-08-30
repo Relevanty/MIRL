@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="daily_plan_command_syntax">Команда не распознана. Пример: «Установи дневную норму для “Диплом” 120 минут» или «Поставь длительность захода для “Диплом” 40 минут».</string>
+    <string name="daily_plan_command_invalid_duration">Укажите целое количество минут или часов.</string>
+    <string name="daily_plan_command_target_range">Дневная норма должна быть от 5 до 480 минут. Чтобы убрать задачу из обязательного плана, скажите: «Название задачи необязательное».</string>
+    <string name="daily_plan_command_bout_range">Длительность одного захода должна быть от 5 до 180 минут.</string>
+    <string name="daily_plan_command_buffer_range">Запас должен быть от 0 до 720 минут.</string>
+    <string name="daily_plan_command_repeat_range">Интервал повторения должен быть от 5 до 120 минут.</string>
+    <string name="daily_plan_command_signal_volume_range">Громкость сигнала дневного плана должна быть от 0 до 100 процентов.</string>
+    <string name="daily_plan_command_invalid_time">Контрольное время укажите как ЧЧ:ММ, например 23:30 или 00:00.</string>
+    <string name="daily_plan_task_missing">Не нашёл одну активную задачу с точным названием «%1$s». Изменений нет.</string>
+    <string name="daily_plan_task_ambiguous">Есть несколько активных задач с названием «%1$s». Уточните название — изменений пока нет.</string>
+    <string name="daily_plan_confirmation_prompt">Проверьте изменение. Оно применится только после подтверждения.</string>
+    <string name="daily_plan_confirmation_title">Изменить дневной план?</string>
+    <string name="daily_plan_change_target">«%1$s»: дневная норма %2$d → %3$d мин</string>
+    <string name="daily_plan_change_bout">«%1$s»: один заход %2$d → %3$d мин</string>
+    <string name="daily_plan_change_required_on">«%1$s»: учитывать в обязательном дневном плане каждый день, пока вы это не отключите</string>
+    <string name="daily_plan_change_required_off">«%1$s»: больше не учитывать в обязательном дневном плане</string>
+    <string name="daily_plan_change_global">%1$s: %2$s → %3$s</string>
+    <string name="daily_plan_setting_urgency">Контроль дневного плана</string>
+    <string name="daily_plan_setting_buffer">Запас до контрольного времени</string>
+    <string name="daily_plan_setting_repeats">Повторы контроля</string>
+    <string name="daily_plan_setting_repeat_interval">Интервал повторения</string>
+    <string name="daily_plan_setting_morning_reminder">Утренние напоминания дневного плана</string>
+    <string name="daily_plan_setting_cutoff">Контрольное время</string>
+    <string name="daily_plan_setting_signal_volume">Громкость сигнала дневного плана</string>
+    <string name="daily_plan_setting_signal_sound">Звук дневного плана</string>
+    <string name="daily_plan_value_enabled">включено</string>
+    <string name="daily_plan_value_disabled">выключено</string>
+    <string name="daily_plan_value_minutes">%1$d мин</string>
+    <string name="daily_plan_value_percent">%1$d%%</string>
+    <string name="daily_plan_value_sound_system">системный</string>
+    <string name="daily_plan_value_sound_custom">выбранный файл</string>
+    <string name="daily_plan_value_sound_silent">без звука</string>
+    <string name="daily_plan_change_applied">Готово. Дневной план обновлён.</string>
+    <string name="daily_plan_change_cancelled">Изменение отменено.</string>
+    <string name="daily_plan_change_stale">Задача изменилась после показа карточки. Ничего не записано — повторите команду.</string>
+    <string name="daily_plan_change_failed">Не удалось безопасно применить изменение. Данные не изменены.</string>
+    <string name="daily_plan_confirm">Подтвердить</string>
+    <string name="daily_plan_cancel">Отмена</string>
+    <string name="daily_plan_speech_content_description">Продиктовать офлайн-команду</string>
+    <string name="daily_plan_speech_listening">Слушаю на устройстве…</string>
+    <string name="daily_plan_speech_unavailable">Офлайн-распознавание речи недоступно на этом устройстве. Текстовые команды продолжают работать без интернета.</string>
+    <string name="daily_plan_speech_permission_denied">Для диктовки нужен доступ к микрофону. Текстовые команды доступны без него.</string>
+    <string name="daily_plan_speech_error">Не удалось распознать команду на устройстве. Введите её текстом.</string>
+
+    <string name="briefing_daily_not_started_prefix">Сегодня ещё не начаты обязательные задачи:</string>
+    <string name="briefing_daily_task_item">%1$s — %2$d минут</string>
+    <string name="briefing_daily_more">И ещё %1$d.</string>
+    <string name="briefing_daily_remaining">По обязательному плану осталось %1$d минут.</string>
+    <string name="briefing_daily_slack_warning">Запас до контрольного времени — %1$d минут. План уже требует внимания.</string>
+    <string name="briefing_daily_overloaded_warning">До контрольного времени не хватает примерно %1$d минут.</string>
+    <string name="briefing_daily_complete">Обязательный план на сегодня выполнен.</string>
+</resources>

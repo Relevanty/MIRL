@@ -41,5 +41,13 @@ data class FocusProtocolSessionEntity(
     val cancelReason: String? = null,
     val pomodoroRecorded: Boolean = false,
     val completedCycles: Int = 0,
-    val totalFocusMillis: Long = 0L
+    val totalFocusMillis: Long = 0L,
+    /** Immutable soundscape snapshot for this block. */
+    val soundscapeId: String = "silence",
+    val soundscapeCustomUri: String? = null,
+    val soundscapeCustomName: String? = null,
+    val soundscapeVolume: Int = 35,
+    val soundscapeSecondaryId: String? = null,
+    val soundscapeSecondaryVolume: Int = 20,
+    val soundscapePlayDuringRecovery: Boolean = false
 )

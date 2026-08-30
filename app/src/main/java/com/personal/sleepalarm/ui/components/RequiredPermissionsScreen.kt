@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.components
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -140,7 +142,7 @@ fun RequiredPermissionsScreen(
                     permissions.size
                 ),
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.focus.color
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -190,9 +192,9 @@ private fun PermissionStatusRow(permission: RequiredPermission) {
         Surface(
             shape = CircleShape,
             color = if (permission.granted) {
-                MaterialTheme.colorScheme.primary
+                MaterialTheme.appAccents.success.color
             } else {
-                MaterialTheme.colorScheme.error
+                MaterialTheme.appAccents.urgent.color
             },
             modifier = Modifier.size(30.dp)
         ) {
@@ -200,9 +202,9 @@ private fun PermissionStatusRow(permission: RequiredPermission) {
                 imageVector = if (permission.granted) Icons.Default.Check else Icons.Default.Close,
                 contentDescription = null,
                 tint = if (permission.granted) {
-                    MaterialTheme.colorScheme.onPrimary
+                    MaterialTheme.appAccents.success.onColor
                 } else {
-                    MaterialTheme.colorScheme.onError
+                    MaterialTheme.appAccents.urgent.onColor
                 },
                 modifier = Modifier.padding(6.dp)
             )
@@ -231,9 +233,9 @@ private fun PermissionStatusRow(permission: RequiredPermission) {
             ),
             style = MaterialTheme.typography.labelMedium,
             color = if (permission.granted) {
-                MaterialTheme.colorScheme.primary
+                MaterialTheme.appAccents.success.color
             } else {
-                MaterialTheme.colorScheme.error
+                MaterialTheme.appAccents.urgent.color
             }
         )
     }

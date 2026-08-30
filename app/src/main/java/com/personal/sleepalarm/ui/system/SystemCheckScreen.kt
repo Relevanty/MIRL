@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.system
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -152,19 +154,19 @@ fun SystemCheckScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                .background(MaterialTheme.appAccents.success.container)
                 .padding(12.dp)
         ) {
             Text(
                 text = stringResource(R.string.system_check_hyperos_title),
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
+                color = MaterialTheme.appAccents.success.onContainer
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = stringResource(R.string.system_check_hyperos_body),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
+                color = MaterialTheme.appAccents.success.onContainer
             )
         }
 
@@ -199,16 +201,16 @@ private fun CheckRow(
                 .size(28.dp)
                 .clip(CircleShape)
                 .background(
-                    if (ok) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error
+                    if (ok) MaterialTheme.appAccents.success.color
+                    else MaterialTheme.appAccents.urgent.color
                 ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = if (ok) Icons.Default.CheckCircle else Icons.Default.Error,
                 contentDescription = null,
-                tint = if (ok) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onError,
+                tint = if (ok) MaterialTheme.appAccents.success.onColor
+                else MaterialTheme.appAccents.urgent.onColor,
                 modifier = Modifier.size(18.dp)
             )
         }

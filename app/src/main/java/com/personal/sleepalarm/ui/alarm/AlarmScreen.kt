@@ -1,8 +1,11 @@
 package com.personal.sleepalarm.ui.alarm
 
 import com.personal.sleepalarm.ui.theme.ThemedAlertDialog
+import com.personal.sleepalarm.ui.theme.appAccents
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,17 +14,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,12 +32,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.ui.mood.MoodPickerDialog
+import com.personal.sleepalarm.ui.math.MathChallengeCard
 import com.personal.sleepalarm.util.TimeFormatter
 import kotlinx.coroutines.delay
 import java.time.ZonedDateTime
@@ -90,6 +91,7 @@ fun AlarmScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -156,68 +158,35 @@ fun AlarmScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = challenge.question,
-                    style = MaterialTheme.typography.displaySmall
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                TextField(
-                    value = state.userInput,
-                    onValueChange = { viewModel.onInputChanged(it) },
-                    label = {
-                        Text(text = stringResource(R.string.alarm_answer_label))
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number
+                    text = stringResource(
+                        R.string.alarm_challenge_progress,
+                        state.challengeIndex + 1,
+                        state.challengeCount
                     ),
-                    singleLine = true,
-                    enabled = !state.isAnswerCorrect,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.appAccents.focus.color
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = {
+                        (state.challengeIndex + 1).toFloat() /
+                            state.challengeCount.coerceAtLeast(1).toFloat()
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                state.errorMessage?.let { error ->
-                    Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                    Text(
-                        text = error,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-
-                if (state.showHint) {
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = stringResource(
-                            R.string.alarm_hint_answer,
-                            challenge.answer
-                        ),
-                        color = MaterialTheme.colorScheme.tertiary,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (!state.isAnswerCorrect) {
-                    Button(
-                        onClick = { viewModel.checkAnswer() },
-                        enabled = state.userInput.isNotBlank() && !state.isProcessing,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                    ) {
-                        Text(text = stringResource(R.string.alarm_action_check))
-                    }
-                } else {
-                    Text(
-                        text = stringResource(R.string.alarm_answer_correct),
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
+                MathChallengeCard(
+                    challenge = challenge,
+                    userInput = state.userInput,
+                    errorMessage = state.errorMessage,
+                    showHint = state.showHint,
+                    answerAccepted = state.isAnswerCorrect || state.isAdvancingChallenge,
+                    enabled = !state.isProcessing && !state.isAdvancingChallenge,
+                    onInputChanged = viewModel::onInputChanged,
+                    onCheck = viewModel::checkAnswer
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -228,7 +197,8 @@ fun AlarmScreen(
                         .fillMaxWidth()
                         .height(64.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
+                        containerColor = MaterialTheme.appAccents.urgent.color,
+                        contentColor = MaterialTheme.appAccents.urgent.onColor
                     )
                 ) {
                     Text(
@@ -355,7 +325,7 @@ private fun SmartRepeatStatus(
             Text(
                 text = statusText,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary
+                color = MaterialTheme.appAccents.success.color
             )
         }
     }

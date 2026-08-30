@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.misc
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,7 +51,7 @@ fun MiscBottomSheet(
                     .padding(top = 8.dp, bottom = 16.dp),
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.other.color
             )
 
             // ... дальше существующие пункты
@@ -90,7 +92,7 @@ private fun MiscItem(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.appAccents.other.color,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(16.dp))

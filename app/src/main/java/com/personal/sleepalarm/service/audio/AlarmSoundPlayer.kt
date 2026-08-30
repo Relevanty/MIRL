@@ -1,8 +1,6 @@
 package com.personal.sleepalarm.service.audio
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.media.ToneGenerator
@@ -30,8 +28,9 @@ import kotlinx.coroutines.withContext
  * для импульсов smart-repeat (отменяет текущий ramp и фиксирует уровень);
  * isPlaying — диагностика.
  *
- * Существующее поведение (USAGE_ALARM, нарастание 10%→100% за 60 с,
- * looping, fallback URI) НЕ изменено.
+ * USAGE_ALARM, нарастание 10%→100% за 60 с, looping и fallback URI
+ * сохраняются. На время звонка системный alarm stream открывается до максимума,
+ * чтобы ramp покрывал полный диапазон, а после остановки возвращается обратно.
  */
 class AlarmSoundPlayer(
     private val context: Context
@@ -44,6 +43,7 @@ class AlarmSoundPlayer(
     private var rampJob: Job? = null
     private var fallbackToneJob: Job? = null
     private var toneGenerator: ToneGenerator? = null
+    private var streamVolumeLease: AutoCloseable? = null
 
     @Volatile
     private var fallbackToneActive = false
@@ -66,6 +66,7 @@ class AlarmSoundPlayer(
         }
 
         stopInternal()
+        streamVolumeLease = AlarmStreamVolumeController.acquire(context)
 
         // ДОБАВЛЕНО: пользовательский URI — первый кандидат (F2).
         val uris = resolveAlarmUris(customRingtoneUri)
@@ -77,9 +78,10 @@ class AlarmSoundPlayer(
         }
 
         Log.e(TAG, "Failed to start alarm sound with all candidate URIs; using tone fallback")
-        startFallbackTone(
+        val fallbackStarted = startFallbackTone(
             if (quietMode) QUIET_START_VOLUME else NORMAL_START_VOLUME
         )
+        if (!fallbackStarted) releaseStreamVolumeLease()
     }
 
     /**
@@ -113,7 +115,7 @@ class AlarmSoundPlayer(
         val safe = fraction.coerceIn(0f, 1f)
 
         if (fallbackToneActive) {
-            startFallbackTone(safe)
+            if (!startFallbackTone(safe)) releaseStreamVolumeLease()
             return
         }
 
@@ -141,12 +143,7 @@ class AlarmSoundPlayer(
         return try {
             player = MediaPlayer()
 
-            player.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
+            player.setAudioAttributes(AppAudioAttributes.sonification)
 
             player.setDataSource(context, uri)
             player.isLooping = true
@@ -163,7 +160,7 @@ class AlarmSoundPlayer(
                 if (mediaPlayer === mp) mediaPlayer = null
                 runCatching { mp.reset() }
                 runCatching { mp.release() }
-                startFallbackTone(NORMAL_START_VOLUME)
+                if (!startFallbackTone(NORMAL_START_VOLUME)) releaseStreamVolumeLease()
                 true
             }
 
@@ -317,17 +314,18 @@ class AlarmSoundPlayer(
                 player.release()
             }
         }
+        releaseStreamVolumeLease()
     }
 
     /** Последний аварийный вариант, не зависящий от URI мелодий. */
-    private fun startFallbackTone(volumeFraction: Float) {
+    private fun startFallbackTone(volumeFraction: Float): Boolean {
         fallbackToneJob?.cancel()
         runCatching { toneGenerator?.stopTone() }
         runCatching { toneGenerator?.release() }
 
         val generator = runCatching {
             ToneGenerator(
-                AudioManager.STREAM_ALARM,
+                AppAudioAttributes.LEGACY_STREAM,
                 (volumeFraction.coerceIn(0f, 1f) * 100).toInt().coerceAtLeast(1)
             )
         }.onFailure {
@@ -336,7 +334,7 @@ class AlarmSoundPlayer(
 
         toneGenerator = generator
         fallbackToneActive = generator != null
-        if (generator == null) return
+        if (generator == null) return false
 
         fallbackToneJob = scope.launch {
             while (isActive && toneGenerator === generator) {
@@ -346,6 +344,13 @@ class AlarmSoundPlayer(
                 delay(FALLBACK_REPEAT_MS)
             }
         }
+        return true
+    }
+
+    private fun releaseStreamVolumeLease() {
+        val lease = streamVolumeLease
+        streamVolumeLease = null
+        runCatching { lease?.close() }
     }
 
     override fun close() {

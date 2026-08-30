@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.reminders
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -75,8 +77,8 @@ fun RemindersScreen(
                     editTarget = null
                     showEdit = true
                 },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+                containerColor = MaterialTheme.appAccents.calm.color,
+                contentColor = MaterialTheme.appAccents.calm.onColor
             ) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.reminders_new))
             }
@@ -102,7 +104,7 @@ fun RemindersScreen(
                 )
                 CatText(
                     text = "=^..^=",
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.appAccents.calm.color,
                     fontSize = 16.sp
                 )
             }
@@ -114,11 +116,11 @@ fun RemindersScreen(
                 Text(
                     text = stringResource(R.string.reminders_exact_alarm_warning),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.appAccents.warning.color,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+                        .background(MaterialTheme.appAccents.warning.container.copy(alpha = 0.72f))
                         .padding(12.dp)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -140,7 +142,7 @@ fun RemindersScreen(
                             lineHeight = 46.sp,
                             fontWeight = FontWeight.Bold
                         ),
-                        color = MaterialTheme.colorScheme.secondary
+                        color = MaterialTheme.appAccents.other.color
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -213,7 +215,7 @@ private fun ReminderRow(
             Icon(
                 Icons.Default.Delete,
                 contentDescription = stringResource(R.string.reminders_delete),
-                tint = MaterialTheme.colorScheme.error
+                tint = MaterialTheme.appAccents.urgent.color
             )
         }
     }

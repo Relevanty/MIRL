@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.components
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,7 +37,7 @@ object CatArt {
 fun CatText(
     text: String,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary,
+    color: Color = MaterialTheme.appAccents.focus.color,
     fontSize: TextUnit = 12.sp
 ) {
     Text(
@@ -57,7 +59,7 @@ fun CatText(
 fun ThinCatText(
     text: String,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.secondary,
+    color: Color = MaterialTheme.appAccents.calm.color,
     fontSize: TextUnit = 12.sp
 ) {
     Text(

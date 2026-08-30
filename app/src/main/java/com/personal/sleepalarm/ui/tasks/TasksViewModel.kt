@@ -7,17 +7,21 @@ import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
+import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemEntity
 import com.personal.sleepalarm.data.db.entity.TaskLibraryLinkEntity
 import com.personal.sleepalarm.data.repository.TaskRepository
-import com.personal.sleepalarm.alarm.TaskDeadlineScheduler
+import com.personal.sleepalarm.domain.coordinator.TaskLifecycleCoordinator
+import com.personal.sleepalarm.domain.model.mergeProjectEditorChanges
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.personal.sleepalarm.util.CoverHelper
@@ -60,20 +64,31 @@ class TasksViewModel(
 
     private val database = AppDatabase.getInstance(application.applicationContext)
     private val repository = TaskRepository(database.taskDao())
-    private val deadlineScheduler = TaskDeadlineScheduler(application.applicationContext)
+    private val taskLifecycle = TaskLifecycleCoordinator(application.applicationContext, database)
 
     private val _draftTitle = MutableStateFlow("")
     private val _draftIsMorning = MutableStateFlow(false)
     private val _pendingReminderTaskId = MutableStateFlow<Int?>(null)
-    private data class MoveSnapshot(val taskId: Int, val quadrant: Int, val sortOrder: Int)
-    private val _lastMove = MutableStateFlow<MoveSnapshot?>(null)
-    val canUndoMove: StateFlow<Boolean> = _lastMove
-        .combine(MutableStateFlow(Unit)) { move, _ -> move != null }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val activityRecords: StateFlow<List<ActivityRecordEntity>> = database.activityRecordDao()
         .observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val activeFocusProtocol: StateFlow<FocusProtocolSessionEntity?> = database.focusProtocolDao()
+        .observeActive()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Drives live daily progress without making completed history tick. */
+    val progressNowMillis: StateFlow<Long> = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(1_000L)
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        System.currentTimeMillis()
+    )
 
     val projects: StateFlow<List<ProjectEntity>> = database.projectDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -122,11 +137,14 @@ class TasksViewModel(
         if (title.isBlank()) return
 
         viewModelScope.launch {
-            val createdId = repository.addTask(
-                title = title,
-                isMorningRoutine = _draftIsMorning.value
+            taskLifecycle.save(
+                TaskEntity(
+                    title = title,
+                    isMorningRoutine = _draftIsMorning.value,
+                    matrixQuadrant = 2,
+                    sortOrder = if (_draftIsMorning.value) 0 else repository.nextSortOrder(2)
+                )
             )
-            database.taskDao().getById(createdId.toInt())?.let(deadlineScheduler::schedule)
             _draftTitle.value = ""
         }
     }
@@ -137,24 +155,13 @@ class TasksViewModel(
 
     fun toggleDone(task: TaskEntity) {
         viewModelScope.launch {
-            if (task.isMorningRoutine) {
-                // Утренняя рутина — только отметка вперёд (markDone внутри проверит).
-                repository.markDone(task.id)
-            } else {
-                // Обычная задача — toggle (через тот же markDone).
-                repository.markDone(task.id)
-            }
-            val updated = repository.getById(task.id)
-            if (updated == null || updated.isDone) deadlineScheduler.cancel(task.id)
-            else deadlineScheduler.schedule(updated)
+            taskLifecycle.toggleDone(task.id)
         }
     }
 
     fun deleteTask(task: TaskEntity) {
         viewModelScope.launch {
-            deadlineScheduler.cancel(task.id)
-            repository.delete(task)
-            withContext(Dispatchers.IO) { CoverHelper.deleteCover(task.imagePath) }
+            taskLifecycle.delete(task.id)
         }
     }
 
@@ -178,9 +185,7 @@ class TasksViewModel(
             } else {
                 normalized
             }
-            val savedId = repository.save(toSave)
-            val saved = database.taskDao().getById(savedId.toInt())
-            saved?.let(deadlineScheduler::schedule)
+            taskLifecycle.save(toSave) ?: return@launch
             if (previous?.imagePath != null && previous.imagePath != toSave.imagePath) {
                 withContext(Dispatchers.IO) { CoverHelper.deleteCover(previous.imagePath) }
             }
@@ -189,16 +194,9 @@ class TasksViewModel(
 
     fun moveTask(task: TaskEntity, quadrant: TaskQuadrant) {
         if (task.matrixQuadrant == quadrant.storageValue || task.isDone) return
-        _lastMove.value = MoveSnapshot(task.id, task.matrixQuadrant, task.sortOrder)
         viewModelScope.launch {
             val newOrder = repository.nextSortOrder(quadrant.storageValue)
-            repository.update(
-                task.copy(
-                    matrixQuadrant = quadrant.storageValue,
-                    sortOrder = newOrder,
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
+            taskLifecycle.move(task.id, quadrant.storageValue, newOrder)
             normalizeQuadrant(task.matrixQuadrant)
         }
     }
@@ -226,37 +224,14 @@ class TasksViewModel(
         if (current < 0) return
         val target = targetIndex.coerceIn(0, siblings.lastIndex)
         if (current == target) return
-        _lastMove.value = MoveSnapshot(task.id, task.matrixQuadrant, task.sortOrder)
         val reordered = siblings.toMutableList().apply { add(target, removeAt(current)) }
         viewModelScope.launch {
-            reordered.forEachIndexed { index, item ->
-                repository.updateSortOrder(item.id, index)
-            }
-        }
-    }
-
-    fun undoLastMove() {
-        val snapshot = _lastMove.value ?: return
-        _lastMove.value = null
-        viewModelScope.launch {
-            val task = repository.getById(snapshot.taskId) ?: return@launch
-            val currentQuadrant = task.matrixQuadrant
-            repository.update(
-                task.copy(
-                    matrixQuadrant = snapshot.quadrant,
-                    sortOrder = snapshot.sortOrder,
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
-            normalizeQuadrant(currentQuadrant)
-            normalizeQuadrant(snapshot.quadrant)
+            taskLifecycle.reorder(reordered.map(TaskEntity::id))
         }
     }
 
     private suspend fun normalizeQuadrant(quadrant: Int) {
-        repository.getActiveInQuadrant(quadrant).forEachIndexed { index, task ->
-            repository.updateSortOrder(task.id, index)
-        }
+        taskLifecycle.reorder(repository.getActiveInQuadrant(quadrant).map(TaskEntity::id))
     }
 
     fun completeTask(task: TaskEntity) {
@@ -269,6 +244,12 @@ class TasksViewModel(
 
     fun duplicateCompletedTask(task: TaskEntity) {
         viewModelScope.launch {
+            val duplicatedImage = withContext(Dispatchers.IO) {
+                CoverHelper.duplicateCover(
+                    getApplication<Application>().applicationContext,
+                    task.imagePath
+                )
+            }
             val fresh = task.copy(
                 id = 0,
                 isDone = false,
@@ -276,11 +257,12 @@ class TasksViewModel(
                 doneDate = null,
                 spentMillis = 0L,
                 reminderId = null,
+                imagePath = duplicatedImage,
                 sortOrder = repository.nextSortOrder(task.matrixQuadrant),
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )
-            repository.save(fresh)
+            taskLifecycle.save(fresh)
         }
     }
 
@@ -302,21 +284,30 @@ class TasksViewModel(
         if (normalized.title.isBlank()) return
         viewModelScope.launch {
             if (normalized.id == 0) database.projectDao().insert(normalized)
-            else database.projectDao().update(normalized)
+            else {
+                val current = database.projectDao().getById(normalized.id) ?: return@launch
+                database.projectDao().update(
+                    mergeProjectEditorChanges(current, normalized, normalized.updatedAt)
+                )
+            }
         }
     }
 
     fun archiveProject(project: ProjectEntity) {
         viewModelScope.launch {
+            val current = database.projectDao().getById(project.id) ?: return@launch
             database.projectDao().update(
-                project.copy(isArchived = !project.isArchived, updatedAt = System.currentTimeMillis())
+                current.copy(isArchived = !current.isArchived, updatedAt = System.currentTimeMillis())
             )
         }
     }
 
     fun toggleLibraryLink(taskId: Int, libraryItemId: Int) {
         viewModelScope.launch {
-            val linked = libraryLinks.value.any { it.taskId == taskId && it.libraryItemId == libraryItemId }
+            if (database.taskDao().getById(taskId) == null ||
+                database.libraryDao().getItem(libraryItemId) == null
+            ) return@launch
+            val linked = database.taskLibraryLinkDao().exists(taskId, libraryItemId)
             if (linked) database.taskLibraryLinkDao().delete(taskId, libraryItemId)
             else database.taskLibraryLinkDao().insert(TaskLibraryLinkEntity(taskId, libraryItemId))
         }
@@ -342,14 +333,6 @@ class TasksViewModel(
 
     fun clearPendingReminder() {
         _pendingReminderTaskId.value = null
-    }
-
-    /**
-     * Связывает задачу с только что созданным напоминанием.
-     * Вызывается из MainActivity после успешного сохранения ReminderEntity.
-     */
-    fun linkReminder(taskId: Int, reminderId: Int) {
-        viewModelScope.launch { repository.setReminderId(taskId, reminderId) }
     }
 
     // =====================================================================

@@ -11,6 +11,7 @@ import com.personal.sleepalarm.data.db.entity.LibraryItemEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemType
 import com.personal.sleepalarm.data.db.entity.LibraryTagEntity
 import com.personal.sleepalarm.data.repository.LibraryRepository
+import com.personal.sleepalarm.domain.model.primaryLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,8 @@ import kotlinx.coroutines.flow.stateIn
 data class LibraryListState(
     val items: List<LibraryItemEntity> = emptyList(),
     val filterType: LibraryItemType? = null,
-    val query: String = ""
+    val query: String = "",
+    val linkedTaskLabels: Map<Int, List<String>> = emptyMap()
 )
 
 /**
@@ -41,15 +43,31 @@ class LibraryViewModel(
     private val _filter = MutableStateFlow<LibraryItemType?>(null)
     private val _query = MutableStateFlow("")
 
-    val uiState: StateFlow<LibraryListState> = combine(_filter, _query) { f, q -> f to q }
+    private val visibleItems = combine(_filter, _query) { f, q -> f to q }
         .flatMapLatest { (filter, query) ->
             val flow = when {
                 query.isNotBlank() -> repository.searchItems(query.trim())
                 filter != null -> repository.observeItemsByType(filter)
                 else -> repository.observeItems()
             }
-            flow.map { items -> LibraryListState(items, filter, query) }
+            flow.map { items -> Triple(items, filter, query) }
         }
+
+    val uiState: StateFlow<LibraryListState> = combine(
+        visibleItems,
+        database.taskDao().observeAll(),
+        database.taskLibraryLinkDao().observeAll()
+    ) { (items, filter, query), tasks, links ->
+        val taskById = tasks.associateBy { it.id }
+        LibraryListState(
+            items = items,
+            filterType = filter,
+            query = query,
+            linkedTaskLabels = links.groupBy { it.libraryItemId }.mapValues { (_, itemLinks) ->
+                itemLinks.mapNotNull { taskById[it.taskId]?.primaryLabel() }.distinct()
+            }
+        )
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),

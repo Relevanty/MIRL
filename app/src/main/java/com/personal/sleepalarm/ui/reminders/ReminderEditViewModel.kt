@@ -1,13 +1,16 @@
 package com.personal.sleepalarm.ui.reminders
 
 import android.app.Application
+import androidx.room.withTransaction
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.alarm.ReminderScheduler
+import com.personal.sleepalarm.alarm.TaskDeadlineScheduler
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.RepeatMode
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.data.repository.ReminderRepository
+import com.personal.sleepalarm.domain.model.primaryLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -49,6 +52,7 @@ class ReminderEditViewModel(
     private val database = AppDatabase.getInstance(context)
     private val repository = ReminderRepository(database.reminderDao(), database.taskDao(), database.activityRecordDao())
     private val scheduler = ReminderScheduler(context)
+    private val deadlineScheduler = TaskDeadlineScheduler(context)
 
     private val _state = MutableStateFlow(ReminderEditState())
     val state: StateFlow<ReminderEditState> = _state
@@ -74,8 +78,22 @@ class ReminderEditViewModel(
                         triggerRule = r.triggerRule,
                         offsetMinutes = r.offsetMinutes,
                         inactivityHours = r.inactivityHours,
-                        linkedTaskId = r.linkedId.takeIf { r.linkedType == "TASK" } ?: it.linkedTaskId
+                        linkedTaskId = r.linkedId.takeIf { r.linkedType == "TASK" }
                     )
+                }
+            }
+        } else if (linkedTaskId != null) {
+            viewModelScope.launch {
+                val task = database.taskDao().getById(linkedTaskId) ?: return@launch
+                _state.update { current ->
+                    if (current.reminderId == null &&
+                        current.linkedTaskId == linkedTaskId &&
+                        current.title.isBlank()
+                    ) {
+                        current.copy(title = task.primaryLabel())
+                    } else {
+                        current
+                    }
                 }
             }
         }
@@ -86,7 +104,15 @@ class ReminderEditViewModel(
     fun setTimeMinute(v: Int) = _state.update { it.copy(timeMinute = v.coerceIn(0, 59)) }
     fun setRepeatMode(v: RepeatMode) = _state.update { it.copy(repeatMode = v) }
     fun setIntervalDays(v: Int) = _state.update { it.copy(intervalDays = v.coerceIn(1, 365)) }
-    fun setLinkedTask(id: Int?) = _state.update { it.copy(linkedTaskId = id) }
+    fun setLinkedTask(id: Int?) = _state.update { current ->
+        val oldLabel = tasks.value.firstOrNull { it.id == current.linkedTaskId }?.primaryLabel()
+        val newLabel = tasks.value.firstOrNull { it.id == id }?.primaryLabel()
+        val followsTaskTitle = current.title.isBlank() || current.title.trim() == oldLabel
+        current.copy(
+            linkedTaskId = id,
+            title = if (id != null && followsTaskTitle && newLabel != null) newLabel else current.title
+        )
+    }
     fun setTriggerRule(v: String) = _state.update { it.copy(triggerRule = v) }
     fun setOffsetMinutes(v: Int) = _state.update { it.copy(offsetMinutes = v.coerceIn(0, 43_200)) }
     fun setInactivityHours(v: Int) = _state.update { it.copy(inactivityHours = v.coerceIn(1, 720)) }
@@ -113,23 +139,27 @@ class ReminderEditViewModel(
         ) return false
 
         viewModelScope.launch {
-            val id: Long = if (s.reminderId == null) {
-                repository.create(
-                    title = s.title,
-                    timeHour = s.timeHour,
-                    timeMinute = s.timeMinute,
-                    repeatMode = s.repeatMode,
-                    daysOfWeek = if (s.repeatMode == RepeatMode.WEEKLY) s.daysOfWeek else 0,
-                    intervalDays = if (s.repeatMode == RepeatMode.INTERVAL) s.intervalDays else 1,
-                    linkedType = if (s.linkedTaskId != null) "TASK" else "",
-                    linkedId = s.linkedTaskId,
-                    triggerRule = s.triggerRule,
-                    offsetMinutes = s.offsetMinutes,
-                    inactivityHours = s.inactivityHours
-                )
-            } else {
-                val existing = repository.getById(s.reminderId)
-                if (existing != null) {
+            val oldLinkedTaskId = s.reminderId
+                ?.let { repository.getById(it) }
+                ?.linkedId
+            val id = database.withTransaction<Long?> {
+                val savedId = if (s.reminderId == null) {
+                    repository.create(
+                        title = s.title,
+                        timeHour = s.timeHour,
+                        timeMinute = s.timeMinute,
+                        repeatMode = s.repeatMode,
+                        daysOfWeek = if (s.repeatMode == RepeatMode.WEEKLY) s.daysOfWeek else 0,
+                        intervalDays = if (s.repeatMode == RepeatMode.INTERVAL) s.intervalDays else 1,
+                        linkedType = if (s.linkedTaskId != null) "TASK" else "",
+                        linkedId = s.linkedTaskId,
+                        triggerRule = s.triggerRule,
+                        offsetMinutes = s.offsetMinutes,
+                        inactivityHours = s.inactivityHours
+                    )
+                } else {
+                    val existing = repository.getById(s.reminderId)
+                        ?: return@withTransaction null
                     repository.update(
                         existing.copy(
                             title = s.title.trim(),
@@ -139,26 +169,40 @@ class ReminderEditViewModel(
                             daysOfWeek = if (s.repeatMode == RepeatMode.WEEKLY) s.daysOfWeek else 0,
                             intervalDays = if (s.repeatMode == RepeatMode.INTERVAL) s.intervalDays else 1,
                             isEnabled = true,
-                            linkedType = if (s.linkedTaskId != null) "TASK" else existing.linkedType,
-                            linkedId = s.linkedTaskId ?: existing.linkedId,
+                            linkedType = if (s.linkedTaskId != null) "TASK" else "",
+                            linkedId = s.linkedTaskId,
                             triggerRule = s.triggerRule,
                             offsetMinutes = s.offsetMinutes,
                             inactivityHours = s.inactivityHours
                         )
                     )
+                    s.reminderId.toLong()
                 }
-                s.reminderId.toLong()
-            }
 
-            // Привязка к задаче.
-            s.linkedTaskId?.let { taskId ->
-                database.taskDao().setReminderId(taskId, id.toInt())
-            }
+                // ReminderEntity is the only source of truth for task links.
+                // Clear a legacy reverse pointer instead of creating another
+                // conflicting one-to-many representation.
+                database.taskDao().clearReminderLink(savedId.toInt())
+                savedId
+            } ?: return@launch
 
             // Планирование обоих alarm'ов.
             val saved = repository.getById(id.toInt())
-            if (saved != null) scheduler.schedule(saved)
+            val reconciled = saved?.let { repository.reconcileForScheduling(it) }
+            if (reconciled != null) scheduler.schedule(reconciled)
+            else scheduler.cancel(id.toInt())
+            setOfNotNull(oldLinkedTaskId, s.linkedTaskId).forEach { taskId ->
+                reconcileDeadlineFallback(taskId)
+            }
         }
         return true
+    }
+
+    private suspend fun reconcileDeadlineFallback(taskId: Int) {
+        val task = database.taskDao().getById(taskId) ?: return
+        val hasExplicit = task.dueAtMillis != null && database.reminderDao().getLinkedToTask(taskId).any {
+            it.isEnabled && it.triggerRule in setOf("BEFORE_DEADLINE", "BECOMES_URGENT")
+        }
+        if (hasExplicit) deadlineScheduler.cancel(taskId) else deadlineScheduler.schedule(task)
     }
 }

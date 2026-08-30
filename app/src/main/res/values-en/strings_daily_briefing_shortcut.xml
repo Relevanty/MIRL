@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="briefing_daily_plan_voice_action">Configure the daily plan by voice</string>
+    <string name="briefing_daily_plan_voice_hint">The assistant will open and confirm every change before applying it. Recognition stays on-device when Android has an offline speech module installed.</string>
+</resources>

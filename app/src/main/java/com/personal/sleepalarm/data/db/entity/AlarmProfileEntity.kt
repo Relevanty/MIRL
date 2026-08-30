@@ -64,6 +64,7 @@ data class AlarmProfileEntity(
 
     // === Будильник ===
     val mathDifficulty: MathDifficulty = MathDifficulty.MEDIUM,
+    val mathChallengeCount: Int = 1,
     val quietAlarmEnabled: Boolean = false,
     val vibrationEnabled: Boolean = true,
     val alarmRingtoneUri: String? = null,

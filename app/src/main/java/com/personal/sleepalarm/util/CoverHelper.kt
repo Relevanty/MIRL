@@ -71,4 +71,16 @@ object CoverHelper {
             bitmap
         }.getOrNull()
     }
+
+    /** Gives a duplicated task independent ownership of its image file. */
+    fun duplicateCover(context: Context, path: String?): String? {
+        val source = path?.let(::File)?.takeIf(File::isFile) ?: return null
+        val dir = File(context.filesDir, DIR).apply { mkdirs() }
+        val extension = source.extension.takeIf(String::isNotBlank) ?: "jpg"
+        val target = File(dir, "cover_${System.nanoTime()}.$extension")
+        return runCatching {
+            source.copyTo(target, overwrite = false)
+            target.absolutePath
+        }.getOrNull()
+    }
 }

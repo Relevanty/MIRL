@@ -55,6 +55,8 @@ data class SleepSessionEntity(
     val cueRingtoneUri: String? = null,
 
     // Автоопределение засыпания.
+    /** Safety wake fixed when an automatic night is armed; never derived from later profile edits. */
+    val automationSafetyWakeTime: Long? = null,
     val detectedSleepOnsetTime: Long? = null,
     val detectedOnsetLatencyMinutes: Int? = null,
     val detectedOnsetConfidencePercent: Int? = null,

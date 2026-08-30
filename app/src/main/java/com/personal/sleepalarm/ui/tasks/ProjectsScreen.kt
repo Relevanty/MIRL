@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.tasks
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.model.effectiveWorkBudgetMinutes
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -88,8 +92,11 @@ internal fun ProjectsScreen(
                 }
             }
             items(ordered, key = ProjectEntity::id) { project ->
-                val linked = tasks.filter { it.projectId == project.id && !it.isDone }
-                val budgetMillis = project.workBudgetMinutes * 60_000L
+                val projectTasks = tasks.filter { it.projectId == project.id }
+                val linked = projectTasks.filterNot(TaskEntity::isDone)
+                val budgetMinutes = project.workBudgetMinutes.takeIf { it > 0 }
+                    ?: projectTasks.sumOf(TaskEntity::effectiveWorkBudgetMinutes)
+                val budgetMillis = budgetMinutes * 60_000L
                 val progress = if (budgetMillis > 0L) (project.spentMillis.toFloat() / budgetMillis).coerceIn(0f, 1f) else 0f
                 Card(
                     onClick = { editing = project },
@@ -117,7 +124,7 @@ internal fun ProjectsScreen(
                                 stringResource(
                                     R.string.projects_progress,
                                     project.spentMillis / 60_000L,
-                                    project.workBudgetMinutes,
+                                    budgetMinutes,
                                     ((budgetMillis - project.spentMillis).coerceAtLeast(0L) / 60_000L)
                                 ),
                                 style = MaterialTheme.typography.labelSmall,
@@ -128,13 +135,13 @@ internal fun ProjectsScreen(
                             Text(
                                 stringResource(R.string.projects_deadline, formatProjectDate(it)),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.appAccents.work.color
                             )
                         }
                         Text(stringResource(R.string.projects_open_tasks, linked.size), style = MaterialTheme.typography.labelMedium)
                         linked.take(4).forEach { task ->
                             TextButton(onClick = { onOpenTask(task) }) {
-                                Text("• " + task.title.ifBlank { task.description }.take(70), maxLines = 2)
+                                Text("• " + task.primaryLabel().take(70), maxLines = 2)
                             }
                         }
                     }

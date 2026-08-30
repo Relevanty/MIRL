@@ -90,8 +90,12 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
 import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.calculator.CalendarActivityCalculator
+import com.personal.sleepalarm.domain.calculator.effectiveActivityEndMillis
 import com.personal.sleepalarm.ui.activity.ManualActivitySheet
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
+import com.personal.sleepalarm.ui.theme.appAccents
 import kotlinx.coroutines.CancellationException
 import java.time.Instant
 import java.time.LocalDate
@@ -109,6 +113,9 @@ fun CalendarScreen(
     onBack: (() -> Unit)? = null,
     onOpenTask: (Int) -> Unit = {},
     onStartFocus: (Int) -> Unit = {},
+    openEventId: Int? = null,
+    openOccurrenceStart: Long? = null,
+    openRequestToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val events by viewModel.events.collectAsStateWithLifecycle()
@@ -118,9 +125,7 @@ fun CalendarScreen(
     val sleepSessions by viewModel.sleepSessions.collectAsStateWithLifecycle()
     val milestones by viewModel.milestones.collectAsStateWithLifecycle()
     val actualByDay = remember(actualActivities) {
-        val zone = ZoneId.systemDefault()
-        actualActivities.groupBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate().toString() }
-            .mapValues { (_, records) -> records.sumOf(ActivityRecordEntity::durationMillis) }
+        CalendarActivityCalculator.millisByDate(actualActivities, ZoneId.systemDefault())
     }
 
     var month by remember { mutableStateOf(YearMonth.now()) }
@@ -130,6 +135,14 @@ fun CalendarScreen(
     var editingEvent by remember { mutableStateOf<CalendarEventEntity?>(null) }
     var manualStartMillis by remember { mutableStateOf<Long?>(null) }
     var editingActivity by remember { mutableStateOf<ActivityRecordEntity?>(null) }
+
+    LaunchedEffect(openEventId, openOccurrenceStart, openRequestToken, events) {
+        val event = events.firstOrNull { it.id == openEventId } ?: return@LaunchedEffect
+        val occurrence = openOccurrenceStart ?: event.startMillis
+        val date = Instant.ofEpochMilli(occurrence).atZone(ZoneId.systemDefault()).toLocalDate()
+        month = YearMonth.from(date)
+        selectedDate = date
+    }
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -180,7 +193,7 @@ fun CalendarScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             IconButton(onClick = { month = month.minusMonths(1) }) {
-                Icon(Icons.Default.ChevronLeft, null, tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.ChevronLeft, null, tint = MaterialTheme.appAccents.focus.color)
             }
             Text(
                 text = month.month.getDisplayName(TextStyle.FULL, Locale.getDefault()) + " " + month.year,
@@ -188,7 +201,7 @@ fun CalendarScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
             IconButton(onClick = { month = month.plusMonths(1) }) {
-                Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.appAccents.focus.color)
             }
         }
 
@@ -225,10 +238,11 @@ fun CalendarScreen(
                             modifier = Modifier.weight(1f),
                             day = day,
                             isToday = day.date == today,
-                            studyMillis = actualByDay[day.date.toString()] ?: 0L,
+                            actualMillis = actualByDay[day.date] ?: 0L,
                             events = eventsOn(events, day.date),
                             markers = buildList {
                                 tasks.filter { task ->
+                                    !task.isDone &&
                                     task.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() == day.date } == true
                                 }.take(1).forEach { add("Срок задачи") }
                                 sleepSessions.filter { session ->
@@ -262,20 +276,30 @@ fun CalendarScreen(
                 val dayEvents = eventsOn(events, date)
                 val dayActivities = activitiesOn(actualActivities, date)
                 val dayDeadlines = tasks.filter { task ->
-                    task.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() == date } == true
+                    !task.isDone && task.dueAtMillis?.let {
+                        Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() == date
+                    } == true
                 }
                 val daySleeps = sleepSessions.filter { session ->
                     val wake = session.actualWakeTime ?: session.estimatedWakeTime
                     Instant.ofEpochMilli(wake).atZone(ZoneId.systemDefault()).toLocalDate() == date
                 }
-                val dayMilestones = milestones.filter { it.targetDate == date.toString() }
+                val dayMilestones = milestones.filter { milestone ->
+                    milestone.targetDate == date.toString() &&
+                        (milestone.taskId == null || tasks.firstOrNull { it.id == milestone.taskId }?.isDone == false)
+                }
                 if (dayActivities.isNotEmpty()) {
                     Text(
                         stringResource(R.string.activity_history),
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.appAccents.focus.color
                     )
                     dayActivities.forEach { activity ->
+                        val activityTone = when (activity.activityType) {
+                            com.personal.sleepalarm.domain.model.FocusActivityType.STUDY -> MaterialTheme.appAccents.study
+                            com.personal.sleepalarm.domain.model.FocusActivityType.WORK -> MaterialTheme.appAccents.work
+                            com.personal.sleepalarm.domain.model.FocusActivityType.OTHER -> MaterialTheme.appAccents.other
+                        }
                         Surface(
                             onClick = {
                                 if (activity.source == "MANUAL") {
@@ -285,7 +309,8 @@ fun CalendarScreen(
                             },
                             modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                             shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                            color = activityTone.container.copy(alpha = 0.82f),
+                            contentColor = activityTone.onContainer
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
@@ -294,18 +319,24 @@ fun CalendarScreen(
                                 Icon(Icons.Default.Timer, null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(activity.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        activity.taskId?.let { taskId ->
+                                            tasks.firstOrNull { it.id == taskId }?.primaryLabel()
+                                        } ?: activity.title,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                     Text(
                                         activityTimeLabel(activity),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = activityTone.onContainer.copy(alpha = 0.76f)
                                     )
                                 }
                                 if (activity.source == "MANUAL") {
                                     Text(
                                         stringResource(R.string.activity_added_manually),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.tertiary
+                                        color = activityTone.onContainer
                                     )
                                 }
                             }
@@ -319,7 +350,7 @@ fun CalendarScreen(
                     Text(
                         "Сон · ${formatDuration((wake - onset).coerceAtLeast(0L))}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = MaterialTheme.appAccents.sleep.color,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
@@ -327,7 +358,7 @@ fun CalendarScreen(
                     Text(
                         "Этап · ${milestone.title}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.secondary,
+                        color = MaterialTheme.appAccents.success.color,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
@@ -335,11 +366,12 @@ fun CalendarScreen(
                     Surface(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                         shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                        color = MaterialTheme.appAccents.urgent.container.copy(alpha = 0.82f),
+                        contentColor = MaterialTheme.appAccents.urgent.onContainer
                     ) {
                         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "Срок · ${task.title.ifBlank { task.description.ifBlank { "Задача ${task.id}" } }}",
+                                "Срок · ${task.primaryLabel()}",
                                 modifier = Modifier.weight(1f),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
@@ -377,7 +409,7 @@ fun CalendarScreen(
                                     text = time,
                                     modifier = Modifier.padding(end = 8.dp),
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.appAccents.work.color,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -412,24 +444,24 @@ fun CalendarScreen(
                                 showEditor = true
                             }) {
                                 Icon(Icons.Default.Edit, null,
-                                    tint = MaterialTheme.colorScheme.primary)
+                                    tint = MaterialTheme.appAccents.work.color)
                             }
-                            ev.taskId?.let { taskId ->
+                            ev.taskId?.let { taskId -> tasks.firstOrNull { it.id == taskId && !it.isDone } }?.let { task ->
                                 IconButton(onClick = {
                                     selectedDate = null
-                                    onOpenTask(taskId)
+                                    onOpenTask(task.id)
                                 }) {
                                     Icon(Icons.Default.Checklist, "Открыть задачу")
                                 }
                                 IconButton(onClick = {
                                     selectedDate = null
-                                    onStartFocus(taskId)
+                                    onStartFocus(task.id)
                                 }) {
                                     Icon(Icons.Default.PlayArrow, "Начать фокус")
                                 }
                             }
                             IconButton(onClick = { viewModel.deleteEvent(ev.id) }) {
-                                Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Default.Delete, null, tint = MaterialTheme.appAccents.urgent.color)
                             }
                         }
                     }
@@ -439,7 +471,7 @@ fun CalendarScreen(
                 Text(
                     stringResource(R.string.activity_add_spent),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.appAccents.work.color
                 )
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val now = ZonedDateTime.now()
@@ -481,7 +513,7 @@ fun CalendarScreen(
                     Icon(
                         Icons.Default.Add,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.appAccents.focus.color,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(8.dp))
@@ -508,7 +540,9 @@ fun CalendarScreen(
 
 private fun activitiesOn(records: List<ActivityRecordEntity>, date: LocalDate): List<ActivityRecordEntity> {
     val zone = ZoneId.systemDefault()
-    return records.filter { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate() == date }
+    val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
+    val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    return records.filter { it.startedAt < end && it.effectiveActivityEndMillis() > start }
         .sortedBy(ActivityRecordEntity::startedAt)
 }
 
@@ -539,7 +573,7 @@ private fun DayCell(
     modifier: Modifier = Modifier,
     day: MonthDay,
     isToday: Boolean,
-    studyMillis: Long,
+    actualMillis: Long,
     events: List<CalendarEventEntity>,
     markers: List<String>,
     onClick: () -> Unit
@@ -558,7 +592,7 @@ private fun DayCell(
             .border(
                 width = if (isToday) 1.2.dp else 0.55.dp,
                 color = if (isToday) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                    MaterialTheme.appAccents.focus.color.copy(alpha = 0.75f)
                 } else {
                     MaterialTheme.colorScheme.outlineVariant.copy(
                         alpha = if (day.inMonth) 0.44f else 0.22f
@@ -575,7 +609,7 @@ private fun DayCell(
                 .size(26.dp)
                 .clip(CircleShape)
                 .background(
-                    if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent
+                    if (isToday) MaterialTheme.appAccents.focus.color else Color.Transparent
                 ),
             contentAlignment = Alignment.Center
         ) {
@@ -583,15 +617,15 @@ private fun DayCell(
                 text = day.date.dayOfMonth.toString(),
                 style = MaterialTheme.typography.bodySmall,
                 color = when {
-                    isToday -> MaterialTheme.colorScheme.onPrimary
+                    isToday -> MaterialTheme.appAccents.focus.onColor
                     day.inMonth -> MaterialTheme.colorScheme.onBackground
                     else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 }
             )
         }
 
-        if (studyMillis > 0) {
-            StudyChip(studyMillis)
+        if (actualMillis > 0) {
+            ActivityDurationChip(actualMillis)
         }
 
         events.take(3).forEach { ev -> EventChip(ev.title) }
@@ -607,13 +641,14 @@ private fun DayCell(
 }
 
 @Composable
-private fun StudyChip(millis: Long) {
+private fun ActivityDurationChip(millis: Long) {
+    val tone = MaterialTheme.appAccents.work
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 2.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
+            .background(tone.container)
             .padding(horizontal = 4.dp, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
@@ -621,13 +656,13 @@ private fun StudyChip(millis: Long) {
         Icon(
             Icons.Default.Timer, null,
             modifier = Modifier.size(9.dp),
-            tint = MaterialTheme.colorScheme.secondary
+            tint = tone.color
         )
         Spacer(Modifier.width(2.dp))
         Text(
             formatDuration(millis),
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-            color = MaterialTheme.colorScheme.secondary,
+            color = tone.color,
             maxLines = 1
         )
     }
@@ -635,16 +670,17 @@ private fun StudyChip(millis: Long) {
 
 @Composable
 private fun EventChip(title: String) {
+    val tone = MaterialTheme.appAccents.focus
     Text(
         text = title,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 2.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer)
+            .background(tone.container)
             .padding(horizontal = 4.dp, vertical = 1.dp),
         style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-        color = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = tone.onContainer,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
     )
@@ -692,8 +728,11 @@ private fun EventEditor(
         )
     }
     var repeat by remember { mutableStateOf(initial?.repeatRule ?: "none") }
-    // ДЕФОЛТ: 30 минут, если напоминание не задано явно
-    var reminder by remember { mutableStateOf<Int?>(initial?.reminderMinutes ?: 30) }
+    // Новый event получает удобный default, но существующий event без
+    // напоминания должен оставаться без него после обычного редактирования.
+    var reminder by remember {
+        mutableStateOf<Int?>(if (initial == null) 30 else initial.reminderMinutes)
+    }
     var selectedTaskId by remember { mutableStateOf(initial?.taskId) }
 
     var showStart by remember { mutableStateOf(false) }
@@ -713,26 +752,30 @@ private fun EventEditor(
         else -> stringResource(R.string.calendar_reminder_minutes, reminder ?: 0)
     }
 
+    val startMillis = start.toInstant().toEpochMilli()
+    val endMillis = if (allDay) {
+        start.toLocalDate().atTime(23, 59).atZone(zone).toInstant().toEpochMilli()
+    } else {
+        end.toInstant().toEpochMilli()
+    }
+    val isRangeValid = endMillis > startMillis
     val saveEvent = {
-        val endMillis = if (allDay) {
-            start.toLocalDate().atTime(23, 59).atZone(zone).toInstant().toEpochMilli()
-        } else {
-            end.toInstant().toEpochMilli()
-        }
-        onSave(
-            CalendarEventEntity(
-                id = initial?.id ?: 0,
-                title = title.trim(),
-                startMillis = start.toInstant().toEpochMilli(),
-                endMillis = endMillis,
-                allDay = allDay,
-                repeatRule = repeat,
-                reminderMinutes = reminder,
-                taskId = selectedTaskId,
-                projectId = tasks.firstOrNull { it.id == selectedTaskId }?.projectId,
-                eventKind = "PLANNED"
+        if (isRangeValid) {
+            onSave(
+                CalendarEventEntity(
+                    id = initial?.id ?: 0,
+                    title = title.trim(),
+                    startMillis = startMillis,
+                    endMillis = endMillis,
+                    allDay = allDay,
+                    repeatRule = repeat,
+                    reminderMinutes = reminder,
+                    taskId = selectedTaskId,
+                    projectId = tasks.firstOrNull { it.id == selectedTaskId }?.projectId,
+                    eventKind = "PLANNED"
+                )
             )
-        )
+        }
     }
 
     Column(
@@ -751,7 +794,7 @@ private fun EventEditor(
                 Icon(
                     Icons.Default.ArrowBack,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.appAccents.work.color
                 )
             }
         }
@@ -780,7 +823,7 @@ private fun EventEditor(
                     onClick = { selectedTaskId = task.id },
                     label = {
                         Text(
-                            task.title.ifBlank { task.description.ifBlank { "Задача ${task.id}" } },
+                            task.primaryLabel(),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -808,9 +851,18 @@ private fun EventEditor(
             }
         }
 
+        if (!isRangeValid) {
+            Text(
+                text = stringResource(R.string.calendar_error_end_after_start),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.appAccents.warning.color,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+
         Button(
             onClick = saveEvent,
-            enabled = title.isNotBlank(),
+            enabled = title.isNotBlank() && isRangeValid,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(58.dp),
@@ -1163,7 +1215,7 @@ private fun TimeSheet(
                     .padding(top = 28.dp, bottom = 16.dp),
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.focus.color
             )
 
             Row(
@@ -1230,7 +1282,7 @@ private fun <T> OptionSheet(
                     Text(label, color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.weight(1f))
                     if (v == current) {
-                        Text("✓", color = MaterialTheme.colorScheme.primary,
+                        Text("✓", color = MaterialTheme.appAccents.success.color,
                             fontWeight = FontWeight.Bold)
                     }
                 }

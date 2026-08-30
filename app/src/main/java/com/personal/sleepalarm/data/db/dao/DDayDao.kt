@@ -42,8 +42,10 @@ interface DDayDao {
     /** Ближайшее событие, которое ещё не прошло (targetDate >= сегодня). */
     @Query(
         """
-        SELECT * FROM dday_events
+        SELECT dday_events.* FROM dday_events
+        LEFT JOIN tasks ON tasks.id = dday_events.taskId
         WHERE targetDate >= :today
+          AND (dday_events.taskId IS NULL OR tasks.isDone = 0)
         ORDER BY targetDate ASC
         LIMIT 1
         """
@@ -53,8 +55,10 @@ interface DDayDao {
     /** Ближайшее будущее событие (для брифинга). */
     @Query(
         """
-        SELECT * FROM dday_events
+        SELECT dday_events.* FROM dday_events
+        LEFT JOIN tasks ON tasks.id = dday_events.taskId
         WHERE targetDate >= :today
+          AND (dday_events.taskId IS NULL OR tasks.isDone = 0)
         ORDER BY targetDate ASC
         LIMIT 1
         """
@@ -63,4 +67,37 @@ interface DDayDao {
 
     @Query("SELECT * FROM dday_events WHERE id = :id")
     suspend fun getById(id: Int): DDayEntity?
+
+    @Query(
+        """
+        UPDATE dday_events
+        SET title = CASE
+            WHEN TRIM(title) = '' OR title = :oldTaskLabel THEN :newTaskLabel
+            ELSE title
+        END
+        WHERE taskId = :taskId
+        """
+    )
+    suspend fun syncTaskTitle(taskId: Int, oldTaskLabel: String, newTaskLabel: String)
+
+    @Query(
+        """
+        UPDATE dday_events
+        SET targetDate = :targetDate
+        WHERE taskId = :taskId AND :targetDate IS NOT NULL
+        """
+    )
+    suspend fun syncTaskDeadline(taskId: Int, targetDate: String?)
+
+    @Query("UPDATE dday_events SET taskId = NULL WHERE taskId = :taskId")
+    suspend fun detachTask(taskId: Int)
+
+    @Query(
+        """
+        UPDATE dday_events SET taskId = NULL
+        WHERE taskId IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = dday_events.taskId)
+        """
+    )
+    suspend fun detachMissingTasks()
 }

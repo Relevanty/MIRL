@@ -6,5 +6,9 @@ package com.personal.sleepalarm.domain.model
 enum class MathDifficulty {
     EASY,
     MEDIUM,
-    HARD
+    HARD,
+    /** Linear equations, proportions, systems, roots and simple quadratics. */
+    EXPERT,
+    /** Advanced algebra, powers, logarithms and basic trigonometry. */
+    EXTREME
 }

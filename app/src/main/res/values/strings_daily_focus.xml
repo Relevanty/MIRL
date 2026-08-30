@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="daily_focus_bout_label">Длительность захода</string>
+    <string name="daily_focus_bout_help">Один непрерывный фокус-цикл. Таймер предложит это время при старте задачи.</string>
+    <string name="daily_focus_daily_target_label">Фокус-сессия</string>
+    <string name="daily_focus_daily_target_value">%1$d мин/день</string>
+    <string name="daily_focus_daily_target_help">Сколько времени уделять задаче за календарный день. Прогресс сбрасывается в 00:00.</string>
+    <string name="daily_focus_required_label">Учитывать в обязательном плане</string>
+    <string name="daily_focus_required_help">Каждый день, пока задача активна, MIRL учитывает невыполненную норму в утреннем плане и срочности. По умолчанию выключено.</string>
+    <string name="daily_focus_required_badge">Обязательно</string>
+    <string name="daily_focus_today_title">Сегодня</string>
+    <string name="daily_focus_today_value">%1$d/%2$d мин</string>
+    <string name="daily_focus_today_remaining">Осталось сегодня: %1$d мин</string>
+    <string name="daily_focus_today_done">Дневная норма выполнена</string>
+    <string name="daily_focus_bout_value">Заход: %1$d/%2$d мин</string>
+    <string name="daily_focus_bout_duration">Заход: %1$d мин</string>
+    <string name="daily_focus_total_unlimited">Общий лимит не задан</string>
+    <string name="daily_focus_total_spent_unlimited">Всего %1$d мин · общий лимит не задан</string>
+    <string name="daily_focus_home_budget_exhausted">Общий бюджет задачи исчерпан</string>
+    <string name="daily_focus_home_remaining_bout">Осталось %1$s · заход %2$d мин</string>
+    <string name="daily_focus_home_bout">Заход %1$d мин</string>
+    <string name="daily_focus_stats_unlimited">Общий лимит не задан · факт %1$s · %2$d фокусов · %3$d вручную · квадрат %4$d</string>
+</resources>

@@ -22,6 +22,8 @@ class ReminderReceiver : BroadcastReceiver() {
         const val ACTION_SNOOZE = ReminderScheduler.ACTION_SNOOZE
         const val ACTION_SNOOZE_FIRE = ReminderScheduler.ACTION_SNOOZE_FIRE
         const val EXTRA_REMINDER_ID = ReminderScheduler.EXTRA_REMINDER_ID
+        private const val ALARM_EARLY_TOLERANCE_MS = 30_000L
+        private const val MAX_LATE_DELIVERY_MS = 30L * 60L * 1000L
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -52,14 +54,33 @@ class ReminderReceiver : BroadcastReceiver() {
                         }
                         if (!loadedReminder.isEnabled) {
                             Log.d(TAG, "reminder $reminderId disabled, skip")
+                            scheduler.cancel(reminderId)
+                            builder.cancelPre(reminderId)
+                            builder.cancelFire(reminderId)
+                            return@launch
+                        }
+                        if (!repository.isSchedulable(loadedReminder)) {
+                            Log.d(TAG, "reminder $reminderId no longer has a live target, skip")
+                            scheduler.cancel(reminderId)
+                            builder.cancelPre(reminderId)
+                            builder.cancelFire(reminderId)
                             return@launch
                         }
 
                         val reminder = repository.refreshDynamic(loadedReminder)
-                        val dueWindow = if (action == ACTION_PRE) ReminderScheduler.PRE_LEAD_MS else 30_000L
-                        if (reminder.nextTriggerTime > System.currentTimeMillis() + dueWindow + 30_000L) {
+                        val expectedAlarmTime = reminder.nextTriggerTime -
+                            if (action == ACTION_PRE) ReminderScheduler.PRE_LEAD_MS else 0L
+                        val now = System.currentTimeMillis()
+                        if (expectedAlarmTime > now + ALARM_EARLY_TOLERANCE_MS) {
                             scheduler.schedule(reminder)
                             Log.d(TAG, "dynamic condition moved, rescheduled")
+                            return@launch
+                        }
+                        if (now - expectedAlarmTime > MAX_LATE_DELIVERY_MS) {
+                            scheduler.cancel(reminderId)
+                            builder.cancelPre(reminderId)
+                            builder.cancelFire(reminderId)
+                            Log.d(TAG, "stale alarm delivery skipped")
                             return@launch
                         }
 
@@ -122,4 +143,5 @@ class ReminderReceiver : BroadcastReceiver() {
             else -> Log.w(TAG, "unknown action: $action")
         }
     }
+
 }

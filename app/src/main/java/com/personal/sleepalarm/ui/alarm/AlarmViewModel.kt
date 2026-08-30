@@ -3,6 +3,7 @@ package com.personal.sleepalarm.ui.alarm
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.alarm.AlarmScheduler
@@ -11,12 +12,17 @@ import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
 import com.personal.sleepalarm.data.repository.MoodRepository
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
+import com.personal.sleepalarm.data.preferences.BriefingPreference
+import com.personal.sleepalarm.data.preferences.DailyPlanNudgePreferences
 import com.personal.sleepalarm.domain.model.DismissType
+import com.personal.sleepalarm.domain.math.MathChallengeRunEffect
+import com.personal.sleepalarm.domain.math.MathChallengeRunEngine
+import com.personal.sleepalarm.domain.math.MathChallengeRunState
 import com.personal.sleepalarm.domain.model.MathChallenge
+import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.service.BriefingTextBuilder
 import com.personal.sleepalarm.service.SleepForegroundService
 import com.personal.sleepalarm.service.SleepNotificationBuilder
-import com.personal.sleepalarm.util.MathChallengeGenerator
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -44,6 +50,9 @@ data class AlarmUiState(
     val challenge: MathChallenge? = null,
     val userInput: String = "",
     val isAnswerCorrect: Boolean = false,
+    val challengeIndex: Int = 0,
+    val challengeCount: Int = 1,
+    val isAdvancingChallenge: Boolean = false,
     val wrongAttempts: Int = 0,
     val showHint: Boolean = false,
     val errorMessage: String? = null,
@@ -68,6 +77,14 @@ sealed interface AlarmEvent {
     data object Finish : AlarmEvent
 }
 
+internal fun shouldIgnoreAlarmStart(
+    alreadyStarted: Boolean,
+    currentSessionId: Int?,
+    requestedSessionId: Int?
+): Boolean = alreadyStarted && (
+    requestedSessionId == null || currentSessionId == requestedSessionId
+)
+
 /**
  * ViewModel экрана будильника.
  *
@@ -82,12 +99,15 @@ sealed interface AlarmEvent {
  * Существующая логика (задача, dismiss, snooze, сохранение actualWakeTime) НЕ сломана.
  */
 class AlarmViewModel(
-    application: Application
+    application: Application,
+    private val savedStateHandle: SavedStateHandle
 ) : AndroidViewModel(application) {
 
     private val context = application.applicationContext
 
     private val database = AppDatabase.getInstance(context)
+    private val briefingPreference = BriefingPreference(context)
+    private val dailyPlanNudgePreferences = DailyPlanNudgePreferences(context)
 
     private val profileRepository = SleepProfileRepository(
         profileDao = database.alarmProfileDao()
@@ -112,9 +132,12 @@ class AlarmViewModel(
     private val moodRepository = MoodRepository(database.moodEntryDao())
     private val briefingTextBuilder = BriefingTextBuilder(
         calendarEventDao = database.calendarEventDao(),
+        activityRecordDao = database.activityRecordDao(),
         studySessionDao = database.studySessionDao(),
         ddayDao = database.ddayDao(),
-        sessionDao = database.sleepSessionDao()
+        sessionDao = database.sleepSessionDao(),
+        taskDao = database.taskDao(),
+        alarmProfileDao = database.alarmProfileDao()
     )
 
     private val _state = MutableStateFlow(AlarmUiState())
@@ -134,6 +157,8 @@ class AlarmViewModel(
 
     // ДОБАВЛЕНО (F10): корутина умных повторов.
     private var smartRepeatJob: Job? = null
+    private var challengeAdvanceJob: Job? = null
+    private var challengeRun: MathChallengeRunState? = null
 
     /**
      * Запускает экран будильника для sessionId.
@@ -143,7 +168,10 @@ class AlarmViewModel(
     fun startAlarm(sessionId: Int) {
         val targetSessionId = sessionId.takeIf { it >= 0 }
 
-        if (started && _state.value.sessionId == targetSessionId) {
+        // AlarmActivity can be recreated with the legacy -1 extra. In that case targetSessionId is
+        // null while state already contains the resolved active id; restarting here would reset the
+        // sound service and the in-progress maths sequence.
+        if (shouldIgnoreAlarmStart(started, _state.value.sessionId, targetSessionId)) {
             return
         }
 
@@ -172,9 +200,15 @@ class AlarmViewModel(
 
             val profile = profileRepository.getProfile()
 
-            val challenge = MathChallengeGenerator.generate(
-                difficulty = profile.mathDifficulty
+            challengeAdvanceJob?.cancel()
+            val run = restoreOrCreateChallengeRun(
+                sessionId = session.id,
+                estimatedWakeTime = session.estimatedWakeTime,
+                profileDifficulty = profile.mathDifficulty,
+                profileChallengeCount = profile.mathChallengeCount
             )
+            challengeRun = run
+            persistChallengeRun(session.id, run)
 
             // ДОБАВЛЕНО (F2): парсим пользовательскую мелодию.
             val customUri = profile.alarmRingtoneUri?.let { raw ->
@@ -184,11 +218,14 @@ class AlarmViewModel(
             _state.value = AlarmUiState(
                 sessionId = session?.id,
                 session = session,
-                challenge = challenge,
-                userInput = "",
-                isAnswerCorrect = false,
-                wrongAttempts = 0,
-                showHint = false,
+                challenge = run.currentChallenge,
+                userInput = run.userInput,
+                isAnswerCorrect = run.isComplete,
+                challengeIndex = run.currentIndex,
+                challengeCount = run.challengeCount,
+                isAdvancingChallenge = run.isTransitioning,
+                wrongAttempts = run.wrongAttempts,
+                showHint = run.wrongAttempts >= MAX_WRONG_ATTEMPTS_BEFORE_HINT,
                 errorMessage = null,
                 isProcessing = false,
                 snoozeConfirmVisible = false,
@@ -205,11 +242,15 @@ class AlarmViewModel(
                 repeatsExhausted = false
             )
 
+            if (run.isTransitioning) {
+                scheduleChallengeAdvance()
+            }
+
             // Foreground service держит звук и вибрацию независимо от Activity.
             SleepForegroundService.triggerAlarm(context, session.id)
 
             // ДОБАВЛЕНО (F10): умные повторы.
-            if (profile.smartRepeatEnabled) {
+            if (profile.smartRepeatEnabled && !run.isComplete) {
                 startSmartRepeat(
                     firstDelayMinutes = profile.smartRepeatFirstDelayMinutes,
                     intervalMinutes = profile.smartRepeatIntervalMinutes,
@@ -224,60 +265,153 @@ class AlarmViewModel(
      * Обновляет пользовательский ввод.
      */
     fun onInputChanged(text: String) {
-        if (_state.value.isAnswerCorrect) {
-            return
-        }
-
-        val digitsOnly = text.filter { it.isDigit() }.take(4)
-
-        _state.value = _state.value.copy(
-            userInput = digitsOnly,
-            errorMessage = null
-        )
+        val currentRun = challengeRun ?: return
+        val updated = MathChallengeRunEngine.updateInput(currentRun, text)
+        if (updated == currentRun) return
+        challengeRun = updated
+        _state.value = _state.value.copy(userInput = updated.userInput, errorMessage = null)
+        _state.value.sessionId?.let { persistChallengeRun(it, updated) }
     }
 
     /**
      * Проверяет ответ.
      *
-     * При правильном ответе немедленно останавливает повторы и вибрацию,
-     * чтобы между «верно» и нажатием «Выключить» будильник не продолжал давить.
+     * Промежуточный правильный ответ только переводит серию к следующей задаче. Повторы и
+     * вибрация останавливаются после последней задачи, когда становится доступно выключение.
      */
     fun checkAnswer() {
         val currentState = _state.value
-        val challenge = currentState.challenge ?: return
+        val currentRun = challengeRun ?: return
 
-        if (currentState.isAnswerCorrect || currentState.isProcessing) {
+        if (
+            currentState.isAnswerCorrect ||
+            currentState.isAdvancingChallenge ||
+            currentState.isProcessing
+        ) {
             return
         }
 
-        val input = currentState.userInput.toIntOrNull()
+        val update = MathChallengeRunEngine.check(currentRun)
+        val updatedRun = update.state
+        challengeRun = updatedRun
 
-        if (input == null) {
-            _state.value = currentState.copy(
-                errorMessage = context.getString(R.string.alarm_error_empty_answer)
+        val errorMessage = when (val effect = update.effect) {
+            is MathChallengeRunEffect.Invalid -> context.getString(
+                if (effect.reason == com.personal.sleepalarm.domain.model.MathAnswerParseError.EMPTY) {
+                    R.string.alarm_error_empty_answer
+                } else {
+                    R.string.alarm_error_answer_format
+                }
             )
-            return
+            MathChallengeRunEffect.Incorrect -> context.getString(R.string.alarm_wrong_answer)
+            else -> null
         }
 
-        if (input == challenge.answer) {
-            // ДОБАВЛЕНО: правильный ответ → тишина по повторам и вибрации.
-            stopSmartRepeat()
-            SleepForegroundService.stopAlarmVibration(context)
+        _state.value = currentState.copy(
+            challenge = updatedRun.currentChallenge,
+            userInput = updatedRun.userInput,
+            isAnswerCorrect = updatedRun.isComplete,
+            challengeIndex = updatedRun.currentIndex,
+            challengeCount = updatedRun.challengeCount,
+            isAdvancingChallenge = updatedRun.isTransitioning,
+            wrongAttempts = updatedRun.wrongAttempts,
+            showHint = updatedRun.wrongAttempts >= MAX_WRONG_ATTEMPTS_BEFORE_HINT,
+            errorMessage = errorMessage,
+            nextRepeatAtMillis = if (updatedRun.isComplete) null else currentState.nextRepeatAtMillis
+        )
+        currentState.sessionId?.let { persistChallengeRun(it, updatedRun) }
 
-            _state.value = currentState.copy(
-                isAnswerCorrect = true,
-                errorMessage = null,
-                nextRepeatAtMillis = null
-            )
-        } else {
-            val attempts = currentState.wrongAttempts + 1
+        when (update.effect) {
+            MathChallengeRunEffect.Advance -> scheduleChallengeAdvance()
+            MathChallengeRunEffect.Completed -> {
+                // Only the final solved task may stop repeat escalation and unlock dismiss.
+                stopSmartRepeat()
+                SleepForegroundService.stopAlarmVibration(context)
+            }
+            else -> Unit
+        }
+    }
 
-            _state.value = currentState.copy(
-                wrongAttempts = attempts,
-                showHint = attempts >= MAX_WRONG_ATTEMPTS_BEFORE_HINT,
-                errorMessage = context.getString(R.string.alarm_wrong_answer)
+    private fun scheduleChallengeAdvance() {
+        challengeAdvanceJob?.cancel()
+        challengeAdvanceJob = viewModelScope.launch {
+            delay(CHALLENGE_ADVANCE_DELAY_MS)
+            if (_state.value.isProcessing) return@launch
+
+            val currentRun = challengeRun ?: return@launch
+            val advanced = MathChallengeRunEngine.advance(currentRun)
+            if (advanced == currentRun) return@launch
+
+            challengeRun = advanced
+            _state.update { state ->
+                state.copy(
+                    challenge = advanced.currentChallenge,
+                    userInput = advanced.userInput,
+                    isAnswerCorrect = advanced.isComplete,
+                    challengeIndex = advanced.currentIndex,
+                    challengeCount = advanced.challengeCount,
+                    isAdvancingChallenge = advanced.isTransitioning,
+                    wrongAttempts = advanced.wrongAttempts,
+                    showHint = false,
+                    errorMessage = null
+                )
+            }
+            _state.value.sessionId?.let { persistChallengeRun(it, advanced) }
+        }
+    }
+
+    private fun restoreOrCreateChallengeRun(
+        sessionId: Int,
+        estimatedWakeTime: Long,
+        profileDifficulty: MathDifficulty,
+        profileChallengeCount: Int
+    ): MathChallengeRunState {
+        val savedSessionId = savedStateHandle.get<Int>(KEY_RUN_SESSION_ID)
+        if (savedSessionId != sessionId) {
+            return MathChallengeRunEngine.start(
+                difficulty = profileDifficulty,
+                challengeCount = profileChallengeCount,
+                seed = alarmRunSeed(sessionId, estimatedWakeTime)
             )
         }
+
+        val difficulty = savedStateHandle.get<String>(KEY_RUN_DIFFICULTY)
+            ?.let { name -> runCatching { MathDifficulty.valueOf(name) }.getOrNull() }
+            ?: profileDifficulty
+        return MathChallengeRunEngine.restore(
+            difficulty = difficulty,
+            challengeCount = savedStateHandle.get<Int>(KEY_RUN_COUNT) ?: profileChallengeCount,
+            seed = savedStateHandle.get<Int>(KEY_RUN_SEED)
+                ?: alarmRunSeed(sessionId, estimatedWakeTime),
+            currentIndex = savedStateHandle.get<Int>(KEY_RUN_INDEX) ?: 0,
+            completedCount = savedStateHandle.get<Int>(KEY_RUN_COMPLETED) ?: 0,
+            userInput = savedStateHandle.get<String>(KEY_RUN_INPUT).orEmpty(),
+            wrongAttempts = savedStateHandle.get<Int>(KEY_RUN_WRONG) ?: 0,
+            totalWrongAttempts = savedStateHandle.get<Int>(KEY_RUN_TOTAL_WRONG) ?: 0,
+            totalAttempts = savedStateHandle.get<Int>(KEY_RUN_TOTAL_ATTEMPTS) ?: 0,
+            isTransitioning = savedStateHandle.get<Boolean>(KEY_RUN_TRANSITIONING) ?: false,
+            isComplete = savedStateHandle.get<Boolean>(KEY_RUN_COMPLETE) ?: false
+        )
+    }
+
+    private fun persistChallengeRun(sessionId: Int, run: MathChallengeRunState) {
+        savedStateHandle[KEY_RUN_SESSION_ID] = sessionId
+        savedStateHandle[KEY_RUN_DIFFICULTY] = run.difficulty.name
+        savedStateHandle[KEY_RUN_COUNT] = run.challengeCount
+        savedStateHandle[KEY_RUN_SEED] = run.seed
+        savedStateHandle[KEY_RUN_INDEX] = run.currentIndex
+        savedStateHandle[KEY_RUN_COMPLETED] = run.completedCount
+        savedStateHandle[KEY_RUN_INPUT] = run.userInput
+        savedStateHandle[KEY_RUN_WRONG] = run.wrongAttempts
+        savedStateHandle[KEY_RUN_TOTAL_WRONG] = run.totalWrongAttempts
+        savedStateHandle[KEY_RUN_TOTAL_ATTEMPTS] = run.totalAttempts
+        savedStateHandle[KEY_RUN_TRANSITIONING] = run.isTransitioning
+        savedStateHandle[KEY_RUN_COMPLETE] = run.isComplete
+    }
+
+    private fun alarmRunSeed(sessionId: Int, estimatedWakeTime: Long): Int {
+        val mixed = estimatedWakeTime xor (sessionId.toLong() shl 32)
+        return (mixed xor (mixed ushr 32)).toInt()
     }
 
     fun showSnoozeConfirmation() {
@@ -312,6 +446,17 @@ class AlarmViewModel(
             val session = currentState.session
 
             if (session != null && session.isActive) {
+                // Finishing the session wakes the app-level morning scheduler.
+                // When this alarm flow will speak the same morning briefing,
+                // mark it first so no duplicate notification or sound appears.
+                val voiceSettings = briefingPreference.getVoiceSettings()
+                if (briefingPreference.isEnabled() && voiceSettings.morningEnabled) {
+                    val localDate = java.time.Instant.ofEpochMilli(now)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate()
+                        .toString()
+                    dailyPlanNudgePreferences.markMorningShown(localDate)
+                }
                 alarmScheduler.cancelAllAlarmsForSession(session.id)
                 sessionRepository.finishSession(
                     sessionId = session.id,
@@ -543,6 +688,7 @@ class AlarmViewModel(
     }
 
     override fun onCleared() {
+        challengeAdvanceJob?.cancel()
         stopSmartRepeat()              // ДОБАВЛЕНО (F10)
         briefingCoordinator.stop()
         super.onCleared()
@@ -553,6 +699,20 @@ class AlarmViewModel(
         private const val MAX_WRONG_ATTEMPTS_BEFORE_HINT = 3
         private const val ALARM_EARLY_TOLERANCE_MS = 5L * MINUTE_MS
         private const val ALARM_LATE_TOLERANCE_MS = 10L * MINUTE_MS
+        private const val CHALLENGE_ADVANCE_DELAY_MS = 550L
+
+        private const val KEY_RUN_SESSION_ID = "alarm_math_run_session_id"
+        private const val KEY_RUN_DIFFICULTY = "alarm_math_run_difficulty"
+        private const val KEY_RUN_COUNT = "alarm_math_run_count"
+        private const val KEY_RUN_SEED = "alarm_math_run_seed"
+        private const val KEY_RUN_INDEX = "alarm_math_run_index"
+        private const val KEY_RUN_COMPLETED = "alarm_math_run_completed"
+        private const val KEY_RUN_INPUT = "alarm_math_run_input"
+        private const val KEY_RUN_WRONG = "alarm_math_run_wrong"
+        private const val KEY_RUN_TOTAL_WRONG = "alarm_math_run_total_wrong"
+        private const val KEY_RUN_TOTAL_ATTEMPTS = "alarm_math_run_total_attempts"
+        private const val KEY_RUN_TRANSITIONING = "alarm_math_run_transitioning"
+        private const val KEY_RUN_COMPLETE = "alarm_math_run_complete"
 
         // ДОБАВЛЕНО (F10): стартовая громкость первого импульса повтора.
         private const val SMART_REPEAT_START_VOLUME = 0.5f

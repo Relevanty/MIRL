@@ -161,6 +161,9 @@ interface SleepSessionDao {
             onsetReviewState = 'PENDING',
             updatedAt = :updatedAt
         WHERE id = :sessionId
+          AND isActive = 1
+          AND detectedSleepOnsetTime IS NULL
+          AND (detectedOnsetSource IS NULL OR detectedOnsetSource != 'AUTOMATION_FOCUS_PAUSED')
         """
     )
     suspend fun updateDetectedOnset(
@@ -171,5 +174,5 @@ interface SleepSessionDao {
         source: String,
         uncertaintyMinutes: Int,
         updatedAt: Long
-    )
+    ): Int
 }

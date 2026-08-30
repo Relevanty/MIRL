@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
+import com.personal.sleepalarm.domain.automation.isAutomationPausedForFocus
 import com.personal.sleepalarm.service.SleepForegroundService
 import com.personal.sleepalarm.util.IntentActions
 import com.personal.sleepalarm.util.IntentExtras
@@ -52,7 +53,23 @@ class AlarmReceiver : BroadcastReceiver() {
 
                 val now = System.currentTimeMillis()
 
-                if (session != null &&
+                if (
+                    session?.isAutomationPausedForFocus() == true &&
+                    session.estimatedWakeTime > now
+                ) {
+                    // Focus may have committed the restored safety wake just
+                    // before process death, leaving the former earlier PI in
+                    // AlarmManager. Any future wake on a PAUSED row proves
+                    // this broadcast is stale, so never ring early.
+                    val restored = AlarmScheduler.create(
+                        context = context.applicationContext,
+                        sessionRepository = repository
+                    ).scheduleMainAlarm(session)
+                    Log.i(
+                        TAG,
+                        "Early paused-automation alarm rescheduled=$restored sessionId=$sessionId"
+                    )
+                } else if (session != null &&
                     session.isActive &&
                     session.estimatedWakeTime <= now + FIVE_MINUTES_MS
                 ) {

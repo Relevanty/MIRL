@@ -5,6 +5,7 @@ import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 
 /**
  * Helper для системного выбора мелодии будильника (F2).
@@ -20,6 +21,10 @@ import android.os.Build
  */
 object RingtonePickerHelper {
 
+    private const val DEFAULT_ALARM_URI = "content://settings/system/alarm_alert"
+    private const val DEFAULT_NOTIFICATION_URI = "content://settings/system/notification_sound"
+    private const val DEFAULT_RINGTONE_URI = "content://settings/system/ringtone"
+
     /**
      * Создаёт Intent системного пикера мелодий.
      *
@@ -28,15 +33,18 @@ object RingtonePickerHelper {
      */
     fun createPickerIntent(
         title: String,
-        existingUriString: String?
+        existingUriString: String?,
+        ringtoneType: Int = RingtoneManager.TYPE_ALARM,
+        showSilent: Boolean = false
     ): Intent {
         val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             putExtra(
                 RingtoneManager.EXTRA_RINGTONE_TYPE,
-                RingtoneManager.TYPE_ALARM
+                ringtoneType
             )
             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, showSilent)
             putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, title)
 
             // Подсвечиваем текущий выбор, если он есть и валиден.
@@ -63,15 +71,19 @@ object RingtonePickerHelper {
     fun parsePickedUri(data: Intent?): Uri? {
         if (data == null) return null
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            data.getParcelableExtra(
-                RingtoneManager.EXTRA_RINGTONE_PICKED_URI,
-                Uri::class.java
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-        }
+        val extraUri = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                data.getParcelableExtra(
+                    RingtoneManager.EXTRA_RINGTONE_PICKED_URI,
+                    Uri::class.java
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            }
+        }.getOrNull()
+        // Some OEM pickers (including theme apps) return only Intent.data.
+        return extraUri ?: data.data
     }
 
     /**
@@ -85,11 +97,60 @@ object RingtonePickerHelper {
         uriString: String?
     ): String? {
         val uri = parseUriSafely(uriString) ?: return null
+        if (!isSoundReadable(context, uri)) return null
 
         return runCatching {
             RingtoneManager.getRingtone(context.applicationContext, uri)
                 ?.getTitle(context)
-        }.getOrNull()
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    /** Resolves both system ringtone titles and names of arbitrary audio documents. */
+    fun getSoundTitle(context: Context, uriString: String?): String? {
+        val uri = parseUriSafely(uriString) ?: return null
+        if (!isSoundReadable(context, uri)) return null
+
+        val documentTitle = runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+        if (documentTitle != null) return documentTitle
+
+        return runCatching {
+            RingtoneManager.getRingtone(context.applicationContext, uri)
+                ?.getTitle(context)
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    /** Opens the URI for real; constructing a Ringtone alone does not prove it is readable. */
+    fun isSoundReadable(context: Context, uriString: String?): Boolean {
+        val uri = parseUriSafely(uriString) ?: return false
+        return isSoundReadable(context, uri)
+    }
+
+    fun isSoundReadable(context: Context, uri: Uri): Boolean = runCatching {
+        context.applicationContext.contentResolver
+            .openAssetFileDescriptor(uri, "r")
+            ?.use { descriptor -> descriptor.fileDescriptor.valid() }
+            ?: false
+    }.getOrDefault(false)
+
+    /** True only for Android's stable symbolic "use current system default" URI. */
+    fun isDefaultAlias(uri: Uri, ringtoneType: Int): Boolean =
+        isDefaultAlias(uri.toString(), ringtoneType)
+
+    internal fun isDefaultAlias(uriString: String, ringtoneType: Int): Boolean = when (uriString) {
+        DEFAULT_ALARM_URI -> ringtoneType and RingtoneManager.TYPE_ALARM != 0
+        DEFAULT_NOTIFICATION_URI -> ringtoneType and RingtoneManager.TYPE_NOTIFICATION != 0
+        DEFAULT_RINGTONE_URI -> ringtoneType and RingtoneManager.TYPE_RINGTONE != 0
+        else -> false
     }
 
     /**

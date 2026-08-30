@@ -8,18 +8,27 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.alarm.AlarmScheduler
+import com.personal.sleepalarm.alarm.SleepAutomationScheduler
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.AlarmProfileEntity
 import com.personal.sleepalarm.data.db.entity.CueEventEntity
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
 import com.personal.sleepalarm.data.preferences.QuickNotesPreference
+import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
+import com.personal.sleepalarm.data.preferences.SleepAutomationSettings
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
 import com.personal.sleepalarm.domain.calculator.CueScheduleCalculator
 import com.personal.sleepalarm.domain.calculator.SleepCalculator
+import com.personal.sleepalarm.domain.automation.SleepAutomationWindow
+import com.personal.sleepalarm.domain.automation.isAutomationArmed
+import com.personal.sleepalarm.domain.automation.isAutomaticSleepSession
+import com.personal.sleepalarm.domain.automation.AUTOMATION_ARMED_SOURCE
+import com.personal.sleepalarm.domain.automation.AUTOMATION_WINDOW_EXPIRED_SOURCE
 import com.personal.sleepalarm.domain.model.CueSchedule
 import com.personal.sleepalarm.domain.model.SleepPlan
 import com.personal.sleepalarm.domain.model.SleepPlanWarning
+import com.personal.sleepalarm.domain.model.SleepWindow
 import com.personal.sleepalarm.service.SleepForegroundService
 import com.personal.sleepalarm.util.PermissionChecker
 import com.personal.sleepalarm.util.PermissionState
@@ -53,6 +62,7 @@ data class HomeUiState(
     val cueSchedule: CueSchedule = CueSchedule(emptyList(), emptySet()),
     val planWarnings: Set<SleepPlanWarning> = emptySet(),
     val permissions: PermissionState = PermissionState(),
+    val sleepAutomation: SleepAutomationSettings = SleepAutomationSettings(),
     val now: Long = System.currentTimeMillis()
 )
 
@@ -72,6 +82,8 @@ class HomeViewModel(
     private val context = application.applicationContext
 
     private val quickNotesPreference = QuickNotesPreference(context)
+    private val sleepAutomationPreference = SleepAutomationPreference(context)
+    private val sleepAutomationScheduler = SleepAutomationScheduler(context, sleepAutomationPreference)
 
     val quickNotes: StateFlow<String> = quickNotesPreference.observeText().stateIn(
         scope = viewModelScope,
@@ -116,12 +128,14 @@ class HomeViewModel(
         profileRepository.observeProfile(),
         sessionRepository.observeActiveSession(),
         sessionRepository.observeLatestCompleted(),
+        sleepAutomationPreference.observe(),
         merge(refreshTrigger, tickerFlow)
-    ) { profile, activeSession, latestCompleted, nowMillis ->
+    ) { profile, activeSession, latestCompleted, automation, nowMillis ->
         buildState(
             profile = profile,
             activeSession = activeSession,
             latestCompleted = latestCompleted,
+            sleepAutomation = automation,
             nowMillis = nowMillis
         )
     }.stateIn(
@@ -144,6 +158,7 @@ class HomeViewModel(
         profile: AlarmProfileEntity,
         activeSession: SleepSessionEntity?,
         latestCompleted: SleepSessionEntity?,
+        sleepAutomation: SleepAutomationSettings,
         nowMillis: Long
     ): HomeUiState {
         val permissions = PermissionChecker.state(context)
@@ -189,6 +204,7 @@ class HomeViewModel(
                 cueSchedule = cueSchedule,
                 planWarnings = planWarnings,
                 permissions = permissions,
+                sleepAutomation = sleepAutomation,
                 now = nowMillis
             )
         } catch (throwable: Throwable) {
@@ -200,6 +216,7 @@ class HomeViewModel(
                 cueSchedule = CueSchedule(emptyList(), emptySet()),
                 planWarnings = emptySet(),
                 permissions = permissions,
+                sleepAutomation = sleepAutomation,
                 now = nowMillis
             )
         }
@@ -210,9 +227,12 @@ class HomeViewModel(
         (application as com.personal.sleepalarm.app.App).serviceLocator.briefingCoordinator
     private val briefingTextBuilder = com.personal.sleepalarm.service.BriefingTextBuilder(
         calendarEventDao = database.calendarEventDao(),
+        activityRecordDao = database.activityRecordDao(),
         studySessionDao = database.studySessionDao(),
         ddayDao = database.ddayDao(),
-        sessionDao = database.sleepSessionDao()
+        sessionDao = database.sleepSessionDao(),
+        taskDao = database.taskDao(),
+        alarmProfileDao = database.alarmProfileDao()
     )
 
     private val _isBriefingPlaying = MutableStateFlow(false)
@@ -295,6 +315,100 @@ class HomeViewModel(
         }
     }
 
+    /** Полностью откатывает ложное автоопределение и при возможности запускает его заново. */
+    fun rejectDetectedSleepOnset() {
+        viewModelScope.launch {
+            val active = sessionRepository.getActiveSession()
+                ?.takeIf { it.detectedSleepOnsetTime != null }
+                ?: return@launch
+            val profile = profileRepository.getProfile()
+            val zone = runCatching { ZoneId.of(active.zoneId) }.getOrDefault(ZoneId.systemDefault())
+            val now = Instant.ofEpochMilli(System.currentTimeMillis()).atZone(zone)
+            val bed = Instant.ofEpochMilli(active.bedTimePlanned).atZone(zone)
+            val automatic = active.isAutomaticSleepSession()
+            val automationSettings = sleepAutomationPreference.get()
+            val currentWindow = SleepAutomationWindow.containing(
+                now,
+                automationSettings.windowStartMinutes,
+                automationSettings.windowEndMinutes
+            )
+            val originalWindow = SleepAutomationWindow.containing(
+                bed,
+                automationSettings.windowStartMinutes,
+                automationSettings.windowEndMinutes
+            )
+            val canRearmAutomation = automatic &&
+                automationSettings.enabled &&
+                currentWindow?.id == originalWindow?.id
+
+            var hardWake = bed.toLocalDate()
+                .atTime(profile.preferredWakeHour, profile.preferredWakeMinute)
+                .atZone(zone)
+            if (!hardWake.isAfter(bed)) hardWake = hardWake.plusDays(1)
+
+            // Reconstruct the exact pre-detection manual plan from the
+            // immutable session snapshot. Current settings may have changed
+            // while the user was asleep and must not alter this rollback.
+            val restoredSleepStart = active.bedTimePlanned +
+                active.sleepOnsetLatencyMinutes * 60_000L
+            val restoredWake = if (automatic) {
+                active.automationSafetyWakeTime ?: hardWake.toInstant().toEpochMilli()
+            } else {
+                restoredSleepStart +
+                    active.cyclesPlanned.toLong() * active.cycleLengthMinutes * 60_000L
+            }
+            if (restoredWake <= System.currentTimeMillis()) return@launch
+
+            val cueSchedule = if (!automatic && profile.cuesEnabled) {
+                CueScheduleCalculator.buildCueSchedule(
+                    window = SleepWindow(
+                        sleepStart = Instant.ofEpochMilli(restoredSleepStart).atZone(zone),
+                        wake = Instant.ofEpochMilli(restoredWake).atZone(zone)
+                    ),
+                    cueScheduleMode = profile.cueScheduleMode,
+                    cycleLengthMinutes = active.cycleLengthMinutes,
+                    cycles = active.cyclesPlanned,
+                    firstCueDelayMinutes = profile.firstCueDelayMinutes,
+                    cueIntervalMinutes = profile.cueIntervalMinutes,
+                    remCueOffsetPercent = profile.remCueOffsetPercent,
+                    stopCuesOneCycleBeforeWake = true
+                )
+            } else CueSchedule(emptyList(), emptySet())
+            val cues = cueSchedule.cues.map { cue ->
+                CueEventEntity(
+                    sessionId = active.id,
+                    cueIndex = cue.index,
+                    scheduledTime = cue.time.toInstant().toEpochMilli()
+                )
+            }
+            val restored = active.copy(
+                estimatedSleepStartTime = restoredSleepStart,
+                estimatedWakeTime = restoredWake,
+                cuesEnabled = !automatic && profile.cuesEnabled,
+                cuesScheduledCount = cues.size,
+                detectedSleepOnsetTime = null,
+                detectedOnsetLatencyMinutes = null,
+                detectedOnsetConfidencePercent = null,
+                detectedOnsetSource = when {
+                    canRearmAutomation -> AUTOMATION_ARMED_SOURCE
+                    automatic -> AUTOMATION_WINDOW_EXPIRED_SOURCE
+                    else -> null
+                },
+                detectedOnsetUncertaintyMinutes = null,
+                onsetReviewState = "PENDING"
+            )
+            // Commit the rollback first. rescheduleAllForSession cancels the old
+            // PendingIntents itself; avoiding an earlier cancel leaves no gap in
+            // which Room still exposes the corrected (possibly earlier) wake time.
+            sessionRepository.replaceCues(restored, cues)
+            alarmScheduler.rescheduleAllForSession(restored)
+            if (!automatic || canRearmAutomation) {
+                SleepForegroundService.rearmOnset(context, active.id)
+            }
+            refresh()
+        }
+    }
+
     // =================================================================
     // Запуск и отмена сессии
     // =================================================================
@@ -331,11 +445,20 @@ class HomeViewModel(
                 return@launch
             }
 
+            // Explicit sleep wins over focus only after the sleep plan has
+            // passed validation. The manager preserves elapsed work and clears
+            // its alarms/notification before the sleep service starts.
+            val focusManager = (getApplication<Application>() as com.personal.sleepalarm.app.App)
+                .serviceLocator.focusProtocolManager
+            database.focusProtocolDao().getActive().forEach { focus ->
+                focusManager.cancel(focus.id, "SLEEP_STARTED")
+            }
+
             // Старая активная сессия отменяется.
             val oldActive = sessionRepository.getActiveSession()
             if (oldActive != null) {
                 alarmScheduler.cancelAllAlarmsForSession(oldActive.id)
-                if (profile.mirrorToSystemClock) {
+                if (profile.mirrorToSystemClock && !oldActive.isAutomaticSleepSession()) {
                     dismissMirroredAlarm(
                         wakeEpoch = oldActive.estimatedWakeTime,
                         zoneId = oldActive.zoneId
@@ -443,7 +566,7 @@ class HomeViewModel(
 
             // Пытаемся снять дублёр, если тумблер включён сейчас.
             val profile = profileRepository.getProfile()
-            if (profile.mirrorToSystemClock) {
+            if (profile.mirrorToSystemClock && !active.isAutomaticSleepSession()) {
                 dismissMirroredAlarm(
                     wakeEpoch = active.estimatedWakeTime,
                     zoneId = active.zoneId
@@ -452,6 +575,28 @@ class HomeViewModel(
 
             SleepForegroundService.stop(context = context, cancelSession = false)
 
+            refresh()
+        }
+    }
+
+    fun skipSleepAutomationTonight() {
+        viewModelScope.launch {
+            val now = Instant.ofEpochMilli(System.currentTimeMillis()).atZone(ZoneId.systemDefault())
+            val settings = sleepAutomationPreference.get()
+            val window = SleepAutomationWindow.containing(
+                now,
+                settings.windowStartMinutes,
+                settings.windowEndMinutes
+            )
+            if (window != null) sleepAutomationPreference.skipWindow(window.id)
+
+            val active = sessionRepository.getActiveSession()
+            if (active?.isAutomationArmed() == true) {
+                alarmScheduler.cancelAllAlarmsForSession(active.id)
+                sessionRepository.cancelSession(active.id)
+                SleepForegroundService.stop(context = context, cancelSession = false)
+            }
+            sleepAutomationScheduler.scheduleNext()
             refresh()
         }
     }

@@ -10,21 +10,46 @@ import androidx.room.withTransaction
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.alarm.FocusProtocolReceiver
 import com.personal.sleepalarm.alarm.FocusProtocolScheduler
+import com.personal.sleepalarm.alarm.AlarmScheduler
+import com.personal.sleepalarm.alarm.SleepAutomationScheduler
+import com.personal.sleepalarm.alarm.TaskLinkedReminderCoordinator
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.EnergySampleEntity
 import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
+import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
 import com.personal.sleepalarm.data.db.entity.StudySessionEntity
 import com.personal.sleepalarm.data.repository.TaskRepository
 import com.personal.sleepalarm.data.repository.ActivityRecordRepository
-import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
+import com.personal.sleepalarm.data.preferences.AppSignalPreferences
+import com.personal.sleepalarm.data.preferences.AppSignalType
+import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
+import com.personal.sleepalarm.data.repository.SleepSessionRepository
+import com.personal.sleepalarm.domain.automation.SleepAutomationWindow
+import com.personal.sleepalarm.domain.automation.ExplicitAwakeSleepConflict
+import com.personal.sleepalarm.domain.automation.FocusSleepTransitionGate
+import com.personal.sleepalarm.domain.automation.conflictForExplicitAwakeAction
+import com.personal.sleepalarm.domain.automation.pauseAutomaticDetectionForFocus
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.focusItemTaskId
+import com.personal.sleepalarm.domain.model.focusActivityType
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.model.remainingWorkMinutesOrNull
+import com.personal.sleepalarm.domain.model.taskFocusItemId
 import com.personal.sleepalarm.domain.model.FocusProtocolPhase
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
+import com.personal.sleepalarm.domain.focusaudio.FocusSoundscapeSelection
+import com.personal.sleepalarm.service.audio.FocusSoundscapeController
+import com.personal.sleepalarm.service.audio.FocusSoundscapeService
+import com.personal.sleepalarm.service.audio.soundscapeMix
+import com.personal.sleepalarm.service.SleepForegroundService
+import com.personal.sleepalarm.service.AppNotificationChannelIds
 import com.personal.sleepalarm.ui.MainActivity
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class FocusProtocolConfig(
     val activityType: FocusActivityType,
@@ -34,7 +59,33 @@ data class FocusProtocolConfig(
     val resetMinutes: Int,
     val focusMinutes: Int,
     val recoveryMinutes: Int,
-    val energyBefore: Int
+    val energyBefore: Int,
+    val soundscapeId: String = "silence",
+    val soundscapeCustomUri: String? = null,
+    val soundscapeCustomName: String? = null,
+    val soundscapeVolume: Int = 35,
+    val soundscapeSecondaryId: String? = null,
+    val soundscapeSecondaryVolume: Int = 20,
+    val soundscapePlayDuringRecovery: Boolean = false
+)
+
+private data class CanonicalFocusTarget(
+    val activityType: FocusActivityType,
+    val itemId: Int,
+    val itemName: String,
+    val remainingTaskMinutes: Int? = null,
+    val preferredBoutMinutes: Int? = null
+)
+
+private sealed interface AutomaticSleepTransition {
+    data class Paused(val session: SleepSessionEntity) : AutomaticSleepTransition
+    data class Cancelled(val session: SleepSessionEntity) : AutomaticSleepTransition
+}
+
+private data class FocusStartCommit(
+    val session: FocusProtocolSessionEntity,
+    val created: Boolean,
+    val automaticSleepTransition: AutomaticSleepTransition? = null
 )
 
 /**
@@ -49,9 +100,25 @@ class FocusProtocolManager(context: Context) {
     private val pomodoroDao = database.pomodoroDao()
     private val studyDao = database.studySessionDao()
     private val taskRepository = TaskRepository(database.taskDao())
-    private val activityRepository = ActivityRecordRepository(database)
+    private val sleepSessionRepository = SleepSessionRepository(
+        database = database,
+        sessionDao = database.sleepSessionDao(),
+        cueEventDao = database.cueEventDao()
+    )
+    private val sleepAlarmScheduler = AlarmScheduler.create(appContext, sleepSessionRepository)
+    private val sleepAutomationPreference = SleepAutomationPreference(appContext)
+    private val sleepAutomationScheduler = SleepAutomationScheduler(
+        appContext,
+        sleepAutomationPreference
+    )
+    private val activityRepository = ActivityRecordRepository(
+        database,
+        TaskLinkedReminderCoordinator(appContext, database)
+    )
     private val scheduler = FocusProtocolScheduler(appContext)
-    private val soundPreference = PomodoroSoundPreference(appContext)
+    private val signalPreferences = AppSignalPreferences(appContext)
+    private val soundscapeController = FocusSoundscapeController.get(appContext)
+    private val runtimeSyncMutex = Mutex()
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -65,60 +132,196 @@ class FocusProtocolManager(context: Context) {
                 description = appContext.getString(R.string.focus_protocol_channel_description)
                 setSound(null, null)
                 enableVibration(true)
+                setBypassDnd(true)
             }
         )
     }
 
-    suspend fun start(config: FocusProtocolConfig): Int {
-        protocolDao.getActive().firstOrNull()?.let { return it.id }
+    suspend fun start(config: FocusProtocolConfig): Int =
+        FocusSleepTransitionGate.serialized { startSerialized(config) }
+
+    private suspend fun startSerialized(config: FocusProtocolConfig): Int {
         val now = System.currentTimeMillis()
-        val resetMinutes = config.resetMinutes.coerceIn(0, 20)
-        val phase = if (resetMinutes == 0) {
-            FocusProtocolPhase.ACTIVATE
-        } else {
-            FocusProtocolPhase.RESET
-        }
-        val session = FocusProtocolSessionEntity(
-            activityType = config.activityType,
-            itemId = config.itemId,
-            itemName = config.itemName.trim(),
-            outcome = config.outcome.trim(),
-            phase = phase,
-            createdAt = now,
-            phaseStartedAt = now,
-            phaseEndsAt = if (phase == FocusProtocolPhase.RESET) {
-                now + resetMinutes * MINUTE_MS
+        val automation = sleepAutomationPreference.get()
+
+        // Room is the durable ownership boundary. If insertion fails, a
+        // paused/cancelled automatic sleep row rolls back with it, so process
+        // death cannot leave the user with neither sleep nor focus.
+        val commit = database.withTransaction {
+            protocolDao.getActive().firstOrNull()?.let {
+                return@withTransaction FocusStartCommit(it, created = false)
+            }
+
+            val target = canonicalTarget(config.activityType, config.itemId, config.itemName)
+                ?: return@withTransaction null
+            val requestedFocusMinutes = config.focusMinutes.coerceIn(5, 180)
+            val focusMinutes = target.remainingTaskMinutes
+                ?.let { remaining -> minOf(requestedFocusMinutes, remaining) }
+                ?: requestedFocusMinutes
+            if (focusMinutes <= 0) return@withTransaction null
+
+            var sleepTransition: AutomaticSleepTransition? = null
+            val activeSleep = sleepSessionRepository.getActiveSession()
+            when (activeSleep.conflictForExplicitAwakeAction()) {
+                ExplicitAwakeSleepConflict.BLOCKED_BY_MANUAL_SLEEP -> {
+                    return@withTransaction null
+                }
+                ExplicitAwakeSleepConflict.PAUSE_AUTOMATIC_SLEEP -> {
+                    checkNotNull(activeSleep)
+                    val safetyWake = activeSleep.automationSafetyWakeTime
+                        ?: activeSleep.estimatedWakeTime
+                    if (safetyWake <= now) {
+                        sleepSessionRepository.cancelSession(activeSleep.id)
+                        sleepTransition = AutomaticSleepTransition.Cancelled(activeSleep)
+                    } else {
+                        val paused = activeSleep.pauseAutomaticDetectionForFocus()
+                        sleepSessionRepository.replaceCues(paused, emptyList())
+                        sleepTransition = AutomaticSleepTransition.Paused(paused)
+                    }
+                }
+                ExplicitAwakeSleepConflict.PROCEED -> Unit
+            }
+
+            val resetMinutes = config.resetMinutes.coerceIn(0, 20)
+            val phase = if (resetMinutes == 0) {
+                FocusProtocolPhase.ACTIVATE
             } else {
-                null
-            },
-            resetDurationMinutes = resetMinutes,
-            focusDurationMinutes = config.focusMinutes.coerceIn(5, 180),
-            recoveryDurationMinutes = config.recoveryMinutes.coerceIn(1, 30),
-            energyBefore = config.energyBefore.coerceIn(1, 10)
-        )
-        val id = protocolDao.insert(session).toInt()
-        energyDao.insert(
-            EnergySampleEntity(
-                timestamp = now,
-                energy = session.energyBefore,
-                context = ENERGY_BEFORE,
-                protocolSessionId = id
+                FocusProtocolPhase.RESET
+            }
+            val session = FocusProtocolSessionEntity(
+                activityType = target.activityType,
+                itemId = target.itemId,
+                itemName = target.itemName,
+                outcome = config.outcome.trim(),
+                phase = phase,
+                createdAt = now,
+                phaseStartedAt = now,
+                phaseEndsAt = if (phase == FocusProtocolPhase.RESET) {
+                    now + resetMinutes * MINUTE_MS
+                } else {
+                    null
+                },
+                resetDurationMinutes = resetMinutes,
+                focusDurationMinutes = focusMinutes,
+                recoveryDurationMinutes = config.recoveryMinutes.coerceIn(1, 30),
+                energyBefore = config.energyBefore.coerceIn(1, 10),
+                soundscapeId = config.soundscapeId,
+                soundscapeCustomUri = config.soundscapeCustomUri,
+                soundscapeCustomName = config.soundscapeCustomName,
+                soundscapeVolume = config.soundscapeVolume.coerceIn(0, 100),
+                soundscapeSecondaryId = config.soundscapeSecondaryId,
+                soundscapeSecondaryVolume = config.soundscapeSecondaryVolume.coerceIn(0, 100),
+                soundscapePlayDuringRecovery = config.soundscapePlayDuringRecovery
             )
-        )
-        val saved = session.copy(id = id)
-        scheduler.schedule(saved)
-        showNotification(saved, alert = false)
-        return id
+            val id = protocolDao.insert(session).toInt()
+            energyDao.insert(
+                EnergySampleEntity(
+                    timestamp = now,
+                    energy = session.energyBefore,
+                    context = ENERGY_BEFORE,
+                    protocolSessionId = id
+                )
+            )
+            FocusStartCommit(
+                session = session.copy(id = id),
+                created = true,
+                automaticSleepTransition = sleepTransition
+            )
+        } ?: return 0
+
+        if (!commit.created) return commit.session.id
+
+        // Focus is already durable at this point. Register its own runtime
+        // first; sleep cleanup and automation retry are compensating side
+        // effects and must never turn a successful start into a stuck sheet.
+        runCatching { scheduler.schedule(commit.session) }
+        runCatching { showNotificationAndSyncSoundscape(commit.session, alert = false) }
+
+        when (val transition = commit.automaticSleepTransition) {
+            is AutomaticSleepTransition.Paused -> {
+                // Replace a possibly false early wake with the immutable
+                // safety wake. AlarmReceiver repairs a stale early PI if the
+                // process dies in the small Room -> AlarmManager gap.
+                runCatching {
+                    sleepAlarmScheduler.scheduleMainAlarm(transition.session)
+                }
+                runCatching {
+                    SleepForegroundService.stop(appContext, cancelSession = false)
+                }
+                val sessionZone = runCatching { ZoneId.of(transition.session.zoneId) }
+                    .getOrDefault(ZoneId.systemDefault())
+                SleepAutomationWindow.containing(
+                    Instant.ofEpochMilli(transition.session.bedTimePlanned).atZone(sessionZone),
+                    automation.windowStartMinutes,
+                    automation.windowEndMinutes
+                )?.let { window ->
+                    runCatching {
+                        sleepAutomationPreference.releaseHandledWindow(window.id)
+                    }
+                }
+                // Retry keeps yielding while focus is active. If the window
+                // has closed, the retained alarm still rings at its safe time.
+                runCatching { sleepAutomationScheduler.scheduleRetry() }
+            }
+            is AutomaticSleepTransition.Cancelled -> {
+                runCatching {
+                    sleepAlarmScheduler.cancelAllAlarmsForSession(transition.session.id)
+                }
+                runCatching {
+                    SleepForegroundService.stop(appContext, cancelSession = false)
+                }
+            }
+            null -> Unit
+        }
+        return commit.session.id
     }
 
-    suspend fun reconcileActiveSessions() {
-        protocolDao.getActive().forEach { session ->
-            val end = session.phaseEndsAt
-            if (session.phase.hasCountdown && end != null && end <= System.currentTimeMillis()) {
-                advanceIfDue(session.id)
+    suspend fun reconcileActiveSessions(resumeSoundscape: Boolean = false) {
+        // A process can die after Room committed COMPLETE/CANCELLED but before
+        // the alarm/notification side effects ran. Terminal rows are the
+        // durable truth, so remove any retained ongoing UI before restoring
+        // live sessions.
+        protocolDao.getAll()
+            .filter { it.phase.isTerminal }
+            .forEach { session ->
+                scheduler.cancel(session.id)
+                runCatching { FocusSoundscapeService.stopForTerminal(appContext, session.id) }
+                cancelNotification(session.id)
+            }
+        val activeSessions = protocolDao.getActive()
+        if (activeSessions.isEmpty()) runCatching { soundscapeController.stop() }
+        activeSessions.forEach { session ->
+            val target = canonicalTarget(session.activityType, session.itemId, session.itemName)
+            if (target == null) {
+                cancel(session.id, "MISSING_TARGET")
+                return@forEach
+            }
+            val canonicalSession = if (
+                session.activityType != target.activityType ||
+                session.itemId != target.itemId ||
+                session.itemName != target.itemName
+            ) {
+                session.copy(
+                    activityType = target.activityType,
+                    itemId = target.itemId,
+                    itemName = target.itemName
+                ).also { protocolDao.update(it) }
             } else {
-                scheduler.schedule(session)
-                showNotification(session, alert = false)
+                session
+            }
+            val end = canonicalSession.phaseEndsAt
+            if (session.phase.hasCountdown && end != null && end <= System.currentTimeMillis()) {
+                advanceIfDue(canonicalSession.id)
+            } else {
+                scheduler.schedule(canonicalSession)
+                if (resumeSoundscape) {
+                    showNotificationAndSyncSoundscape(canonicalSession, alert = false)
+                } else {
+                    // Android 15 forbids starting a mediaPlayback FGS from BOOT_COMPLETED.
+                    // Durable timer/notification state is restored here; audio resumes when
+                    // the focus UI is foregrounded or the service itself is redelivered.
+                    showNotification(canonicalSession, alert = false)
+                }
             }
         }
     }
@@ -154,7 +357,7 @@ class FocusProtocolManager(context: Context) {
                     updated
                 } ?: return
                 scheduler.cancel(sessionId)
-                showNotification(updated, alert = true)
+                showNotificationAndSyncSoundscape(updated, alert = true)
             }
             FocusProtocolPhase.FOCUS -> finishFocusInternal(
                 session = session,
@@ -165,7 +368,7 @@ class FocusProtocolManager(context: Context) {
                 expectedEnd = expectedEnd
             )?.let { updated ->
                 scheduler.schedule(updated)
-                showNotification(updated, alert = true)
+                showNotificationAndSyncSoundscape(updated, alert = true)
             }
             FocusProtocolPhase.RECOVERY -> {
                 val updated = database.withTransaction {
@@ -183,41 +386,46 @@ class FocusProtocolManager(context: Context) {
                     updated
                 } ?: return
                 scheduler.cancel(sessionId)
-                showNotification(updated, alert = true)
+                showNotificationAndSyncSoundscape(updated, alert = true)
             }
             else -> scheduler.cancel(sessionId)
         }
     }
 
     suspend fun skipReset(sessionId: Int) {
-        val session = protocolDao.getById(sessionId) ?: return
-        if (session.phase != FocusProtocolPhase.RESET) return
-        val now = System.currentTimeMillis()
-        val updated = session.copy(
-            phase = FocusProtocolPhase.ACTIVATE,
-            phaseStartedAt = now,
-            phaseEndsAt = null
-        )
-        protocolDao.update(updated)
+        val updated = database.withTransaction {
+            val session = protocolDao.getById(sessionId) ?: return@withTransaction null
+            if (session.phase != FocusProtocolPhase.RESET) return@withTransaction null
+            val updated = session.copy(
+                phase = FocusProtocolPhase.ACTIVATE,
+                phaseStartedAt = System.currentTimeMillis(),
+                phaseEndsAt = null
+            )
+            protocolDao.update(updated)
+            updated
+        } ?: return
         scheduler.cancel(sessionId)
-        showNotification(updated, alert = false)
+        showNotificationAndSyncSoundscape(updated, alert = false)
     }
 
     suspend fun startFocus(sessionId: Int) {
-        val session = protocolDao.getById(sessionId) ?: return
-        if (session.phase != FocusProtocolPhase.ACTIVATE) return
-        val now = System.currentTimeMillis()
-        val updated = session.copy(
-            phase = FocusProtocolPhase.FOCUS,
-            phaseStartedAt = now,
-            phaseEndsAt = now + session.focusDurationMinutes * MINUTE_MS,
-            focusStartedAt = now,
-            focusElapsedMillis = 0L,
-            pausedRemainingMillis = 0L
-        )
-        protocolDao.update(updated)
+        val updated = database.withTransaction {
+            val session = protocolDao.getById(sessionId) ?: return@withTransaction null
+            if (session.phase != FocusProtocolPhase.ACTIVATE) return@withTransaction null
+            val now = System.currentTimeMillis()
+            val updated = session.copy(
+                phase = FocusProtocolPhase.FOCUS,
+                phaseStartedAt = now,
+                phaseEndsAt = now + session.focusDurationMinutes * MINUTE_MS,
+                focusStartedAt = now,
+                focusElapsedMillis = 0L,
+                pausedRemainingMillis = 0L
+            )
+            protocolDao.update(updated)
+            updated
+        } ?: return
         scheduler.schedule(updated)
-        showNotification(updated, alert = false)
+        showNotificationAndSyncSoundscape(updated, alert = false)
     }
 
     suspend fun startNextCycle(
@@ -229,55 +437,81 @@ class FocusProtocolManager(context: Context) {
     ) {
         val session = protocolDao.getById(sessionId) ?: return
         if (session.phase != FocusProtocolPhase.CYCLE_READY) return
-        val now = System.currentTimeMillis()
-        val updated = session.copy(
-            activityType = activityType ?: session.activityType,
-            itemId = itemId ?: session.itemId,
-            itemName = itemName?.trim()?.takeIf { it.isNotEmpty() } ?: session.itemName,
-            outcome = outcome?.trim()?.takeIf { it.isNotEmpty() } ?: session.outcome,
-            phase = FocusProtocolPhase.FOCUS,
-            phaseStartedAt = now,
-            phaseEndsAt = now + session.focusDurationMinutes * MINUTE_MS,
-            focusStartedAt = now,
-            focusElapsedMillis = 0L,
-            pausedRemainingMillis = 0L,
-            pomodoroRecorded = false
-        )
-        protocolDao.update(updated)
+        val target = canonicalTarget(
+            activityType ?: session.activityType,
+            itemId ?: session.itemId,
+            itemName ?: session.itemName
+        ) ?: return
+        val preferred = if (activityType != null || itemId != null) {
+            target.preferredBoutMinutes ?: session.focusDurationMinutes
+        } else {
+            session.focusDurationMinutes
+        }
+        val focusMinutes = target.remainingTaskMinutes
+            ?.let { remaining -> minOf(preferred, remaining) }
+            ?: preferred
+        if (focusMinutes <= 0) return
+        val updated = database.withTransaction {
+            val latest = protocolDao.getById(sessionId) ?: return@withTransaction null
+            if (latest.phase != FocusProtocolPhase.CYCLE_READY) return@withTransaction null
+            val now = System.currentTimeMillis()
+            val updated = latest.copy(
+                activityType = target.activityType,
+                itemId = target.itemId,
+                itemName = target.itemName,
+                outcome = outcome?.trim()?.takeIf { it.isNotEmpty() } ?: latest.outcome,
+                focusDurationMinutes = focusMinutes,
+                phase = FocusProtocolPhase.FOCUS,
+                phaseStartedAt = now,
+                phaseEndsAt = now + focusMinutes * MINUTE_MS,
+                focusStartedAt = now,
+                focusElapsedMillis = 0L,
+                pausedRemainingMillis = 0L,
+                pomodoroRecorded = false
+            )
+            protocolDao.update(updated)
+            updated
+        } ?: return
         scheduler.schedule(updated)
-        showNotification(updated, alert = false)
+        showNotificationAndSyncSoundscape(updated, alert = false)
     }
 
     suspend fun pauseFocus(sessionId: Int) {
-        val session = protocolDao.getById(sessionId) ?: return
-        if (session.phase != FocusProtocolPhase.FOCUS) return
-        val now = System.currentTimeMillis()
-        val updated = session.copy(
-            phase = FocusProtocolPhase.FOCUS_PAUSED,
-            phaseStartedAt = now,
-            phaseEndsAt = null,
-            focusElapsedMillis = elapsedFocusAt(session, now),
-            pausedRemainingMillis = ((session.phaseEndsAt ?: now) - now).coerceAtLeast(0L)
-        )
-        protocolDao.update(updated)
+        val updated = database.withTransaction {
+            val session = protocolDao.getById(sessionId) ?: return@withTransaction null
+            if (session.phase != FocusProtocolPhase.FOCUS) return@withTransaction null
+            val now = System.currentTimeMillis()
+            val updated = session.copy(
+                phase = FocusProtocolPhase.FOCUS_PAUSED,
+                phaseStartedAt = now,
+                phaseEndsAt = null,
+                focusElapsedMillis = elapsedFocusAt(session, now),
+                pausedRemainingMillis = ((session.phaseEndsAt ?: now) - now).coerceAtLeast(0L)
+            )
+            protocolDao.update(updated)
+            updated
+        } ?: return
         scheduler.cancel(sessionId)
-        showNotification(updated, alert = false)
+        showNotificationAndSyncSoundscape(updated, alert = false)
     }
 
     suspend fun resumeFocus(sessionId: Int) {
-        val session = protocolDao.getById(sessionId) ?: return
-        if (session.phase != FocusProtocolPhase.FOCUS_PAUSED) return
-        val now = System.currentTimeMillis()
-        val remaining = session.pausedRemainingMillis.coerceAtLeast(1_000L)
-        val updated = session.copy(
-            phase = FocusProtocolPhase.FOCUS,
-            phaseStartedAt = now,
-            phaseEndsAt = now + remaining,
-            pausedRemainingMillis = 0L
-        )
-        protocolDao.update(updated)
+        val updated = database.withTransaction {
+            val session = protocolDao.getById(sessionId) ?: return@withTransaction null
+            if (session.phase != FocusProtocolPhase.FOCUS_PAUSED) return@withTransaction null
+            val now = System.currentTimeMillis()
+            val remaining = session.pausedRemainingMillis.coerceAtLeast(1_000L)
+            val updated = session.copy(
+                phase = FocusProtocolPhase.FOCUS,
+                phaseStartedAt = now,
+                phaseEndsAt = now + remaining,
+                pausedRemainingMillis = 0L
+            )
+            protocolDao.update(updated)
+            updated
+        } ?: return
         scheduler.schedule(updated)
-        showNotification(updated, alert = false)
+        showNotificationAndSyncSoundscape(updated, alert = false)
     }
 
     suspend fun finishFocus(sessionId: Int) {
@@ -289,36 +523,40 @@ class FocusProtocolManager(context: Context) {
         finishFocusInternal(session, focusEndAt = now, transitionAt = now, completed = true)
             ?.let { updated ->
                 scheduler.schedule(updated)
-                showNotification(updated, alert = true)
+                showNotificationAndSyncSoundscape(updated, alert = true)
             }
     }
 
     suspend fun finishRecovery(sessionId: Int) {
-        val session = protocolDao.getById(sessionId) ?: return
-        if (session.phase != FocusProtocolPhase.RECOVERY) return
-        val now = System.currentTimeMillis()
-        val updated = session.copy(
-            phase = FocusProtocolPhase.CYCLE_READY,
-            phaseStartedAt = now,
-            phaseEndsAt = null
-        )
-        protocolDao.update(updated)
+        val updated = database.withTransaction {
+            val session = protocolDao.getById(sessionId) ?: return@withTransaction null
+            if (session.phase != FocusProtocolPhase.RECOVERY) return@withTransaction null
+            val updated = session.copy(
+                phase = FocusProtocolPhase.CYCLE_READY,
+                phaseStartedAt = System.currentTimeMillis(),
+                phaseEndsAt = null
+            )
+            protocolDao.update(updated)
+            updated
+        } ?: return
         scheduler.cancel(sessionId)
-        showNotification(updated, alert = false)
+        showNotificationAndSyncSoundscape(updated, alert = false)
     }
 
     suspend fun finishBlock(sessionId: Int) {
-        val session = protocolDao.getById(sessionId) ?: return
-        if (session.phase != FocusProtocolPhase.CYCLE_READY) return
-        val now = System.currentTimeMillis()
-        val updated = session.copy(
-            phase = FocusProtocolPhase.REVIEW,
-            phaseStartedAt = now,
-            phaseEndsAt = null
-        )
-        protocolDao.update(updated)
+        val updated = database.withTransaction {
+            val session = protocolDao.getById(sessionId) ?: return@withTransaction null
+            if (session.phase != FocusProtocolPhase.CYCLE_READY) return@withTransaction null
+            val updated = session.copy(
+                phase = FocusProtocolPhase.REVIEW,
+                phaseStartedAt = System.currentTimeMillis(),
+                phaseEndsAt = null
+            )
+            protocolDao.update(updated)
+            updated
+        } ?: return
         scheduler.cancel(sessionId)
-        showNotification(updated, alert = false)
+        showNotificationAndSyncSoundscape(updated, alert = false)
     }
 
     suspend fun incrementDistraction(sessionId: Int) {
@@ -326,9 +564,9 @@ class FocusProtocolManager(context: Context) {
     }
 
     suspend fun cancel(sessionId: Int, reason: String) {
-        database.withTransaction {
-            val session = protocolDao.getById(sessionId) ?: return@withTransaction
-            if (session.phase.isTerminal) return@withTransaction
+        val cancelled = database.withTransaction {
+            val session = protocolDao.getById(sessionId) ?: return@withTransaction false
+            if (session.phase.isTerminal) return@withTransaction false
             val now = System.currentTimeMillis()
             val elapsed = elapsedFocusAt(session, now)
             if ((session.phase == FocusProtocolPhase.FOCUS ||
@@ -349,17 +587,20 @@ class FocusProtocolManager(context: Context) {
                     if (session.pomodoroRecorded) 0L else elapsed
             )
             protocolDao.update(cancelled)
+            true
         }
+        if (!cancelled) return
         scheduler.cancel(sessionId)
+        runCatching { FocusSoundscapeService.stopForTerminal(appContext, sessionId) }
         cancelNotification(sessionId)
     }
 
     suspend fun completeReview(sessionId: Int, energyAfter: Int) {
-        val session = protocolDao.getById(sessionId) ?: return
-        if (session.phase != FocusProtocolPhase.REVIEW) return
-        val now = System.currentTimeMillis()
         val safeEnergy = energyAfter.coerceIn(1, 10)
-        database.withTransaction {
+        val completed = database.withTransaction {
+            val session = protocolDao.getById(sessionId) ?: return@withTransaction false
+            if (session.phase != FocusProtocolPhase.REVIEW) return@withTransaction false
+            val now = System.currentTimeMillis()
             energyDao.insert(
                 EnergySampleEntity(
                     timestamp = now,
@@ -377,9 +618,34 @@ class FocusProtocolManager(context: Context) {
                     completedAt = now
                 )
             )
+            true
         }
+        if (!completed) return
         scheduler.cancel(sessionId)
+        runCatching { FocusSoundscapeService.stopForTerminal(appContext, sessionId) }
         cancelNotification(sessionId)
+    }
+
+    suspend fun updateSoundscape(
+        sessionId: Int,
+        selection: FocusSoundscapeSelection,
+        primaryVolumePercent: Int
+    ): FocusProtocolSessionEntity? {
+        val safe = selection.normalized()
+        val changed = protocolDao.updateSoundscape(
+            id = sessionId,
+            primaryId = safe.primary.catalogId,
+            customUri = safe.primary.customFile?.uriString,
+            customName = safe.primary.customFile?.displayName,
+            primaryVolume = primaryVolumePercent.coerceIn(0, 100),
+            secondaryId = safe.secondaryLayerId,
+            secondaryVolume = safe.secondaryVolumePercent.coerceIn(0, 100),
+            playDuringRecovery = safe.playDuringRecovery
+        )
+        if (changed == 0) return null
+        val updated = protocolDao.getById(sessionId) ?: return null
+        showNotificationAndSyncSoundscape(updated, alert = false)
+        return updated
     }
 
     private suspend fun finishFocusInternal(
@@ -426,6 +692,9 @@ class FocusProtocolManager(context: Context) {
     ) {
         if (elapsed < MIN_RECORDED_FOCUS_MS) return
         val startedAt = session.focusStartedAt ?: (completedAt - elapsed)
+        val linkedTaskId = focusItemTaskId(session.itemId)
+            ?: session.itemId.takeIf { session.activityType == FocusActivityType.WORK }
+                ?.takeIf { taskRepository.getById(it) != null }
         val pomodoro = PomodoroSessionEntity(
                 startedAt = startedAt,
                 durationMinutes = ((elapsed + MINUTE_MS - 1L) / MINUTE_MS).toInt(),
@@ -433,16 +702,20 @@ class FocusProtocolManager(context: Context) {
                 isCompleted = completed,
                 isBreak = false,
                 activityType = session.activityType,
-                subjectId = session.itemId.takeIf { session.activityType == FocusActivityType.STUDY },
-                taskId = session.itemId.takeIf { session.activityType == FocusActivityType.WORK },
-                otherActivityId = session.itemId.takeIf { session.activityType == FocusActivityType.OTHER },
+                subjectId = session.itemId.takeIf {
+                    it > 0 && linkedTaskId == null && session.activityType == FocusActivityType.STUDY
+                },
+                taskId = linkedTaskId,
+                otherActivityId = session.itemId.takeIf {
+                    it > 0 && linkedTaskId == null && session.activityType == FocusActivityType.OTHER
+                },
                 itemName = session.itemName,
                 actualDurationMillis = elapsed,
                 recordSource = "TIMER"
             )
         val pomodoroId = pomodoroDao.insert(pomodoro).toInt()
         activityRepository.recordTimer(pomodoro, pomodoroId)
-        if (session.activityType == FocusActivityType.STUDY) {
+        if (session.activityType == FocusActivityType.STUDY && linkedTaskId == null && session.itemId > 0) {
             studyDao.insert(
                 StudySessionEntity(
                     subjectId = session.itemId,
@@ -462,6 +735,32 @@ class FocusProtocolManager(context: Context) {
         val legEnd = minOf(atMillis, session.phaseEndsAt ?: atMillis)
         return session.focusElapsedMillis +
             (legEnd - session.phaseStartedAt).coerceAtLeast(0L)
+    }
+
+    private suspend fun canonicalTarget(
+        requestedType: FocusActivityType,
+        requestedItemId: Int,
+        requestedName: String
+    ): CanonicalFocusTarget? {
+        val encodedTaskId = focusItemTaskId(requestedItemId)
+        val legacyTaskId = requestedItemId.takeIf {
+            requestedType == FocusActivityType.WORK && it > 0
+        }
+        val taskId = encodedTaskId ?: legacyTaskId
+        if (taskId != null) {
+            val task = taskRepository.getById(taskId) ?: return null
+            if (task.isDone) return null
+            return CanonicalFocusTarget(
+                activityType = task.focusActivityType(),
+                itemId = taskFocusItemId(task.id),
+                itemName = task.primaryLabel(),
+                remainingTaskMinutes = task.remainingWorkMinutesOrNull(),
+                preferredBoutMinutes = task.estimatedMinutes.coerceIn(1, 180)
+            )
+        }
+        val name = requestedName.trim()
+        if (requestedItemId <= 0 || name.isEmpty()) return null
+        return CanonicalFocusTarget(requestedType, requestedItemId, name)
     }
 
     private suspend fun showNotification(session: FocusProtocolSessionEntity, alert: Boolean) {
@@ -491,11 +790,17 @@ class FocusProtocolManager(context: Context) {
             .setSubText(session.itemName)
             .setContentText(session.outcome.ifBlank { session.itemName })
             .setContentIntent(openIntent)
-            .setOnlyAlertOnce(!alert)
-            .setSilent(!alert)
+            .setOnlyAlertOnce(true)
+            // Even if Android retained a user-selected channel sound, the
+            // visual notification must never become a second audio source.
+            .setSilent(true)
             .setAutoCancel(false)
             .setOngoing(!session.phase.isTerminal)
             .setPriority(if (alert) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+
+        if (session.phase.isTerminal) {
+            builder.setTimeoutAfter(6L * 60L * 60L * 1000L)
+        }
 
         val phaseEnd = session.phaseEndsAt
         if (session.phase.hasCountdown && phaseEnd != null) {
@@ -579,8 +884,48 @@ class FocusProtocolManager(context: Context) {
         if (shown && alert) {
             AppNotificationSoundPlayer.play(
                 context = appContext,
-                soundUri = soundPreference.getUri()
+                settings = signalPreferences.get(AppSignalType.POMODORO),
+                dedupeKey = "focus-protocol-${session.id}-${session.phase}-${session.phaseStartedAt}"
             )
+        }
+    }
+
+    private suspend fun showNotificationAndSyncSoundscape(
+        session: FocusProtocolSessionEntity,
+        alert: Boolean
+    ) = runtimeSyncMutex.withLock {
+        // Side effects may arrive from UI and AlarmManager almost simultaneously.
+        // Room is authoritative: never revive a stale phase or alert for a transition
+        // which has already been superseded.
+        val current = protocolDao.getById(session.id) ?: return@withLock
+        if (current.phase.isTerminal) {
+            runCatching { FocusSoundscapeService.stopForTerminal(appContext, current.id) }
+            cancelNotification(current.id)
+            return@withLock
+        }
+        val transitionStillCurrent = current.phase == session.phase &&
+            current.phaseStartedAt == session.phaseStartedAt
+        val shouldAlert = alert && transitionStillCurrent
+        // A phase cue is the only foreground event while it plays. Pausing the
+        // ambience first prevents it from becoming a second simultaneous sound.
+        if (shouldAlert) runCatching { soundscapeController.pause() }
+        showNotification(current, shouldAlert)
+        syncSoundscapeForPhase(current)
+    }
+
+    private fun syncSoundscapeForPhase(session: FocusProtocolSessionEntity) {
+        runCatching {
+            when {
+                session.phase == FocusProtocolPhase.FOCUS -> {
+                    soundscapeController.play(session.soundscapeMix(), session.id)
+                }
+                session.phase == FocusProtocolPhase.RECOVERY &&
+                    session.soundscapePlayDuringRecovery -> {
+                    soundscapeController.play(session.soundscapeMix(), session.id)
+                }
+                session.phase == FocusProtocolPhase.FOCUS_PAUSED -> soundscapeController.pause()
+                else -> soundscapeController.stop()
+            }
         }
     }
 
@@ -614,7 +959,7 @@ class FocusProtocolManager(context: Context) {
         .format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     companion object {
-        private const val CHANNEL_ID = "focus_protocol_channel_app_volume_v3"
+        private const val CHANNEL_ID = AppNotificationChannelIds.FOCUS_PROTOCOL
         private const val NOTIFICATION_BASE = 680_000
         private const val ENERGY_BEFORE = "BEFORE_FOCUS"
         private const val ENERGY_AFTER = "AFTER_FOCUS"

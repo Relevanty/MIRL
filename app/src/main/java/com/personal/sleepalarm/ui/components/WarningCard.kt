@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.components
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,15 +32,15 @@ fun WarningCard(
     onAction: () -> Unit = {}
 ) {
     val containerColor = if (isError) {
-        MaterialTheme.colorScheme.errorContainer
+        MaterialTheme.appAccents.urgent.container
     } else {
-        MaterialTheme.colorScheme.tertiaryContainer
+        MaterialTheme.appAccents.warning.container
     }
 
     val contentColor = if (isError) {
-        MaterialTheme.colorScheme.onErrorContainer
+        MaterialTheme.appAccents.urgent.onContainer
     } else {
-        MaterialTheme.colorScheme.onTertiaryContainer
+        MaterialTheme.appAccents.warning.onContainer
     }
 
     Card(
@@ -87,8 +89,8 @@ fun InfoCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            containerColor = MaterialTheme.appAccents.calm.container,
+            contentColor = MaterialTheme.appAccents.calm.onContainer
         )
     ) {
         Column(

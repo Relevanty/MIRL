@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.ui.tasks
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -74,5 +75,51 @@ class TaskMatrixDropTest {
 
         assertTrue(target.completed)
         assertEquals(null, target.quadrant)
+    }
+
+    @Test
+    fun sameQuadrantDrop_landsWhereReleasedInsteadOfSnappingBackFirst() {
+        val releasedOffset = Offset(38f, 21f)
+
+        val landing = calculateDropLandingOffset(
+            source = TaskQuadrant.NOW,
+            target = TaskDropTarget(TaskQuadrant.NOW, completed = false),
+            dragOffset = releasedOffset,
+            baseCenterInMatrix = Offset(60f, 70f),
+            quadrantWidthPx = 200f,
+            quadrantHeightPx = 240f
+        )
+
+        assertEquals(releasedOffset, landing)
+    }
+
+    @Test
+    fun expandedListDrag_commitsDirectionOnlyAfterThreshold() {
+        assertEquals(1, calculateReorderDirection(35f))
+        assertEquals(-1, calculateReorderDirection(-35f))
+        assertEquals(null, calculateReorderDirection(12f))
+    }
+
+    @Test
+    fun measuredLanding_usesRealSingleRowSlots() {
+        val area = TaskAreaGeometry(Offset(100f, 200f), Size(320f, 240f))
+
+        val left = calculateTaskSlotCenter(area, taskCount = 1, targetIndex = 0, ballSizePx = 60f)
+        val right = calculateTaskSlotCenter(area, taskCount = 2, targetIndex = 1, ballSizePx = 60f)
+
+        assertEquals(196.66667f, left.x, 0.001f)
+        assertEquals(320f, left.y, 0.001f)
+        assertEquals(323.33334f, right.x, 0.001f)
+        assertEquals(320f, right.y, 0.001f)
+    }
+
+    @Test
+    fun measuredLanding_usesRealSecondRowSlot() {
+        val area = TaskAreaGeometry(Offset(100f, 200f), Size(320f, 240f))
+
+        val bottomLeft = calculateTaskSlotCenter(area, taskCount = 3, targetIndex = 2, ballSizePx = 60f)
+
+        assertEquals(196.66667f, bottomLeft.x, 0.001f)
+        assertEquals(370f, bottomLeft.y, 0.001f)
     }
 }

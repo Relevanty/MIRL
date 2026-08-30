@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.home
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -29,15 +31,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -61,12 +66,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,13 +85,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
+import com.personal.sleepalarm.domain.automation.isAutomationArmed
+import com.personal.sleepalarm.domain.automation.isAutomationPausedForFocus
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.model.SleepPlan
+import com.personal.sleepalarm.domain.model.ordinaryTasks
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.model.effectiveWorkBudgetMinutes
+import com.personal.sleepalarm.domain.model.nextFocusDurationMinutes
+import com.personal.sleepalarm.domain.model.remainingWorkMillisOrNull
 import com.personal.sleepalarm.ui.components.PermissionBanners
 import com.personal.sleepalarm.ui.components.WarningCard
 import com.personal.sleepalarm.ui.dday.DDayBadge
 import com.personal.sleepalarm.ui.stats.StatsScreen
 import com.personal.sleepalarm.ui.stats.StatsViewModel
+import com.personal.sleepalarm.ui.theme.ensureContrast
 import com.personal.sleepalarm.util.PermissionChecker
 import com.personal.sleepalarm.util.TimeFormatter
 import java.time.ZoneId
@@ -99,6 +112,8 @@ fun HomeScreen(
     onOpenStats: (() -> Unit)? = null,
     onOpenMore: () -> Unit = {},
     onOpenAssistant: () -> Unit = {},
+    onOpenEnglishLearning: () -> Unit = {},
+    onOpenMathPractice: () -> Unit = {},
     openTaskCount: Int = 0,
     upcomingTasks: List<TaskEntity> = emptyList(),
     onStartTaskFocus: (TaskEntity) -> Unit = {},
@@ -114,6 +129,7 @@ fun HomeScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var showStats by remember { mutableStateOf(false) }
     var showQuickNotes by remember { mutableStateOf(false) }
+    val ordinaryUpcomingTasks = remember(upcomingTasks) { upcomingTasks.ordinaryTasks() }
 
     if (showStats) {
         StatsScreen(
@@ -179,6 +195,8 @@ fun HomeScreen(
                     ) {
                         val activeSleepSession = state.activeSession
                         val catState = when {
+                            activeSleepSession?.isAutomationPausedForFocus() == true -> SleepCatState.AWAKE
+                            activeSleepSession?.isAutomationArmed() == true -> SleepCatState.DETECTING
                             activeSleepSession?.detectedSleepOnsetTime != null -> SleepCatState.SLEEPING
                             activeSleepSession != null && state.now - activeSleepSession.bedTimePlanned < 10L * 60_000L ->
                                 SleepCatState.PREPARING
@@ -192,7 +210,7 @@ fun HomeScreen(
                             activeSession = activeSleepSession,
                             latestCompleted = state.latestCompletedSession,
                             now = state.now,
-                            tasks = upcomingTasks,
+                            tasks = ordinaryUpcomingTasks,
                             onOpenTasks = onOpenTasks,
                             onStartFocus = onStartTaskFocus
                         )
@@ -212,17 +230,28 @@ fun HomeScreen(
                     QuickAccessPill(
                         label = stringResource(R.string.quick_notes_title),
                         onClick = { showQuickNotes = true },
-                        accent = MaterialTheme.colorScheme.secondary,
+                        accent = MaterialTheme.appAccents.calm.color,
                         modifier = Modifier.weight(1f)
                     )
                     QuickAccessPill(
                         label = stringResource(R.string.diary_title),
                         onClick = onOpenDiary,
-                        accent = MaterialTheme.colorScheme.primary,
+                        accent = MaterialTheme.appAccents.other.color,
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
+
+            // These shortcuts are siblings of the content column, not children of
+            // either the header row or the scroll container. They therefore never
+            // add a row, change the cat's measurement, or create scroll range.
+            LearningShortcutsOverlay(
+                onOpenEnglishLearning = onOpenEnglishLearning,
+                onOpenMathPractice = onOpenMathPractice,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 16.dp)
+            )
 
             // Transient cards share one overlay stack. Neither an active sleep
             // session nor a permission warning can remeasure and move the plan.
@@ -230,11 +259,16 @@ fun HomeScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(horizontal = 16.dp)
-                    .padding(top = 60.dp),
+                    .padding(top = 108.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 state.activeSession?.let { active ->
-                    ActiveSessionCard(activeSession = active, onCancel = viewModel::cancelActiveSession)
+                    ActiveSessionCard(
+                        activeSession = active,
+                        onCancel = viewModel::cancelActiveSession,
+                        onSkipAutomation = viewModel::skipSleepAutomationTonight,
+                        onRejectDetectedOnset = viewModel::rejectDetectedSleepOnset
+                    )
                 }
                 PermissionBanners(
                     state = state.permissions,
@@ -280,7 +314,7 @@ private fun TodayDynamicCard(
     val morningResult = latestCompleted?.takeIf {
         activeSession == null && it.actualWakeTime?.let { wake -> now - wake < 6L * 60L * 60_000L } == true
     }
-    val task = tasks.firstOrNull()
+    val task = tasks.firstOrNull { it.nextFocusDurationMinutes() > 0 } ?: tasks.firstOrNull()
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
@@ -294,7 +328,7 @@ private fun TodayDynamicCard(
                     if (activeSession.detectedSleepOnsetTime == null) "Телефон наблюдает за засыпанием"
                     else "Сон определён",
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.appAccents.sleep.color
                 )
                 Text(
                     if (activeSession.detectedSleepOnsetTime == null)
@@ -305,7 +339,7 @@ private fun TodayDynamicCard(
                 )
             }
             morningResult != null -> Column(Modifier.padding(14.dp)) {
-                Text("Доброе утро", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Text("Доброе утро", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.appAccents.success.color)
                 Text(
                     "Проверьте результат сна выше — после подтверждения он попадёт в аналитику дня.",
                     style = MaterialTheme.typography.bodySmall,
@@ -317,24 +351,34 @@ private fun TodayDynamicCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Главное сейчас", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("Главное сейчас", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.appAccents.focus.color)
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = onOpenTasks) { Text("Открыть") }
                 }
                 Text(
-                    task.title.ifBlank { task.description.ifBlank { stringResource(R.string.task_untitled) } },
+                    task.primaryLabel(),
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall
                 )
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    val remaining = (task.workBudgetMinutes * 60_000L - task.spentMillis).coerceAtLeast(0L)
-                    val remainingText = if (task.workBudgetMinutes > 0) {
-                        val hours = remaining / 3_600_000L
-                        val minutes = remaining / 60_000L % 60
-                        "Осталось ${if (hours > 0) "$hours ч " else ""}$minutes мин · цикл ${task.plannedFocusMinutes} мин"
-                    } else "Обычный цикл ${task.plannedFocusMinutes} мин"
+                    val budgetMinutes = task.effectiveWorkBudgetMinutes()
+                    val remaining = task.remainingWorkMillisOrNull()
+                    val nextFocusMinutes = task.nextFocusDurationMinutes()
+                    val remainingText = if (nextFocusMinutes <= 0) {
+                        stringResource(R.string.daily_focus_home_budget_exhausted)
+                    } else if (budgetMinutes > 0) {
+                        val finiteRemaining = remaining ?: 0L
+                        val hours = finiteRemaining / 3_600_000L
+                        val minutes = finiteRemaining / 60_000L % 60
+                        val duration = "${if (hours > 0) "$hours ч " else ""}$minutes мин"
+                        stringResource(
+                            R.string.daily_focus_home_remaining_bout,
+                            duration,
+                            nextFocusMinutes
+                        )
+                    } else stringResource(R.string.daily_focus_home_bout, nextFocusMinutes)
                     Text(
                         remainingText,
                         modifier = Modifier.weight(1f),
@@ -343,7 +387,10 @@ private fun TodayDynamicCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Button(onClick = { onStartFocus(task) }) { Text("Фокус") }
+                    Button(
+                        onClick = { onStartFocus(task) },
+                        enabled = nextFocusMinutes > 0
+                    ) { Text("Фокус") }
                 }
             }
             else -> Column(Modifier.padding(14.dp)) {
@@ -374,13 +421,13 @@ private fun UpcomingTasksStrip(tasks: List<TaskEntity>, onOpenTasks: () -> Unit)
                 Text(
                     text = stringResource(R.string.home_tasks_all),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.appAccents.work.color
                 )
             }
             tasks.forEach { task ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
-                        task.description.ifBlank { task.nextAction }.ifBlank { stringResource(R.string.task_untitled) },
+                        task.primaryLabel(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
@@ -448,22 +495,6 @@ private fun SleepPlanWithCat(plan: SleepPlan?, catState: SleepCatState) {
         )
 
         if (isSleeping) SleepCatZzz(cardEdge = cardEdge, canvasWidth = maxWidth)
-        if (catState != SleepCatState.AWAKE) {
-            Text(
-                text = when (catState) {
-                SleepCatState.AWAKE -> ""
-                SleepCatState.PREPARING -> "Устраивается спать…"
-                SleepCatState.DETECTING -> "Наблюдает за тишиной"
-                SleepCatState.SLEEPING -> "Сон определён"
-                SleepCatState.MORNING -> "Доброе утро"
-                },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = cardEdge + 8.dp, start = 12.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }
 
@@ -517,9 +548,9 @@ private fun GeometricCatBackdrop(
     cardEdgeFromTop: androidx.compose.ui.unit.Dp,
     isSleeping: Boolean = false
 ) {
-    val primary = MaterialTheme.colorScheme.primary
-    val secondary = MaterialTheme.colorScheme.secondary
-    val tertiary = MaterialTheme.colorScheme.tertiary
+    val focusTone = MaterialTheme.appAccents.focus
+    val sleepTone = MaterialTheme.appAccents.sleep
+    val studyTone = MaterialTheme.appAccents.study
     val surface = MaterialTheme.colorScheme.surfaceVariant
     val backdrop = MaterialTheme.colorScheme.background
     val ink = MaterialTheme.colorScheme.onBackground
@@ -581,7 +612,7 @@ private fun GeometricCatBackdrop(
         )
         drawPath(
             path = tail,
-            color = tertiary.copy(alpha = 0.29f),
+            color = studyTone.fill.copy(alpha = 0.29f),
             style = Stroke(width = 17.dp.toPx(), cap = StrokeCap.Round)
         )
 
@@ -610,12 +641,12 @@ private fun GeometricCatBackdrop(
         drawPath(body, surface.copy(alpha = 0.28f))
         clipPath(body) {
             drawCircle(
-                color = primary.copy(alpha = 0.19f),
+                color = focusTone.fill.copy(alpha = 0.19f),
                 radius = radius * 1.28f,
                 center = Offset(size.width * 0.32f, cardEdge - radius * 0.28f)
             )
             drawCircle(
-                color = secondary.copy(alpha = 0.175f),
+                color = sleepTone.fill.copy(alpha = 0.175f),
                 radius = radius * 1.08f,
                 center = Offset(size.width * 0.54f, cardEdge - radius * 0.20f)
             )
@@ -625,7 +656,7 @@ private fun GeometricCatBackdrop(
                 lineTo(size.width * 0.31f, cardEdge + radius * 0.10f)
                 close()
             }
-            drawPath(flankFacet, tertiary.copy(alpha = 0.165f))
+            drawPath(flankFacet, studyTone.fill.copy(alpha = 0.165f))
         }
 
         // A tucked hind paw peeks out under the left half of the body.
@@ -649,7 +680,7 @@ private fun GeometricCatBackdrop(
             close()
         }
         drawPath(hindPaw, backdrop)
-        drawPath(hindPaw, primary.copy(alpha = 0.30f))
+        drawPath(hindPaw, focusTone.fill.copy(alpha = 0.30f))
 
         // The two forelegs point forward and overlap naturally. Drawing them
         // before the head makes their shoulders disappear beneath its outline.
@@ -673,7 +704,7 @@ private fun GeometricCatBackdrop(
             close()
         }
         drawPath(farFrontLeg, backdrop)
-        drawPath(farFrontLeg, secondary.copy(alpha = 0.28f))
+        drawPath(farFrontLeg, sleepTone.fill.copy(alpha = 0.28f))
 
         val nearFrontLeg = Path().apply {
             moveTo(center.x - radius * 0.20f, center.y + radius * 0.43f)
@@ -695,7 +726,7 @@ private fun GeometricCatBackdrop(
             close()
         }
         drawPath(nearFrontLeg, backdrop)
-        drawPath(nearFrontLeg, tertiary.copy(alpha = 0.32f))
+        drawPath(nearFrontLeg, studyTone.fill.copy(alpha = 0.32f))
 
         val head = Path().apply {
             moveTo(center.x - radius * 0.86f, center.y - radius * 0.36f)
@@ -739,27 +770,27 @@ private fun GeometricCatBackdrop(
                 lineTo(center.x - radius * 0.10f, center.y + radius * 0.12f)
                 close()
             }
-            drawPath(leftPanel, primary.copy(alpha = 0.22f))
-            drawPath(rightPanel, secondary.copy(alpha = 0.205f))
+            drawPath(leftPanel, focusTone.fill.copy(alpha = 0.22f))
+            drawPath(rightPanel, sleepTone.fill.copy(alpha = 0.205f))
 
             // Thin origami seams are the new motif: quiet, geometric, and theme-aware.
             val seamStroke = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round)
             drawLine(
-                primary.copy(alpha = 0.23f),
+                focusTone.color.copy(alpha = 0.23f),
                 Offset(center.x, center.y - radius * 0.72f),
                 Offset(center.x, center.y + radius * 0.88f),
                 seamStroke.width,
                 StrokeCap.Round
             )
             drawLine(
-                tertiary.copy(alpha = 0.21f),
+                studyTone.color.copy(alpha = 0.21f),
                 Offset(center.x - radius * 0.78f, center.y - radius * 0.36f),
                 Offset(center.x, center.y + radius * 0.10f),
                 seamStroke.width,
                 StrokeCap.Round
             )
             drawLine(
-                tertiary.copy(alpha = 0.21f),
+                studyTone.color.copy(alpha = 0.21f),
                 Offset(center.x + radius * 0.78f, center.y - radius * 0.36f),
                 Offset(center.x, center.y + radius * 0.10f),
                 seamStroke.width,
@@ -801,7 +832,7 @@ private fun GeometricCatBackdrop(
             lineTo(center.x, center.y + radius * 0.29f)
             close()
         }
-        drawPath(nose, tertiary.copy(alpha = 0.40f))
+        drawPath(nose, studyTone.color.copy(alpha = 0.40f))
 
         val mouth = Path().apply {
             moveTo(center.x, center.y + radius * 0.29f)
@@ -869,13 +900,13 @@ private fun SleepTopActions(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 4.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(18.dp))
-                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f))
+                .background(MaterialTheme.appAccents.work.container)
                 .clickable(onClick = onTasks)
                 .padding(horizontal = 12.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -885,12 +916,12 @@ private fun SleepTopActions(
                 Icons.Default.Checklist,
                 contentDescription = null,
                 modifier = Modifier.size(19.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                tint = MaterialTheme.appAccents.work.onContainer
             )
             Text(
                 stringResource(R.string.home_tasks_button),
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.appAccents.work.onContainer,
                 fontWeight = FontWeight.SemiBold
             )
             if (openTaskCount > 0) {
@@ -898,18 +929,18 @@ private fun SleepTopActions(
                     modifier = Modifier
                         .size(22.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(MaterialTheme.appAccents.work.color),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         openTaskCount.coerceAtMost(99).toString(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = MaterialTheme.appAccents.work.onColor
                     )
                 }
             }
         }
-        Row {
+        Row(verticalAlignment = Alignment.Top) {
             HeaderAction(
                 icon = if (isBriefingPlaying) Icons.Default.Stop else Icons.Default.RecordVoiceOver,
                 description = stringResource(R.string.content_description_briefing),
@@ -935,6 +966,91 @@ private fun SleepTopActions(
     }
 }
 
+internal const val HOME_LEARNING_SHORTCUTS_TEST_TAG = "home_learning_shortcuts_overlay"
+internal const val HOME_ENGLISH_SHORTCUT_TEST_TAG = "home_english_learning_shortcut"
+internal const val HOME_MATH_SHORTCUT_TEST_TAG = "home_math_practice_shortcut"
+
+internal data class HomeLearningShortcutsGeometry(
+    val topOffsetDp: Float,
+    val touchTargetDp: Float,
+    val visualDiameterDp: Float,
+    val horizontalGapDp: Float
+) {
+    val rowWidthDp: Float get() = touchTargetDp * 2f + horizontalGapDp
+}
+
+/** Pure geometry shared by the overlay and local layout tests. */
+internal fun calculateHomeLearningShortcutsGeometry(): HomeLearningShortcutsGeometry =
+    HomeLearningShortcutsGeometry(
+        // 8dp screen content inset + 4dp header inset + 42dp action + 6dp gap.
+        topOffsetDp = 60f,
+        touchTargetDp = 48f,
+        visualDiameterDp = 40f,
+        horizontalGapDp = 0f
+    )
+
+@Composable
+private fun LearningShortcutsOverlay(
+    onOpenEnglishLearning: () -> Unit,
+    onOpenMathPractice: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val geometry = calculateHomeLearningShortcutsGeometry()
+    Row(
+        modifier = modifier
+            .offset(y = geometry.topOffsetDp.dp)
+            .testTag(HOME_LEARNING_SHORTCUTS_TEST_TAG),
+        horizontalArrangement = Arrangement.spacedBy(geometry.horizontalGapDp.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LearningShortcut(
+            icon = Icons.Default.Translate,
+            description = stringResource(R.string.home_english_learning_open),
+            testTag = HOME_ENGLISH_SHORTCUT_TEST_TAG,
+            geometry = geometry,
+            onClick = onOpenEnglishLearning
+        )
+        LearningShortcut(
+            icon = Icons.Default.Calculate,
+            description = stringResource(R.string.math_practice_open),
+            testTag = HOME_MATH_SHORTCUT_TEST_TAG,
+            geometry = geometry,
+            onClick = onOpenMathPractice
+        )
+    }
+}
+
+@Composable
+private fun LearningShortcut(
+    icon: ImageVector,
+    description: String,
+    testTag: String,
+    geometry: HomeLearningShortcutsGeometry,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(geometry.touchTargetDp.dp)
+            .testTag(testTag)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(geometry.visualDiameterDp.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = description,
+                modifier = Modifier.size(21.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
 @Composable
 private fun HeaderAction(
     icon: ImageVector,
@@ -948,7 +1064,7 @@ private fun HeaderAction(
             .size(42.dp)
             .clip(CircleShape)
             .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer
+                if (selected) MaterialTheme.appAccents.focus.container
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
             )
             .clickable(onClick = onClick),
@@ -958,22 +1074,44 @@ private fun HeaderAction(
             imageVector = icon,
             contentDescription = description,
             modifier = Modifier.size(21.dp),
-            tint = if (selected) MaterialTheme.colorScheme.primary
+            tint = if (selected) MaterialTheme.appAccents.focus.color
             else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
 @Composable
-private fun ActiveSessionCard(activeSession: SleepSessionEntity, onCancel: () -> Unit) {
+private fun ActiveSessionCard(
+    activeSession: SleepSessionEntity,
+    onCancel: () -> Unit,
+    onSkipAutomation: () -> Unit,
+    onRejectDetectedOnset: () -> Unit
+) {
+    val automationArmed = activeSession.isAutomationArmed()
+    val detected = activeSession.detectedSleepOnsetTime != null
     WarningCard(
-        text = stringResource(
-            R.string.active_session_text,
-            TimeFormatter.formatEpochMillis(activeSession.estimatedWakeTime, activeSession.zoneId)
-        ),
+        text = if (automationArmed) {
+            stringResource(
+                R.string.sleep_automation_waiting_card,
+                TimeFormatter.formatEpochMillis(activeSession.estimatedWakeTime, activeSession.zoneId)
+            )
+        } else stringResource(
+                R.string.active_session_text,
+                TimeFormatter.formatEpochMillis(activeSession.estimatedWakeTime, activeSession.zoneId)
+            ),
         isError = false,
-        actionLabel = stringResource(R.string.action_cancel_sleep),
-        onAction = onCancel
+        actionLabel = stringResource(
+            when {
+                detected -> R.string.sleep_onset_not_asleep
+                automationArmed -> R.string.action_skip_sleep_automation_tonight
+                else -> R.string.action_cancel_sleep
+            }
+        ),
+        onAction = when {
+            detected -> onRejectDetectedOnset
+            automationArmed -> onSkipAutomation
+            else -> onCancel
+        }
     )
 }
 
@@ -1017,7 +1155,7 @@ private fun PlanSummaryCard(plan: SleepPlan?, modifier: Modifier = Modifier) {
                     text = TimeFormatter.formatZonedDateTime(plan.estimatedWake),
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.appAccents.sleep.color
                 )
                 Text(
                     text = stringResource(R.string.home_sleep_wake_label),
@@ -1054,7 +1192,7 @@ private fun PlanSummaryCard(plan: SleepPlan?, modifier: Modifier = Modifier) {
             plan.cyclesDidNotFit && plan.cycles == 0 -> Text(
                 text = stringResource(R.string.error_no_cycle_fits),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                color = MaterialTheme.appAccents.warning.color,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -1096,26 +1234,35 @@ private fun StartButtons(
     onStart: () -> Unit,
     onCancelActive: () -> Unit
 ) {
-    val isActive = activeSession != null
-    Button(
-        onClick = if (isActive) onCancelActive else onStart,
-        enabled = isActive || canStart,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(70.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = if (isActive) {
-            ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-        } else {
-            ButtonDefaults.buttonColors()
+    val automationArmed = activeSession?.isAutomationArmed() == true
+    val cancellableSession = activeSession != null && !automationArmed
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = if (cancellableSession) onCancelActive else onStart,
+            enabled = cancellableSession || canStart,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(70.dp),
+            shape = RoundedCornerShape(22.dp),
+            colors = if (cancellableSession) {
+                ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.appAccents.urgent.color,
+                    contentColor = MaterialTheme.appAccents.urgent.onColor
+                )
+            } else {
+                ButtonDefaults.buttonColors()
+            }
+        ) {
+            Text(
+                text = stringResource(
+                    if (cancellableSession) R.string.action_cancel_sleep
+                    else R.string.action_go_to_sleep_now
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
         }
-    ) {
-        Text(
-            text = stringResource(if (isActive) R.string.action_cancel_sleep else R.string.action_go_to_sleep_now),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center
-        )
     }
 }
 
@@ -1127,11 +1274,10 @@ private fun QuickAccessPill(
     modifier: Modifier = Modifier
 ) {
     val containerColor = lerp(MaterialTheme.colorScheme.surface, accent, 0.72f)
-    val contentColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-        Color.White.copy(alpha = 0.82f)
-    } else {
-        Color.Black.copy(alpha = 0.82f)
-    }
+    val contentColor = ensureContrast(
+        foreground = MaterialTheme.colorScheme.onSurface,
+        background = containerColor
+    )
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(24.dp))

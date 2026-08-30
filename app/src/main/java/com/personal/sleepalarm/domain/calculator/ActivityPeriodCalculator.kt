@@ -47,6 +47,16 @@ object ActivityPeriodCalculator {
         )
     }
 
+    /** Unique active time across all categories; overlapping records count once. */
+    fun uniqueActiveMillis(
+        periodStartMillis: Long,
+        periodEndMillis: Long,
+        intervals: List<TrackedInterval>
+    ): Long {
+        require(periodEndMillis >= periodStartMillis)
+        return mergedDuration(intervals, periodStartMillis, periodEndMillis)
+    }
+
     private fun mergedDuration(
         intervals: List<TrackedInterval>,
         from: Long,

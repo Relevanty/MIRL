@@ -31,11 +31,13 @@ class ReminderScheduler(
 
     fun schedule(reminder: ReminderEntity) {
         Log.d(TAG, "schedule id=${reminder.id} enabled=${reminder.isEnabled} next=${reminder.nextTriggerTime}")
+        // Always clear an older PendingIntent first. An integrity repair or a
+        // remote edit may call schedule with an already disabled reminder.
+        cancel(reminder.id)
         if (!reminder.isEnabled) {
             Log.d(TAG, "skip: disabled")
             return
         }
-        cancel(reminder.id)
 
         val now = System.currentTimeMillis()
         val preTime = reminder.nextTriggerTime - PRE_LEAD_MS
@@ -67,7 +69,7 @@ class ReminderScheduler(
     }
 
     fun rescheduleAll(reminders: List<ReminderEntity>) {
-        reminders.forEach { if (it.isEnabled) schedule(it) }
+        reminders.forEach(::schedule)
     }
 
     private fun setExact(time: Long, reminderId: Int, action: String) {

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="channel_daily_plan">Daily plan</string>
+    <string name="channel_daily_plan_description">Local reminders for required tasks’ daily targets</string>
+    <string name="daily_plan_notification_title">Daily plan</string>
+    <string name="daily_plan_morning_title">Today’s plan</string>
+    <string name="daily_plan_morning_body">Not started yet: %1$s</string>
+    <string name="daily_plan_urgency_body">%2$d min of work remain before %1$s. Slack: %3$d min.</string>
+    <string name="daily_plan_overload_body">%2$d min of work remain before %1$s. You are short by %3$d min.</string>
+    <string name="daily_plan_action_start">Start</string>
+    <string name="daily_plan_action_open_plan">Open plan</string>
+    <string name="daily_plan_action_adjust_plan">Adjust plan</string>
+    <string name="daily_plan_action_snooze">Snooze</string>
+
+    <string name="app_signal_daily_plan">Daily plan</string>
+    <string name="app_signal_daily_plan_description">Morning summary and urgency nudges for daily targets</string>
+    <string name="daily_plan_settings_title">Daily-plan reminders</string>
+    <string name="daily_plan_settings_hint">MIRL includes required tasks only and compares their remaining work with the time before your cutoff.</string>
+    <string name="daily_plan_enabled">Remind me about daily targets</string>
+    <string name="daily_plan_morning_enabled">Show unstarted tasks in the morning</string>
+    <string name="daily_plan_buffer">Urgency buffer</string>
+    <string name="daily_plan_repeat_enabled">Repeat while the plan is urgent</string>
+    <string name="daily_plan_repeat_interval">Repeat interval</string>
+    <string name="daily_plan_cutoff">Regular daily-plan cutoff</string>
+    <string name="daily_plan_effective_cutoff_automation">Today’s cutoff follows the start of the sleep-automation window: %1$s.</string>
+    <string name="daily_plan_effective_cutoff_fallback">The selected time is used whenever sleep automation is not active.</string>
+    <string name="daily_plan_minutes_format">%1$d min</string>
+</resources>

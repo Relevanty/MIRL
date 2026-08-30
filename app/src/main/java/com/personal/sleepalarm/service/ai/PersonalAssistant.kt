@@ -3,6 +3,11 @@ package com.personal.sleepalarm.service.ai
 import android.content.Context
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.domain.model.ordinaryTasks
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.model.effectiveWorkBudgetMinutes
+import com.personal.sleepalarm.domain.model.effectiveSleepStartMillis
+import com.personal.sleepalarm.domain.model.NextActionRanker
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -69,7 +74,7 @@ class PersonalAssistant(
 
         val wakeTime = session.actualWakeTime
             ?: return context.getString(R.string.assistant_no_sleep_data)
-        val minutes = (wakeTime - session.estimatedSleepStartTime) / 60_000
+        val minutes = (wakeTime - session.effectiveSleepStartMillis()) / 60_000
         return context.getString(
             R.string.assistant_sleep_answer,
             minutes.toInt(),
@@ -79,7 +84,7 @@ class PersonalAssistant(
 
     private suspend fun tasksAnswer(): String {
         val tasks = database.taskDao().getAll()
-        val pending = tasks.filter { !it.isDone }
+        val pending = NextActionRanker.rank(tasks)
         return if (pending.isEmpty()) {
             context.getString(R.string.assistant_no_tasks)
         } else {
@@ -96,21 +101,18 @@ class PersonalAssistant(
                 }
                 append("\n")
                 append(pending.take(5).joinToString("\n") { task ->
-                    val progress = if (task.estimatedMinutes > 0) {
-                        " ${task.spentMillis / 60_000}/${task.estimatedMinutes}"
+                    val budget = task.effectiveWorkBudgetMinutes()
+                    val progress = if (budget > 0) {
+                        " ${task.spentMillis / 60_000}/$budget"
                     } else ""
-                    "• ${task.title.ifBlank { task.description.ifBlank { task.nextAction.ifBlank { context.getString(R.string.task_untitled) } } }}$progress"
+                    "• ${task.primaryLabel()}$progress"
                 })
                 dueSoon.firstOrNull()?.let { next ->
                     append("\n")
                     append(
                         context.getString(
                             R.string.assistant_tasks_next_deadline,
-                            next.title.ifBlank {
-                                next.description.ifBlank {
-                                    next.nextAction.ifBlank { context.getString(R.string.task_untitled) }
-                                }
-                            }
+                            next.primaryLabel()
                         )
                     )
                 }
@@ -173,7 +175,7 @@ class PersonalAssistant(
 
         val sb = StringBuilder()
         if (sessions != null && sessions.actualWakeTime != null) {
-            val minutes = (sessions.actualWakeTime - sessions.estimatedSleepStartTime) / 60_000
+            val minutes = (sessions.actualWakeTime - sessions.effectiveSleepStartMillis()) / 60_000
             sb.append(context.getString(R.string.assistant_stats_sleep, minutes.toInt()))
         }
         if (moods != null) {
@@ -192,17 +194,19 @@ class PersonalAssistant(
         val session = database.sleepSessionDao().getLatestCompleted() ?: return null
         val wake = session.actualWakeTime ?: return null
 
-        val sleepMinutes = (wake - session.estimatedSleepStartTime) / 60_000.0
-        val sleepStartZdt = Instant.ofEpochMilli(session.estimatedSleepStartTime).atZone(zone)
+        val sleepMinutes = (wake - session.effectiveSleepStartMillis()) / 60_000.0
+        val sleepStartZdt = Instant.ofEpochMilli(session.effectiveSleepStartMillis()).atZone(zone)
         // Минуты от 18:00 до засыпания (сон обычно вечером).
         val onsetOffset = minutesSinceEvening(sleepStartZdt)
         val dayOfWeek = (Instant.ofEpochMilli(wake).atZone(zone).dayOfWeek.value - 1).toDouble()
 
+        val previousDate = Instant.ofEpochMilli(wake).atZone(zone).toLocalDate().minusDays(1).toString()
+        val previousTasks = database.taskDao().getAll().ordinaryTasks().count { it.doneDate == previousDate }
         val features = doubleArrayOf(
             sleepMinutes,
             onsetOffset.toDouble(),
             session.cyclesPlanned.toDouble(),
-            0.0,   // prevTasks — упрощённо
+            previousTasks.toDouble(),
             0.0,   // prevMood — упрощённо
             dayOfWeek
         )

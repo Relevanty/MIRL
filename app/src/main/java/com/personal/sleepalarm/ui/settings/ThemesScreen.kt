@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,8 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -57,9 +60,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
+import com.personal.sleepalarm.ui.theme.AppAccentPalette
 import com.personal.sleepalarm.ui.theme.ThemeCatalog
 import com.personal.sleepalarm.ui.theme.ThemeCategory
 import com.personal.sleepalarm.ui.theme.ThemePreset
+import com.personal.sleepalarm.ui.theme.appAccents
+import com.personal.sleepalarm.ui.theme.buildAppAccentPalette
+import com.personal.sleepalarm.ui.theme.buildColorScheme
 
 private const val DAY_TAB = 0
 private const val NIGHT_TAB = 1
@@ -325,57 +332,30 @@ private fun ThemeCard(
 ) {
     val resources = LocalContext.current.resources
     val shape = RoundedCornerShape(16.dp)
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+    val previewColors = remember(preset) { buildColorScheme(preset) }
+    val previewAccents = remember(preset, previewColors) {
+        buildAppAccentPalette(preset, previewColors)
+    }
+    val borderColor = if (isSelected) {
+        previewColors.primary
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 122.dp)
+            .heightIn(min = 146.dp)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f))
             .border(if (isSelected) 2.dp else 1.dp, borderColor, shape)
             .clickable(onClick = onSelect)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(76.dp)
-                .background(Color(preset.background))
-                .padding(9.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.66f)
-                    .height(34.dp)
-                    .align(Alignment.CenterStart)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(Color(preset.surface))
-            )
-            Row(
-                modifier = Modifier.align(Alignment.BottomStart),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                PaletteDot(Color(preset.primary))
-                PaletteDot(Color(preset.secondary))
-            }
-            if (isSelected) {
-                val selectedBackground = Color(preset.primary)
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(27.dp),
-                    shape = CircleShape,
-                    color = selectedBackground
-                ) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = stringResource(R.string.themes_selected),
-                        tint = if (selectedBackground.luminance() > 0.35f) Color.Black else Color.White,
-                        modifier = Modifier.padding(5.dp)
-                    )
-                }
-            }
-        }
+        CandidateThemePreview(
+            colors = previewColors,
+            accents = previewAccents,
+            isSelected = isSelected
+        )
 
         Text(
             text = preset.localizedName(resources),
@@ -389,12 +369,186 @@ private fun ThemeCard(
 }
 
 @Composable
-private fun PaletteDot(color: Color) {
+private fun CandidateThemePreview(
+    colors: ColorScheme,
+    accents: AppAccentPalette,
+    isSelected: Boolean
+) {
     Box(
         modifier = Modifier
-            .size(13.dp)
+            .fillMaxWidth()
+            .height(98.dp)
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        colors.background,
+                        colors.surfaceContainerLow,
+                        colors.primaryContainer
+                    )
+                )
+            )
+            .padding(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(colors.surfaceContainerHigh)
+                        .border(1.dp, colors.outlineVariant, RoundedCornerShape(9.dp))
+                        .padding(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(colors.primary)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(5.dp)
+                                .clip(CircleShape)
+                                .background(colors.onSurface.copy(alpha = 0.82f))
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.72f)
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(colors.onSurfaceVariant.copy(alpha = 0.58f))
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        MiniThemeTile(
+                            container = colors.primaryContainer,
+                            accent = accents.focus.fill,
+                            outline = colors.outlineVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MiniThemeTile(
+                            container = colors.secondaryContainer,
+                            accent = accents.sleep.fill,
+                            outline = colors.outlineVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MiniThemeTile(
+                            container = colors.tertiaryContainer,
+                            accent = accents.study.fill,
+                            outline = colors.outlineVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .width(22.dp)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.SpaceEvenly,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    PaletteDot(accents.sleep.fill, colors.outline)
+                    PaletteDot(accents.success.fill, colors.outline)
+                    PaletteDot(accents.urgent.fill, colors.outline)
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(15.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(accents.chrome.navigation)
+                    .padding(horizontal = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height(5.dp)
+                        .clip(CircleShape)
+                        .background(colors.primary)
+                )
+                PaletteDot(colors.secondary, colors.outline, Modifier.size(7.dp))
+                PaletteDot(colors.tertiary, colors.outline, Modifier.size(7.dp))
+                Spacer(modifier = Modifier.weight(1f))
+                PaletteDot(accents.calm.fill, colors.outline, Modifier.size(8.dp))
+            }
+        }
+
+        if (isSelected) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(27.dp),
+                shape = CircleShape,
+                color = colors.primary
+            ) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = stringResource(R.string.themes_selected),
+                    tint = colors.onPrimary,
+                    modifier = Modifier.padding(5.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniThemeTile(
+    container: Color,
+    accent: Color,
+    outline: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .height(18.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(container)
+            .border(1.dp, outline.copy(alpha = 0.62f), RoundedCornerShape(5.dp))
+            .padding(4.dp),
+        contentAlignment = Alignment.BottomStart
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.72f)
+                .height(3.dp)
+                .clip(CircleShape)
+                .background(accent)
+        )
+    }
+}
+
+@Composable
+private fun PaletteDot(
+    color: Color,
+    borderColor: Color,
+    modifier: Modifier = Modifier.size(11.dp)
+) {
+    Box(
+        modifier = modifier
             .clip(CircleShape)
             .background(color)
-            .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+            .border(1.dp, borderColor, CircleShape)
     )
 }

@@ -234,6 +234,51 @@ class SleepSessionRepository(
         }
     }
 
+    /**
+     * Атомарный вариант для фоновой автоматизации. В отличие от ручного
+     * startSession никогда не отменяет уже начатую пользователем сессию.
+     */
+    suspend fun startSessionIfNoActive(
+        session: SleepSessionEntity,
+        cues: List<CueEventEntity>
+    ): Int? = database.withTransaction {
+        if (sessionDao.getActiveSession() != null) return@withTransaction null
+        val sessionId = sessionDao.insert(session).toInt()
+        cueEventDao.insertAll(cues.map { it.copy(sessionId = sessionId) })
+        sessionId
+    }
+
+    suspend fun replaceCues(
+        session: SleepSessionEntity,
+        cues: List<CueEventEntity>
+    ) {
+        database.withTransaction {
+            sessionDao.update(session.copy(updatedAt = System.currentTimeMillis()))
+            cueEventDao.deleteForSession(session.id)
+            cueEventDao.insertAll(cues.map { it.copy(sessionId = session.id) })
+        }
+    }
+
+    /**
+     * Applies an alarm correction only while the exact detected onset that
+     * produced it is still accepted. A user can reject a false detection at
+     * any moment without a late service coroutine restoring the old result.
+     */
+    suspend fun replaceCuesIfDetectedOnsetMatches(
+        session: SleepSessionEntity,
+        cues: List<CueEventEntity>,
+        expectedOnsetMillis: Long
+    ): Boolean = database.withTransaction {
+        val current = sessionDao.getById(session.id)
+        if (current?.isActive != true || current.detectedSleepOnsetTime != expectedOnsetMillis) {
+            return@withTransaction false
+        }
+        sessionDao.update(session.copy(updatedAt = System.currentTimeMillis()))
+        cueEventDao.deleteForSession(session.id)
+        cueEventDao.insertAll(cues.map { it.copy(sessionId = session.id) })
+        true
+    }
+
     suspend fun recoverInterruptedCuePlaybacks(sessionId: Int) {
         val now = System.currentTimeMillis()
         cueEventDao.recoverInterruptedPlaybacks(
@@ -310,8 +355,8 @@ class SleepSessionRepository(
         confidencePercent: Int = 60,
         source: String = "PHONE_CONTEXT_HEURISTIC",
         uncertaintyMinutes: Int = ((100 - confidencePercent) / 3).coerceIn(5, 20)
-    ) {
-        sessionDao.updateDetectedOnset(
+    ): Boolean {
+        return sessionDao.updateDetectedOnset(
             sessionId = sessionId,
             onsetTime = onsetTime,
             latencyMinutes = latencyMinutes,
@@ -319,7 +364,7 @@ class SleepSessionRepository(
             source = source,
             uncertaintyMinutes = uncertaintyMinutes,
             updatedAt = System.currentTimeMillis()
-        )
+        ) > 0
     }
 
     suspend fun getTypicalConfirmedOnsetLatencyMinutes(): Int? {
