@@ -1,9 +1,11 @@
 package com.personal.sleepalarm.ui.settings
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import com.personal.sleepalarm.ui.system.SystemCheckScreen
 import com.personal.sleepalarm.ui.settings.ThemesScreen
 import android.app.Activity
-import android.content.Intent
+import android.media.RingtoneManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -50,6 +52,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.sleepalarm.R
+import com.personal.sleepalarm.data.preferences.AppSignalSettings
+import com.personal.sleepalarm.data.preferences.AppSignalType
+import com.personal.sleepalarm.data.preferences.AppSoundMode
+import com.personal.sleepalarm.data.preferences.AppSoundSelection
+import com.personal.sleepalarm.data.preferences.DailyPlanNudgeSettings
+import com.personal.sleepalarm.domain.automation.SleepAutomationWindow
 import com.personal.sleepalarm.domain.model.CueScheduleMode
 import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.ui.components.ChoiceChips
@@ -63,6 +71,8 @@ import com.personal.sleepalarm.util.ProfileJsonCodec
 import com.personal.sleepalarm.util.RingtonePickerHelper
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.time.ZonedDateTime
+import java.util.Locale
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 /**
@@ -97,6 +107,11 @@ fun SettingsScreen(
 
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val pomodoroSignal by viewModel.pomodoroSignalSettings.collectAsStateWithLifecycle()
+    val reminderSignal by viewModel.reminderSignalSettings.collectAsStateWithLifecycle()
+    val calendarSignal by viewModel.calendarSignalSettings.collectAsStateWithLifecycle()
+    val dailyPlanSignal by viewModel.dailyPlanSignalSettings.collectAsStateWithLifecycle()
+    val dailyPlanNudges by viewModel.dailyPlanNudgeSettings.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -105,12 +120,19 @@ fun SettingsScreen(
 
     val ringtoneDisplayName = remember(state.profile.alarmRingtoneUri) {
         viewModel.getRingtoneName(state.profile.alarmRingtoneUri)
+            ?: state.profile.alarmRingtoneUri?.let {
+                context.getString(R.string.sound_file_unavailable)
+            }
     }
     val cueRingtoneDisplayName = remember(state.profile.cueRingtoneUri) {
         viewModel.getRingtoneName(state.profile.cueRingtoneUri)
+            ?: state.profile.cueRingtoneUri?.let {
+                context.getString(R.string.sound_file_unavailable)
+            }
     }
 
     var showHelp by remember { mutableStateOf(false) }
+    var pendingSignalType by rememberSaveable { mutableStateOf(AppSignalType.POMODORO) }
 
     // === Pickers ===
 
@@ -120,7 +142,10 @@ fun SettingsScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             val uri = RingtonePickerHelper.parsePickedUri(result.data)
             viewModel.stopPreview()
-            viewModel.setCueRingtoneUri(uri?.toString())
+            if (uri != null && RingtonePickerHelper.isDefaultAlias(uri, RingtoneManager.TYPE_ALARM)) {
+                viewModel.setCueRingtoneUri(uri.toString())
+            } else if (uri != null) viewModel.importCueRingtone(uri)
+            else viewModel.setCueRingtoneUri(null)
         }
     }
 
@@ -128,14 +153,8 @@ fun SettingsScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val persisted = runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }.isSuccess
             viewModel.stopPreview()
-            if (persisted) viewModel.setCueRingtoneUri(uri.toString())
-            else viewModel.reportSoundPermissionError()
+            viewModel.importCueRingtone(uri)
         }
     }
 
@@ -143,15 +162,41 @@ fun SettingsScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val persisted = runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }.isSuccess
             viewModel.stopPreview()
-            if (persisted) viewModel.setAlarmRingtoneUri(uri.toString())
-            else viewModel.reportSoundPermissionError()
+            viewModel.importAlarmRingtone(uri)
+        }
+    }
+
+    val signalSystemSoundLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val uri = RingtonePickerHelper.parsePickedUri(result.data)
+            if (uri != null) {
+                viewModel.stopPreview()
+                if (RingtonePickerHelper.isDefaultAlias(uri, RingtoneManager.TYPE_NOTIFICATION)) {
+                    viewModel.setAppSignalSound(pendingSignalType, AppSoundMode.SYSTEM)
+                } else {
+                    viewModel.importAppSignalSound(
+                        pendingSignalType,
+                        AppSoundMode.SYSTEM,
+                        uri
+                    )
+                }
+            }
+        }
+    }
+
+    val signalFileSoundLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.stopPreview()
+            viewModel.importAppSignalSound(
+                pendingSignalType,
+                AppSoundMode.FILE,
+                uri
+            )
         }
     }
 
@@ -207,13 +252,11 @@ fun SettingsScreen(
             viewModel.stopPreview()
 
             if (uri != null) {
-                runCatching {
-                    context.contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
+                if (RingtonePickerHelper.isDefaultAlias(uri, RingtoneManager.TYPE_ALARM)) {
+                    viewModel.setAlarmRingtoneUri(null)
+                } else {
+                    viewModel.importAlarmRingtone(uri)
                 }
-                viewModel.setAlarmRingtoneUri(uri.toString())
             } else {
                 viewModel.setAlarmRingtoneUri(null)
             }
@@ -314,7 +357,10 @@ fun SettingsScreen(
                     onPickCueFile = { cuePickFileLauncher.launch(arrayOf("audio/*")) },
                     onPreviewCueToggle = {
                         if (isPreviewPlaying) viewModel.stopPreview()
-                        else viewModel.previewRingtone(state.profile.cueRingtoneUri)
+                        else viewModel.previewRingtone(
+                            state.profile.cueRingtoneUri,
+                            state.profile.cueVolumePercent
+                        )
                     },
                     onResetCueRingtone = {
                         viewModel.stopPreview()
@@ -338,6 +384,7 @@ fun SettingsScreen(
             ) {
                 AlarmSection(
                     mathDifficulty = state.profile.mathDifficulty,
+                    mathChallengeCount = state.profile.mathChallengeCount,
                     quietAlarm = state.profile.quietAlarmEnabled,
                     vibration = state.profile.vibrationEnabled,
                     ringtoneUri = state.profile.alarmRingtoneUri,
@@ -349,6 +396,7 @@ fun SettingsScreen(
                     smartRepeatMax = state.profile.smartRepeatMaxCount,
                     mirrorToSystem = state.profile.mirrorToSystemClock,
                     onMathDifficultyChange = { viewModel.setMathDifficulty(it) },
+                    onMathChallengeCountChange = { viewModel.setMathChallengeCount(it) },
                     onQuietAlarmChange = { viewModel.setQuietAlarm(it) },
                     onVibrationChange = { viewModel.setVibration(it) },
                     onPickRingtone = {
@@ -363,7 +411,7 @@ fun SettingsScreen(
                     onPickFromStorage = { pickFileLauncher.launch(arrayOf("audio/*")) },
                     onPreviewToggle = {
                         if (isPreviewPlaying) viewModel.stopPreview()
-                        else viewModel.previewRingtone(state.profile.alarmRingtoneUri)
+                        else viewModel.previewRingtone(state.profile.alarmRingtoneUri, 100)
                     },
                     onResetRingtone = {
                         viewModel.stopPreview()
@@ -385,9 +433,70 @@ fun SettingsScreen(
                 onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
             ) {
                 NotificationSoundsSection(
-                    volume = state.profile.notificationVolumePercent,
-                    onVolumeChange = viewModel::setNotificationVolume,
+                    legacyVolume = state.profile.notificationVolumePercent,
+                    pomodoro = pomodoroSignal,
+                    reminders = reminderSignal,
+                    calendar = calendarSignal,
+                    dailyPlan = dailyPlanSignal,
+                    soundTitle = { selection ->
+                        val uriString = selection.uriString ?: if (
+                            selection.mode == AppSoundMode.SYSTEM
+                        ) {
+                            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                                ?.toString()
+                        } else {
+                            null
+                        }
+                        RingtonePickerHelper.getSoundTitle(context, uriString)
+                    },
+                    onChooseSystem = { type, currentUri ->
+                        pendingSignalType = type
+                        signalSystemSoundLauncher.launch(
+                            RingtonePickerHelper.createPickerIntent(
+                                title = context.getString(
+                                    R.string.app_signal_choose_system_title,
+                                    context.getString(appSignalTitleRes(type))
+                                ),
+                                existingUriString = currentUri,
+                                ringtoneType = RingtoneManager.TYPE_NOTIFICATION,
+                                showSilent = false
+                            )
+                        )
+                    },
+                    onChooseFile = { type ->
+                        pendingSignalType = type
+                        signalFileSoundLauncher.launch(arrayOf("audio/*"))
+                    },
+                    onSilent = { type ->
+                        viewModel.setAppSignalSound(type, AppSoundMode.SILENT)
+                    },
+                    onVolumeChange = viewModel::setAppSignalVolume,
                     onPreview = viewModel::previewAppNotificationSound
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                val now = ZonedDateTime.now()
+                val automationCandidate = SleepAutomationWindow.containing(
+                    now,
+                    state.sleepAutomation.windowStartMinutes,
+                    state.sleepAutomation.windowEndMinutes
+                )?.start ?: SleepAutomationWindow.nextStart(
+                    now,
+                    state.sleepAutomation.windowStartMinutes
+                )
+                val automationEffective = state.sleepAutomation.enabled &&
+                    state.profile.autoDetectOnsetEnabled &&
+                    state.sleepAutomation.skippedWindowStartEpochDay !=
+                    automationCandidate.toLocalDate().toEpochDay()
+                DailyPlanNudgeSection(
+                    settings = dailyPlanNudges,
+                    automationEffective = automationEffective,
+                    automationStartMinutes = state.sleepAutomation.windowStartMinutes,
+                    onEnabledChange = viewModel::setDailyPlanNudgesEnabled,
+                    onMorningEnabledChange = viewModel::setDailyPlanMorningEnabled,
+                    onBufferChange = viewModel::setDailyPlanBufferMinutes,
+                    onRepeatEnabledChange = viewModel::setDailyPlanRepeatEnabled,
+                    onRepeatIntervalChange = viewModel::setDailyPlanRepeatIntervalMinutes,
+                    onCutoffChange = viewModel::setDailyPlanCutoffMinutesOfDay
                 )
             }
 
@@ -399,10 +508,16 @@ fun SettingsScreen(
                 onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
             ) {
                 AutoDetectSection(
+                    automaticStart = state.sleepAutomation.enabled,
+                    windowStartMinutes = state.sleepAutomation.windowStartMinutes,
+                    windowEndMinutes = state.sleepAutomation.windowEndMinutes,
                     autoDetect = state.profile.autoDetectOnsetEnabled,
                     autoCorrect = state.profile.autoCorrectWakeEnabled,
                     minConfidence = state.profile.autoCorrectMinConfidencePercent,
                     maxShiftMinutes = state.profile.autoCorrectMaxShiftMinutes,
+                    onAutomaticStartChange = viewModel::setAutomaticNightStart,
+                    onWindowStartChange = viewModel::setAutomaticWindowStart,
+                    onWindowEndChange = viewModel::setAutomaticWindowEnd,
                     onAutoDetectChange = { viewModel.setAutoDetectOnset(it) },
                     onAutoCorrectChange = { viewModel.setAutoCorrectWake(it) },
                     onMinConfidenceChange = viewModel::setAutoCorrectMinConfidence,
@@ -548,42 +663,318 @@ private enum class SettingsCategory {
 
 @Composable
 private fun NotificationSoundsSection(
-    volume: Int,
-    onVolumeChange: (Int) -> Unit,
-    onPreview: () -> Unit
+    legacyVolume: Int,
+    pomodoro: AppSignalSettings,
+    reminders: AppSignalSettings,
+    calendar: AppSignalSettings,
+    dailyPlan: AppSignalSettings,
+    soundTitle: (AppSoundSelection) -> String?,
+    onChooseSystem: (AppSignalType, String?) -> Unit,
+    onChooseFile: (AppSignalType) -> Unit,
+    onSilent: (AppSignalType) -> Unit,
+    onVolumeChange: (AppSignalType, Int) -> Unit,
+    onPreview: (AppSignalType) -> Unit
 ) {
     SectionCard(title = stringResource(R.string.section_notification_sounds)) {
-        LabeledSlider(
-            label = stringResource(R.string.setting_notification_volume),
-            value = volume,
-            valueText = stringResource(R.string.percent_format, volume),
-            valueRange = 0f..100f,
-            steps = 19,
-            onValueChange = onVolumeChange
-        )
-
         Text(
-            text = stringResource(R.string.setting_notification_volume_hint),
+            text = stringResource(R.string.app_signals_mixer_hint),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        OutlinedButton(
-            onClick = onPreview,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
+        AppSignalControl(
+            type = AppSignalType.POMODORO,
+            settings = pomodoro,
+            legacyVolume = legacyVolume,
+            soundTitle = soundTitle,
+            onChooseSystem = onChooseSystem,
+            onChooseFile = onChooseFile,
+            onSilent = onSilent,
+            onVolumeChange = onVolumeChange,
+            onPreview = onPreview
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        AppSignalControl(
+            type = AppSignalType.REMINDER,
+            settings = reminders,
+            legacyVolume = legacyVolume,
+            soundTitle = soundTitle,
+            onChooseSystem = onChooseSystem,
+            onChooseFile = onChooseFile,
+            onSilent = onSilent,
+            onVolumeChange = onVolumeChange,
+            onPreview = onPreview
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        AppSignalControl(
+            type = AppSignalType.CALENDAR,
+            settings = calendar,
+            legacyVolume = legacyVolume,
+            soundTitle = soundTitle,
+            onChooseSystem = onChooseSystem,
+            onChooseFile = onChooseFile,
+            onSilent = onSilent,
+            onVolumeChange = onVolumeChange,
+            onPreview = onPreview
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        AppSignalControl(
+            type = AppSignalType.DAILY_PLAN,
+            settings = dailyPlan,
+            legacyVolume = legacyVolume,
+            soundTitle = soundTitle,
+            onChooseSystem = onChooseSystem,
+            onChooseFile = onChooseFile,
+            onSilent = onSilent,
+            onVolumeChange = onVolumeChange,
+            onPreview = onPreview
+        )
+    }
+}
+
+@Composable
+private fun DailyPlanNudgeSection(
+    settings: DailyPlanNudgeSettings,
+    automationEffective: Boolean,
+    automationStartMinutes: Int,
+    onEnabledChange: (Boolean) -> Unit,
+    onMorningEnabledChange: (Boolean) -> Unit,
+    onBufferChange: (Int) -> Unit,
+    onRepeatEnabledChange: (Boolean) -> Unit,
+    onRepeatIntervalChange: (Int) -> Unit,
+    onCutoffChange: (Int) -> Unit
+) {
+    SectionCard(title = stringResource(R.string.daily_plan_settings_title)) {
+        Text(
+            text = stringResource(R.string.daily_plan_settings_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        SwitchSetting(
+            label = stringResource(R.string.daily_plan_enabled),
+            checked = settings.enabled,
+            onCheckedChange = onEnabledChange
+        )
+        if (settings.enabled) {
+            SwitchSetting(
+                label = stringResource(R.string.daily_plan_morning_enabled),
+                checked = settings.morningReminderEnabled,
+                onCheckedChange = onMorningEnabledChange
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(R.string.action_test_notification_sound))
+            LabeledSlider(
+                label = stringResource(R.string.daily_plan_buffer),
+                value = settings.bufferMinutes,
+                valueText = stringResource(
+                    R.string.daily_plan_minutes_format,
+                    settings.bufferMinutes
+                ),
+                valueRange = 0f..720f,
+                steps = 23,
+                onValueChange = onBufferChange
+            )
+            SwitchSetting(
+                label = stringResource(R.string.daily_plan_repeat_enabled),
+                checked = settings.repeatEnabled,
+                onCheckedChange = onRepeatEnabledChange
+            )
+            if (settings.repeatEnabled) {
+                LabeledSlider(
+                    label = stringResource(R.string.daily_plan_repeat_interval),
+                    value = settings.repeatIntervalMinutes,
+                    valueText = stringResource(
+                        R.string.daily_plan_minutes_format,
+                        settings.repeatIntervalMinutes
+                    ),
+                    valueRange = 5f..120f,
+                    steps = 22,
+                    onValueChange = onRepeatIntervalChange
+                )
+            }
+            val cutoffHour = settings.cutoffMinutesOfDay / 60
+            val cutoffMinute = settings.cutoffMinutesOfDay % 60
+            TimeStepper(
+                label = stringResource(R.string.daily_plan_cutoff),
+                hour = cutoffHour,
+                minute = cutoffMinute,
+                onHourChange = { onCutoffChange(it * 60 + cutoffMinute) },
+                onMinuteChange = { onCutoffChange(cutoffHour * 60 + it) }
+            )
+            val cutoffExplanation = if (automationEffective) {
+                val automationTime = String.format(
+                    Locale.getDefault(),
+                    "%02d:%02d",
+                    automationStartMinutes / 60,
+                    automationStartMinutes % 60
+                )
+                stringResource(
+                    R.string.daily_plan_effective_cutoff_automation,
+                    automationTime
+                )
+            } else {
+                stringResource(R.string.daily_plan_effective_cutoff_fallback)
+            }
+            Text(
+                text = cutoffExplanation,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
         }
     }
+}
+
+@Composable
+private fun AppSignalControl(
+    type: AppSignalType,
+    settings: AppSignalSettings,
+    legacyVolume: Int,
+    soundTitle: (AppSoundSelection) -> String?,
+    onChooseSystem: (AppSignalType, String?) -> Unit,
+    onChooseFile: (AppSignalType) -> Unit,
+    onSilent: (AppSignalType) -> Unit,
+    onVolumeChange: (AppSignalType, Int) -> Unit,
+    onPreview: (AppSignalType) -> Unit
+) {
+    val volume = settings.effectiveVolume(legacyVolume)
+    val currentSound = when (settings.sound.mode) {
+        AppSoundMode.SILENT -> stringResource(R.string.app_signal_silent)
+        AppSoundMode.SYSTEM -> soundTitle(settings.sound) ?: if (
+            settings.sound.uriString != null
+        ) {
+            stringResource(R.string.sound_file_unavailable)
+        } else {
+            stringResource(R.string.app_signal_system_default)
+        }
+        AppSoundMode.FILE -> soundTitle(settings.sound)
+            ?: stringResource(R.string.sound_file_unavailable)
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Text(
+                text = stringResource(appSignalTitleRes(type)),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = stringResource(appSignalDescriptionRes(type)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.appAccents.calm.container.copy(alpha = 0.72f),
+                contentColor = MaterialTheme.appAccents.calm.onContainer
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                    Text(
+                        text = stringResource(R.string.app_signal_current_sound),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = currentSound,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        onChooseSystem(
+                            type,
+                            settings.sound.uriString.takeIf {
+                                settings.sound.mode == AppSoundMode.SYSTEM
+                            }
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.app_signal_choose_system))
+                }
+                OutlinedButton(
+                    onClick = { onChooseFile(type) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.app_signal_choose_file))
+                }
+            }
+
+            TextButton(
+                onClick = { onSilent(type) },
+                enabled = settings.sound.mode != AppSoundMode.SILENT,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text(stringResource(R.string.app_signal_make_silent))
+            }
+
+            LabeledSlider(
+                label = stringResource(R.string.setting_notification_volume),
+                value = volume,
+                valueText = stringResource(R.string.percent_format, volume),
+                valueRange = 0f..100f,
+                steps = 19,
+                onValueChange = { onVolumeChange(type, it) }
+            )
+
+            OutlinedButton(
+                onClick = { onPreview(type) },
+                enabled = settings.sound.mode != AppSoundMode.SILENT && volume > 0,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.action_test_notification_sound))
+            }
+        }
+    }
+}
+
+private fun appSignalTitleRes(type: AppSignalType): Int = when (type) {
+    AppSignalType.POMODORO -> R.string.app_signal_pomodoro
+    AppSignalType.REMINDER -> R.string.app_signal_reminders
+    AppSignalType.CALENDAR -> R.string.app_signal_calendar
+    AppSignalType.DAILY_PLAN -> R.string.app_signal_daily_plan
+}
+
+private fun appSignalDescriptionRes(type: AppSignalType): Int = when (type) {
+    AppSignalType.POMODORO -> R.string.app_signal_pomodoro_description
+    AppSignalType.REMINDER -> R.string.app_signal_reminders_description
+    AppSignalType.CALENDAR -> R.string.app_signal_calendar_description
+    AppSignalType.DAILY_PLAN -> R.string.app_signal_daily_plan_description
 }
 
 private fun toggleCategory(current: String?, category: SettingsCategory): String? {
@@ -832,7 +1223,7 @@ private fun CuesSection(
             Text(
                 text = stringResource(R.string.warning_no_cue_sound),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.appAccents.warning.color
             )
         }
 
@@ -950,7 +1341,7 @@ private fun CuesSection(
         Text(
             text = stringResource(R.string.setting_cues_preview, cueCount),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.appAccents.focus.color
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -969,6 +1360,7 @@ private fun CuesSection(
 @Composable
 private fun AlarmSection(
     mathDifficulty: MathDifficulty,
+    mathChallengeCount: Int,
     quietAlarm: Boolean,
     vibration: Boolean,
     ringtoneUri: String?,
@@ -980,6 +1372,7 @@ private fun AlarmSection(
     smartRepeatMax: Int,
     mirrorToSystem: Boolean,
     onMathDifficultyChange: (MathDifficulty) -> Unit,
+    onMathChallengeCountChange: (Int) -> Unit,
     onQuietAlarmChange: (Boolean) -> Unit,
     onVibrationChange: (Boolean) -> Unit,
     onPickRingtone: () -> Unit,
@@ -995,16 +1388,50 @@ private fun AlarmSection(
     SectionCard(title = stringResource(R.string.section_alarm)) {
         ChoiceChips(
             label = stringResource(R.string.setting_math_difficulty),
-            options = listOf(MathDifficulty.EASY, MathDifficulty.MEDIUM, MathDifficulty.HARD),
+            options = MathDifficulty.entries,
             selected = mathDifficulty,
             optionText = { value ->
                 when (value) {
                     MathDifficulty.EASY -> stringResource(R.string.math_difficulty_easy)
                     MathDifficulty.MEDIUM -> stringResource(R.string.math_difficulty_medium)
                     MathDifficulty.HARD -> stringResource(R.string.math_difficulty_hard)
+                    MathDifficulty.EXPERT -> stringResource(R.string.math_difficulty_expert)
+                    MathDifficulty.EXTREME -> stringResource(R.string.math_difficulty_extreme)
                 }
             },
             onSelect = onMathDifficultyChange
+        )
+
+        Text(
+            text = stringResource(
+                when (mathDifficulty) {
+                    MathDifficulty.EASY -> R.string.math_difficulty_easy_hint
+                    MathDifficulty.MEDIUM -> R.string.math_difficulty_medium_hint
+                    MathDifficulty.HARD -> R.string.math_difficulty_hard_hint
+                    MathDifficulty.EXPERT -> R.string.math_difficulty_expert_hint
+                    MathDifficulty.EXTREME -> R.string.math_difficulty_extreme_hint
+                }
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LabeledSlider(
+            label = stringResource(R.string.setting_math_challenge_count),
+            value = mathChallengeCount,
+            valueText = mathChallengeCount.toString(),
+            valueRange = 1f..10f,
+            steps = 8,
+            onValueChange = onMathChallengeCountChange
+        )
+
+        Text(
+            text = stringResource(R.string.setting_math_challenge_count_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -1048,24 +1475,24 @@ private fun AlarmSection(
             Text(text = stringResource(R.string.action_pick_from_storage))
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedButton(onClick = onPreviewToggle, modifier = Modifier.fillMaxWidth()) {
+            Icon(
+                imageVector = if (isPreviewPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = stringResource(
+                    if (isPreviewPlaying) R.string.action_stop_preview
+                    else R.string.action_preview_ringtone
+                )
+            )
+        }
+
         if (ringtoneUri != null) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedButton(onClick = onPreviewToggle, modifier = Modifier.fillMaxWidth()) {
-                Icon(
-                    imageVector = if (isPreviewPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = stringResource(
-                        if (isPreviewPlaying) R.string.action_stop_preview
-                        else R.string.action_preview_ringtone
-                    )
-                )
-            }
-
             Spacer(modifier = Modifier.height(8.dp))
 
             OutlinedButton(onClick = onResetRingtone, modifier = Modifier.fillMaxWidth()) {
@@ -1140,16 +1567,54 @@ private fun AlarmSection(
 
 @Composable
 private fun AutoDetectSection(
+    automaticStart: Boolean,
+    windowStartMinutes: Int,
+    windowEndMinutes: Int,
     autoDetect: Boolean,
     autoCorrect: Boolean,
     minConfidence: Int,
     maxShiftMinutes: Int,
+    onAutomaticStartChange: (Boolean) -> Unit,
+    onWindowStartChange: (Int, Int) -> Unit,
+    onWindowEndChange: (Int, Int) -> Unit,
     onAutoDetectChange: (Boolean) -> Unit,
     onAutoCorrectChange: (Boolean) -> Unit,
     onMinConfidenceChange: (Int) -> Unit,
     onMaxShiftChange: (Int) -> Unit
 ) {
     SectionCard(title = stringResource(R.string.section_auto_detect)) {
+        SwitchSetting(
+            label = stringResource(R.string.setting_auto_start_sleep),
+            checked = automaticStart,
+            onCheckedChange = onAutomaticStartChange
+        )
+
+        if (automaticStart) {
+            Spacer(modifier = Modifier.height(12.dp))
+            TimeStepper(
+                label = stringResource(R.string.setting_auto_start_window_begin),
+                hour = windowStartMinutes / 60,
+                minute = windowStartMinutes % 60,
+                onHourChange = { onWindowStartChange(it, windowStartMinutes % 60) },
+                onMinuteChange = { onWindowStartChange(windowStartMinutes / 60, it) }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            TimeStepper(
+                label = stringResource(R.string.setting_auto_start_window_end),
+                hour = windowEndMinutes / 60,
+                minute = windowEndMinutes % 60,
+                onHourChange = { onWindowEndChange(it, windowEndMinutes % 60) },
+                onMinuteChange = { onWindowEndChange(windowEndMinutes / 60, it) }
+            )
+            Text(
+                text = stringResource(R.string.hint_auto_start_sleep),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         SwitchSetting(
             label = stringResource(R.string.setting_auto_detect_onset),
             checked = autoDetect,
@@ -1167,7 +1632,7 @@ private fun AutoDetectSection(
             if (autoCorrect) {
                 Spacer(modifier = Modifier.height(12.dp))
                 LabeledSlider(
-                    label = "Минимальная уверенность",
+                    label = stringResource(R.string.setting_auto_min_confidence),
                     value = minConfidence,
                     valueText = "$minConfidence%",
                     valueRange = 50f..95f,
@@ -1176,15 +1641,15 @@ private fun AutoDetectSection(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 LabeledSlider(
-                    label = "Максимальный сдвиг будильника",
+                    label = stringResource(R.string.setting_auto_max_shift),
                     value = maxShiftMinutes,
-                    valueText = "$maxShiftMinutes мин",
+                    valueText = stringResource(R.string.minutes_format, maxShiftMinutes),
                     valueRange = 0f..120f,
                     steps = 23,
                     onValueChange = onMaxShiftChange
                 )
                 Text(
-                    "Будильник никогда не уйдёт позже выбранного времени подъёма.",
+                    stringResource(R.string.setting_auto_hard_wake_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

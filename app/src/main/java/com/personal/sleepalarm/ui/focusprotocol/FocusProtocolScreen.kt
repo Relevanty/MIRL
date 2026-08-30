@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.focusprotocol
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -40,6 +42,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -64,8 +67,14 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.model.FocusProtocolPhase
+import com.personal.sleepalarm.domain.calculator.DailyTaskFocusProgress
+import com.personal.sleepalarm.ui.components.DailyFocusProgressCard
+import com.personal.sleepalarm.ui.focusaudio.ActiveFocusSoundButton
+import com.personal.sleepalarm.ui.focusaudio.FocusSoundscapeSetupRow
+import com.personal.sleepalarm.ui.focusaudio.FocusSoundscapeUiState
 import com.personal.sleepalarm.ui.pomodoro.AnimatedFocusCat
 import com.personal.sleepalarm.ui.pomodoro.FocusCatMood
+import com.personal.sleepalarm.ui.pomodoro.pomodoroColorForToken
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import java.time.Instant
 import java.time.ZoneId
@@ -77,7 +86,13 @@ import kotlin.math.roundToInt
 data class FocusProtocolTarget(
     val id: Int,
     val name: String,
-    val color: Int
+    /** Persisted compatibility token; resolve through pomodoroColorForToken before drawing. */
+    val color: Int,
+    /** Null for standalone activities; zero means an exhausted task budget. */
+    val maximumFocusMinutes: Int? = null,
+    val dailyProgress: DailyTaskFocusProgress? = null,
+    val boutMinutes: Int? = null,
+    val isDailyRequired: Boolean = false
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,6 +106,13 @@ fun FocusProtocolSetupSheet(
     initialFocusMinutes: Int,
     initialRecoveryMinutes: Int,
     bedtimeRisk: (Int) -> Boolean,
+    startInProgress: Boolean,
+    soundscapeLoading: Boolean = false,
+    startError: String?,
+    soundscapeState: FocusSoundscapeUiState,
+    onOpenSoundscape: () -> Unit,
+    onToggleSoundscape: () -> Unit,
+    onTargetSelected: (FocusProtocolTarget) -> Unit,
     onStart: (
         target: FocusProtocolTarget,
         outcome: String,
@@ -104,16 +126,22 @@ fun FocusProtocolSetupSheet(
     var selectedId by rememberSaveable {
         mutableIntStateOf(selectedTargetId ?: targets.firstOrNull()?.id ?: 0)
     }
+    val selected = targets.firstOrNull { it.id == selectedId }
+    val maximumFocusMinutes = (selected?.maximumFocusMinutes ?: 180).coerceIn(1, 180)
+    val minimumFocusMinutes = if (maximumFocusMinutes < 5) 1 else 5
     var outcome by rememberSaveable { mutableStateOf(initialOutcome) }
     var resetMinutes by rememberSaveable { mutableIntStateOf(initialResetMinutes.coerceIn(0, 20)) }
     var focusMinutes by rememberSaveable {
-        mutableIntStateOf(initialFocusMinutes.coerceIn(5, 180))
+        mutableIntStateOf(initialFocusMinutes.coerceIn(1, 180))
     }
     var recoveryMinutes by rememberSaveable {
         mutableIntStateOf(initialRecoveryMinutes.coerceIn(1, 30))
     }
     var energy by rememberSaveable { mutableIntStateOf(6) }
-    val selected = targets.firstOrNull { it.id == selectedId }
+    LaunchedEffect(selectedId, minimumFocusMinutes, maximumFocusMinutes) {
+        focusMinutes = (selected?.boutMinutes ?: focusMinutes)
+            .coerceIn(minimumFocusMinutes, maximumFocusMinutes)
+    }
     val totalMinutes = resetMinutes + focusMinutes + recoveryMinutes
 
     ThemedModalBottomSheet(onDismissRequest = onDismiss) {
@@ -144,15 +172,27 @@ fun FocusProtocolSetupSheet(
                         recoveryMinutes
                     ),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.appAccents.focus.color
                 )
             }
 
             TargetRibbon(
                 targets = targets,
                 selectedId = selectedId,
-                onSelected = { selectedId = it.id }
+                onSelected = {
+                    selectedId = it.id
+                    onTargetSelected(it)
+                }
             )
+
+            selected?.dailyProgress?.let { progress ->
+                DailyFocusProgressCard(
+                    progress = progress,
+                    boutElapsedMillis = 0L,
+                    boutMinutes = selected.boutMinutes ?: focusMinutes,
+                    requiredToday = selected.isDailyRequired
+                )
+            }
 
             OutlinedTextField(
                 value = outcome,
@@ -161,6 +201,13 @@ fun FocusProtocolSetupSheet(
                 placeholder = { Text(stringResource(R.string.focus_protocol_outcome_hint)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
+            )
+
+            FocusSoundscapeSetupRow(
+                state = soundscapeState,
+                onOpenPicker = onOpenSoundscape,
+                onTogglePlayback = onToggleSoundscape,
+                enabled = !startInProgress && !soundscapeLoading
             )
 
             MinuteSlider(
@@ -176,9 +223,9 @@ fun FocusProtocolSetupSheet(
                 title = stringResource(R.string.focus_protocol_focus_duration),
                 description = stringResource(R.string.focus_settings_focus_hint),
                 value = focusMinutes,
-                minimum = 5,
-                maximum = 180,
-                step = 5,
+                minimum = minimumFocusMinutes,
+                maximum = maximumFocusMinutes,
+                step = if (maximumFocusMinutes < 5) 1 else 5,
                 onValueChange = { focusMinutes = it }
             )
             MinuteSlider(
@@ -207,7 +254,15 @@ fun FocusProtocolSetupSheet(
                 Text(
                     text = stringResource(R.string.focus_protocol_bedtime_warning),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
+                    color = MaterialTheme.appAccents.urgent.color
+                )
+            }
+
+            startError?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.appAccents.urgent.color
                 )
             }
 
@@ -224,10 +279,19 @@ fun FocusProtocolSetupSheet(
                         )
                     }
                 },
-                enabled = selected != null && outcome.isNotBlank(),
+                enabled = selected != null &&
+                    selected.maximumFocusMinutes != 0 &&
+                    outcome.isNotBlank() &&
+                    !soundscapeLoading &&
+                    !startInProgress,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(stringResource(R.string.focus_block_begin))
+                Text(
+                    stringResource(
+                        if (startInProgress) R.string.focus_block_starting
+                        else R.string.focus_block_begin
+                    )
+                )
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -243,21 +307,22 @@ private fun TargetRibbon(
     LazyRow(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         items(targets, key = { it.id }) { target ->
             val selected = target.id == selectedId
+            val targetColor = pomodoroColorForToken(target.color)
             val background by animateColorAsState(
-                if (selected) Color(target.color).copy(alpha = 0.24f)
+                if (selected) targetColor.copy(alpha = 0.24f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 label = "targetBackground"
             )
             Column(
                 modifier = Modifier
                     .width(126.dp)
-                    .height(68.dp)
+                    .height(if (target.dailyProgress == null) 68.dp else 82.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(background)
                     .then(
                         if (selected) Modifier.border(
                             1.5.dp,
-                            Color(target.color),
+                            targetColor,
                             RoundedCornerShape(18.dp)
                         ) else Modifier
                     )
@@ -269,7 +334,7 @@ private fun TargetRibbon(
                     modifier = Modifier
                         .size(9.dp)
                         .clip(CircleShape)
-                        .background(Color(target.color))
+                        .background(targetColor)
                 )
                 Text(
                     text = target.name,
@@ -278,6 +343,18 @@ private fun TargetRibbon(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                 )
+                target.dailyProgress?.let { progress ->
+                    Text(
+                        stringResource(
+                            R.string.daily_focus_today_value,
+                            progress.spentMinutes,
+                            progress.targetMinutes
+                        ),
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -317,7 +394,7 @@ private fun MinuteSlider(
             Text(
                 text = stringResource(R.string.focus_protocol_minutes_value, value),
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.appAccents.focus.color,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -337,6 +414,9 @@ private fun MinuteSlider(
 fun FocusProtocolActiveScreen(
     session: FocusProtocolSessionEntity,
     remainingMillis: Long,
+    dailyProgress: DailyTaskFocusProgress? = null,
+    boutElapsedMillis: Long = 0L,
+    dailyRequired: Boolean = false,
     onSkipReset: () -> Unit,
     onStartFocus: () -> Unit,
     onPause: () -> Unit,
@@ -350,7 +430,10 @@ fun FocusProtocolActiveScreen(
     availableTargets: List<FocusProtocolTarget> = emptyList(),
     onRepeatCycle: () -> Unit = {},
     onSwitchTarget: (FocusProtocolTarget, String) -> Unit = { _, _ -> },
-    onFinishBlock: () -> Unit = {}
+    onFinishBlock: () -> Unit = {},
+    soundscapeState: FocusSoundscapeUiState? = null,
+    onOpenSoundscape: () -> Unit = {},
+    onToggleSoundscape: () -> Unit = {}
 ) {
     var showCancelDialog by remember { mutableStateOf(false) }
     var showTargetPicker by remember { mutableStateOf(false) }
@@ -370,7 +453,12 @@ fun FocusProtocolActiveScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        BlockProgress(session)
+        BlockProgress(
+            session = session,
+            soundscapeState = soundscapeState,
+            onOpenSoundscape = onOpenSoundscape,
+            onToggleSoundscape = onToggleSoundscape
+        )
 
         CatCompanion(
             phase = session.phase,
@@ -397,12 +485,21 @@ fun FocusProtocolActiveScreen(
                 text = formatFocusClock(remainingMillis),
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.focus.color
             )
         }
 
         if (session.phase != FocusProtocolPhase.REVIEW) {
             GoalChip(session.itemName, session.outcome)
+        }
+
+        dailyProgress?.let { progress ->
+            DailyFocusProgressCard(
+                progress = progress,
+                boutElapsedMillis = boutElapsedMillis,
+                boutMinutes = session.focusDurationMinutes,
+                requiredToday = dailyRequired
+            )
         }
 
         when (session.phase) {
@@ -588,7 +685,8 @@ private fun CatCompanion(
             },
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
+            containerColor = MaterialTheme.appAccents.calm.container,
+            contentColor = MaterialTheme.appAccents.calm.onContainer
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -605,7 +703,7 @@ private fun CatCompanion(
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 12.dp, vertical = 9.dp),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.appAccents.calm.onContainer,
                 textAlign = TextAlign.Center
             )
         }
@@ -613,7 +711,12 @@ private fun CatCompanion(
 }
 
 @Composable
-private fun BlockProgress(session: FocusProtocolSessionEntity) {
+private fun BlockProgress(
+    session: FocusProtocolSessionEntity,
+    soundscapeState: FocusSoundscapeUiState?,
+    onOpenSoundscape: () -> Unit,
+    onToggleSoundscape: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -641,15 +744,28 @@ private fun BlockProgress(session: FocusProtocolSessionEntity) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Text(
-                text = stringResource(R.string.focus_block_cycles_count, session.completedCycles),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
-                    .padding(horizontal = 11.dp, vertical = 7.dp),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.focus_block_cycles_count, session.completedCycles),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.appAccents.focus.container)
+                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.appAccents.focus.color
+                )
+                soundscapeState?.let { state ->
+                    ActiveFocusSoundButton(
+                        state = state,
+                        onOpenPicker = onOpenSoundscape,
+                        onTogglePlayback = onToggleSoundscape,
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
         }
         PhaseRail(session.phase)
     }
@@ -675,7 +791,7 @@ private fun PhaseRail(phase: FocusProtocolPhase) {
                     .height(4.dp)
                     .clip(RoundedCornerShape(3.dp))
                     .background(
-                        if (index <= selected) MaterialTheme.colorScheme.primary
+                        if (index <= selected) MaterialTheme.appAccents.focus.color
                         else MaterialTheme.colorScheme.surfaceVariant
                     )
             )
@@ -695,7 +811,7 @@ private fun GoalChip(itemName: String, outcome: String) {
         Text(
             text = itemName,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.appAccents.focus.color
         )
         Text(
             text = outcome,
@@ -719,7 +835,7 @@ private fun RecoveryPrompt(cycle: Int) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f))
+            .background(MaterialTheme.appAccents.calm.container)
             .padding(13.dp),
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center
@@ -731,7 +847,8 @@ private fun BlockSummary(session: FocusProtocolSessionEntity) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.appAccents.success.container,
+            contentColor = MaterialTheme.appAccents.success.onContainer
         )
     ) {
         Row(
@@ -883,7 +1000,7 @@ fun CompletedFocusBlocksCard(
                                 formatCompactDuration(block.totalFocusMillis)
                             ),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.appAccents.focus.color
                         )
                     }
                 }
@@ -941,7 +1058,7 @@ fun EnergyPatternCard(
                                     .height((value / 10f * 64f).coerceAtLeast(2f).dp)
                                     .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
                                     .background(
-                                        if (value > 0f) MaterialTheme.colorScheme.primary
+                                        if (value > 0f) MaterialTheme.appAccents.focus.color
                                         else Color.Transparent
                                     )
                             )

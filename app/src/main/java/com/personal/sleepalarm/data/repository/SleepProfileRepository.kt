@@ -100,6 +100,7 @@ class SleepProfileRepository(
                 profile.cueVolumePercent
             ),
             notificationVolumePercent = profile.notificationVolumePercent.coerceIn(0, 100),
+            mathChallengeCount = profile.mathChallengeCount.coerceIn(1, 10),
             autoCorrectMinConfidencePercent = profile.autoCorrectMinConfidencePercent.coerceIn(50, 95),
             autoCorrectMaxShiftMinutes = profile.autoCorrectMaxShiftMinutes.coerceIn(0, 120),
 

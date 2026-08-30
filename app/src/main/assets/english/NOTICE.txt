@@ -1,0 +1,31 @@
+MIRL offline English vocabulary dataset
+========================================
+
+Generated on 2026-08-29. Contains exactly 10,000 unique single-word English
+headwords with Russian translations. MIRL stores this data locally and never
+sends study progress or audio to a server.
+
+Translations, definitions and pronunciation data
+-------------------------------------------------
+English-Russian FreeDict+WikDict dictionary, edition 2025.11.23
+(generated/published 2025-11-24 distribution).
+Source: https://freedict.org/downloads/#dictionary-downloads
+Upstream data: Wiktionary via DBnary/WikDict.
+License: Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0).
+The complete upstream COPYING text is included as FREEDICT_COPYING.txt.
+
+Frequency ranking
+-----------------
+The headword order is derived from the English Wikipedia frequency list shipped
+with Dropbox zxcvbn. Source: https://github.com/dropbox/zxcvbn
+Copyright (c) 2012-2016 Dropbox, Inc. zxcvbn is distributed under the MIT License;
+the complete notice is included as ZXCVBN_LICENSE.txt.
+
+Processing
+----------
+Only lowercase single-word Latin headwords present in both sources were kept.
+Proper nouns (pn), entries without a Russian translation, malformed tokens and
+an explicit offensive-language denylist were excluded. Duplicate headwords and
+duplicate translations were merged. Words missing from the zxcvbn list were used
+only to fill the final rare band, prioritising well-described, multi-sense entries.
+The five labels are MIRL frequency bands, not official CEFR certification.

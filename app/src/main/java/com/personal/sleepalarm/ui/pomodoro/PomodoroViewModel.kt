@@ -6,24 +6,35 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.OtherActivityEntity
+import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
 import com.personal.sleepalarm.data.db.entity.StudySessionEntity
 import com.personal.sleepalarm.data.db.entity.SubjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
-import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
-import com.personal.sleepalarm.data.repository.TaskRepository
+import com.personal.sleepalarm.data.preferences.AppSignalPreferences
+import com.personal.sleepalarm.data.preferences.AppSignalSettings
+import com.personal.sleepalarm.data.preferences.AppSignalType
+import com.personal.sleepalarm.data.preferences.AppSoundMode
+import com.personal.sleepalarm.data.preferences.AppSoundSelection
 import com.personal.sleepalarm.data.repository.ActivityRecordRepository
 import com.personal.sleepalarm.data.repository.ManualActivityInput
+import com.personal.sleepalarm.alarm.TaskLinkedReminderCoordinator
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.focusActivityType
+import com.personal.sleepalarm.domain.model.focusItemTaskId
+import com.personal.sleepalarm.domain.model.taskFocusItemId
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.model.nextFocusDurationMinutes
+import com.personal.sleepalarm.domain.coordinator.TaskLifecycleCoordinator
 import com.personal.sleepalarm.domain.calculator.ActivityDayBoundary
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
+import com.personal.sleepalarm.service.AppNotificationChannelIds
 import com.personal.sleepalarm.ui.MainActivity
 import java.time.Instant
 import java.time.LocalTime
@@ -62,22 +73,40 @@ class PomodoroViewModel(
     private val database = AppDatabase.getInstance(application.applicationContext)
     private val subjectDao = database.subjectDao()
     private val taskDao = database.taskDao()
-    private val taskRepository = TaskRepository(taskDao)
     private val otherActivityDao = database.otherActivityDao()
     private val studyDao = database.studySessionDao()
     private val pomodoroDao = database.pomodoroDao()
-    private val activityRepository = ActivityRecordRepository(database)
     private val context = application.applicationContext
-    private val soundPreference = PomodoroSoundPreference(context)
+    private val taskReminderCoordinator = TaskLinkedReminderCoordinator(context, database)
+    private val taskLifecycle = TaskLifecycleCoordinator(context, database)
+    private val activityRepository = ActivityRecordRepository(
+        database,
+        taskReminderCoordinator
+    )
+    private val signalPreferences = AppSignalPreferences(context)
 
     val subjects: StateFlow<List<SubjectEntity>> = subjectDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val workTasks: StateFlow<List<TaskEntity>> = taskDao.observeByRoutineFlag(false)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val otherActivities: StateFlow<List<OtherActivityEntity>> = otherActivityDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val activityRecords: StateFlow<List<ActivityRecordEntity>> = activityRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val progressNowMillis: StateFlow<Long> = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(1_000L)
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        System.currentTimeMillis()
+    )
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val currentDayRange: StateFlow<Pair<Long, Long>> = flow {
@@ -112,8 +141,8 @@ class PomodoroViewModel(
     private val _breakDuration = MutableStateFlow(5L * MINUTE_MS)
     val breakDuration: StateFlow<Long> = _breakDuration
 
-    private val _notificationSoundUri = MutableStateFlow<Uri?>(null)
-    val notificationSoundUri: StateFlow<Uri?> = _notificationSoundUri
+    private val _signalSettings = MutableStateFlow(AppSignalSettings())
+    val signalSettings: StateFlow<AppSignalSettings> = _signalSettings
 
     private val _tickerEnabled = MutableStateFlow(false)
     val tickerEnabled: StateFlow<Boolean> = _tickerEnabled
@@ -143,7 +172,48 @@ class PomodoroViewModel(
     init {
         createNotificationChannel()
         viewModelScope.launch {
-            soundPreference.observeUri().collect { _notificationSoundUri.value = it }
+            signalPreferences.observe(AppSignalType.POMODORO).collect {
+                _signalSettings.value = it
+            }
+        }
+        viewModelScope.launch {
+            taskDao.observeByRoutineFlag(false).collect { tasks ->
+                if (_mode.value == TimerMode.IDLE) {
+                    focusItemTaskId(_selectedItemId.value)?.let { selectedTaskId ->
+                        tasks.firstOrNull { it.id == selectedTaskId && !it.isDone }?.let { selectedTask ->
+                            val canonicalType = selectedTask.focusActivityType()
+                            if (_activityType.value != canonicalType) {
+                                selectedIds[_activityType.value] = null
+                                _activityType.value = canonicalType
+                                _selectedItemId.value = taskFocusItemId(selectedTask.id)
+                                selectedIds[canonicalType] = taskFocusItemId(selectedTask.id)
+                            }
+                        }
+                    }
+                }
+                val focus = activeFocus ?: return@collect
+                val taskId = focusItemTaskId(focus.itemId) ?: return@collect
+                val task = tasks.firstOrNull { it.id == taskId }
+                if (task == null || task.isDone) {
+                    timerJob?.cancel()
+                    if (_mode.value == TimerMode.FOCUS) {
+                        if (task == null) {
+                            // Deletion keeps elapsed work as an unlinked snapshot;
+                            // completion records it on the task before closing focus.
+                            activeFocus = focus.copy(itemId = 0)
+                        }
+                        finishFocusSession(completed = false)
+                    }
+                    activeFocus = null
+                    _mode.value = TimerMode.IDLE
+                    _remaining.value = _focusDuration.value
+                } else {
+                    activeFocus = focus.copy(
+                        type = task.focusActivityType(),
+                        itemName = task.primaryLabel()
+                    )
+                }
+            }
         }
     }
 
@@ -160,12 +230,18 @@ class PomodoroViewModel(
         _selectedItemId.value = id
     }
 
-    /** Подготавливает Pomodoro из карточки задачи, не запуская таймер без подтверждения. */
-    fun prepareWorkTask(task: TaskEntity) {
-        if (_mode.value != TimerMode.IDLE) return
-        selectActivityType(FocusActivityType.WORK)
-        selectItem(task.id)
-        setFocusDuration(task.plannedFocusMinutes.takeIf { it > 0 }?.toLong() ?: task.estimatedMinutes.toLong())
+    /** Подготавливает Pomodoro из карточки задачи в её собственной сфере. */
+    fun prepareWorkTask(task: TaskEntity): Boolean {
+        if (_mode.value != TimerMode.IDLE || task.isDone) return false
+        val nextFocusMinutes = task.nextFocusDurationMinutes()
+        if (nextFocusMinutes <= 0) return false
+        selectActivityType(task.focusActivityType())
+        selectItem(taskFocusItemId(task.id))
+        // A final task cycle may legitimately be shorter than the generic
+        // picker minimum, so do not route it through setFocusDuration().
+        _focusDuration.value = nextFocusMinutes * MINUTE_MS
+        _remaining.value = _focusDuration.value
+        return true
     }
 
     fun setResetAfterBreak(value: Boolean) {
@@ -180,25 +256,53 @@ class PomodoroViewModel(
         ).apply {
             description = context.getString(R.string.pomodoro_notification_channel_description)
             setSound(null, null)
-            enableVibration(true)
+            enableVibration(false)
+            setBypassDnd(true)
         }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)
     }
 
-    fun setNotificationSound(uri: Uri?) {
-        _notificationSoundUri.value = uri
-        viewModelScope.launch { soundPreference.setUri(uri) }
+    fun useSystemSound(uriString: String?) {
+        saveSound(AppSoundSelection(AppSoundMode.SYSTEM, uriString))
     }
 
-    fun resetNotificationSound() {
-        _notificationSoundUri.value = null
-        viewModelScope.launch { soundPreference.setUri(null) }
+    fun useSoundFile(uriString: String) {
+        saveSound(AppSoundSelection(AppSoundMode.FILE, uriString))
     }
 
-    private fun showNotification(title: String, text: String) {
+    fun useSilentSound() {
+        saveSound(AppSoundSelection(AppSoundMode.SILENT))
+    }
+
+    fun previewSound() {
+        viewModelScope.launch {
+            AppNotificationSoundPlayer.play(
+                context,
+                _signalSettings.value,
+                allowSystemFallback = false
+            )
+        }
+    }
+
+    private fun saveSound(sound: AppSoundSelection) {
+        val updated = _signalSettings.value.copy(sound = sound.normalized())
+        _signalSettings.value = updated
+        viewModelScope.launch {
+            signalPreferences.setSound(AppSignalType.POMODORO, updated.sound)
+        }
+    }
+
+    private fun showNotification(
+        notificationId: Int,
+        dedupeKey: String,
+        title: String,
+        text: String
+    ) {
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(MainActivity.EXTRA_DESTINATION, MainActivity.DESTINATION_FOCUS_PROTOCOL)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
@@ -213,19 +317,31 @@ class PomodoroViewModel(
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)
+            .setTimeoutAfter(6L * 60L * 60L * 1000L)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Audio is produced by exactly one in-app player. This also protects
+            // against a user-assigned sound on an existing Android channel.
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
             .build()
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        runCatching { manager.notify(System.currentTimeMillis().toInt(), notification) }
+        runCatching { manager.notify(notificationId, notification) }
             .onSuccess {
                 viewModelScope.launch {
                     AppNotificationSoundPlayer.play(
                         context = context,
-                        soundUri = _notificationSoundUri.value
+                        settings = _signalSettings.value,
+                        dedupeKey = dedupeKey
                     )
                 }
             }
+    }
+
+    private fun cancelCompletionNotifications() {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(NOTIFICATION_FOCUS_COMPLETE_ID)
+        manager.cancel(NOTIFICATION_BREAK_COMPLETE_ID)
     }
 
     fun start(itemId: Int, itemName: String) {
@@ -234,6 +350,7 @@ class PomodoroViewModel(
         ) return
 
         val type = _activityType.value
+        cancelCompletionNotifications()
         selectedIds[type] = itemId
         _selectedItemId.value = itemId
         activeFocus = ActiveFocus(type, itemId, itemName)
@@ -241,6 +358,10 @@ class PomodoroViewModel(
     }
 
     private fun beginFocus(duration: Long) {
+        // A new focus interval means the previous break result has already
+        // been handled; do not leave it hanging in the notification shade.
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(NOTIFICATION_BREAK_COMPLETE_ID)
         timerJob?.cancel()
         startMillis = System.currentTimeMillis()
         _remaining.value = duration
@@ -273,16 +394,22 @@ class PomodoroViewModel(
     private fun onFocusCompleted() {
         finishFocusSession(completed = true)
         showNotification(
-            context.getString(R.string.pomodoro_focus_complete_title),
-            context.getString(R.string.pomodoro_focus_complete_message)
+            notificationId = NOTIFICATION_FOCUS_COMPLETE_ID,
+            dedupeKey = "pomodoro-focus-$startMillis",
+            title = context.getString(R.string.pomodoro_focus_complete_title),
+            text = context.getString(R.string.pomodoro_focus_complete_message)
         )
         startBreak()
     }
 
     private fun onBreakCompleted() {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(NOTIFICATION_FOCUS_COMPLETE_ID)
         showNotification(
-            context.getString(R.string.pomodoro_break_complete_title),
-            context.getString(R.string.pomodoro_break_complete_message)
+            notificationId = NOTIFICATION_BREAK_COMPLETE_ID,
+            dedupeKey = "pomodoro-break-$startMillis",
+            title = context.getString(R.string.pomodoro_break_complete_title),
+            text = context.getString(R.string.pomodoro_break_complete_message)
         )
         _mode.value = if (_resetAfterBreak.value) TimerMode.IDLE else TimerMode.FOCUS_PAUSED
         _remaining.value = _focusDuration.value
@@ -324,6 +451,7 @@ class PomodoroViewModel(
         val duration = (end - startMillis).coerceAtMost(_focusDuration.value)
         if (duration < 1_000L) return
 
+        val linkedTaskId = focusItemTaskId(focus.itemId)
         val session = PomodoroSessionEntity(
             startedAt = startMillis,
             durationMinutes = ((duration + MINUTE_MS - 1L) / MINUTE_MS).toInt(),
@@ -331,9 +459,13 @@ class PomodoroViewModel(
             isCompleted = completed,
             isBreak = false,
             activityType = focus.type,
-            subjectId = focus.itemId.takeIf { focus.type == FocusActivityType.STUDY },
-            taskId = focus.itemId.takeIf { focus.type == FocusActivityType.WORK },
-            otherActivityId = focus.itemId.takeIf { focus.type == FocusActivityType.OTHER },
+            subjectId = focus.itemId.takeIf {
+                it > 0 && linkedTaskId == null && focus.type == FocusActivityType.STUDY
+            },
+            taskId = linkedTaskId,
+            otherActivityId = focus.itemId.takeIf {
+                it > 0 && linkedTaskId == null && focus.type == FocusActivityType.OTHER
+            },
             itemName = focus.itemName,
             actualDurationMillis = duration,
             recordSource = "TIMER"
@@ -343,7 +475,7 @@ class PomodoroViewModel(
         viewModelScope.launch {
             val pomodoroId = pomodoroDao.insert(session).toInt()
             activityRepository.recordTimer(session, pomodoroId)
-            if (focus.type == FocusActivityType.STUDY) {
+            if (focus.type == FocusActivityType.STUDY && linkedTaskId == null && focus.itemId > 0) {
                 studyDao.insert(
                     StudySessionEntity(
                         subjectId = focus.itemId,
@@ -373,24 +505,33 @@ class PomodoroViewModel(
         val safeMinutes = durationMinutes.coerceIn(1, MAX_FOCUS_MINUTES.toInt())
         val duration = safeMinutes * MINUTE_MS
         val endMillis = startMillis + duration
+        val selectedTaskId = focusItemTaskId(_selectedItemId.value)
         val focus = activeFocus ?: ActiveFocus(
             type = _activityType.value,
             itemId = _selectedItemId.value ?: 0,
-            itemName = when (_activityType.value) {
+            itemName = selectedTaskId?.let { taskId ->
+                workTasks.value.firstOrNull { it.id == taskId }
+                    ?.primaryLabel()
+            } ?: when (_activityType.value) {
                 FocusActivityType.STUDY -> subjects.value.firstOrNull { it.id == _selectedItemId.value }?.name.orEmpty()
                 FocusActivityType.WORK -> workTasks.value.firstOrNull { it.id == _selectedItemId.value }
-                    ?.let { it.title.ifBlank { it.description.ifBlank { it.nextAction.ifBlank { "Задача #${it.id}" } } } }
+                    ?.primaryLabel()
                     .orEmpty()
                 FocusActivityType.OTHER -> otherActivities.value.firstOrNull { it.id == _selectedItemId.value }?.name.orEmpty()
             }
         )
+        val linkedTaskId = focusItemTaskId(focus.itemId)
         viewModelScope.launch {
             activityRepository.saveManual(
                 ManualActivityInput(
-                    taskId = focus.itemId.takeIf { focus.type == FocusActivityType.WORK && it != 0 },
+                    taskId = linkedTaskId,
                     activityType = focus.type,
-                    subjectId = focus.itemId.takeIf { focus.type == FocusActivityType.STUDY && it != 0 },
-                    otherActivityId = focus.itemId.takeIf { focus.type == FocusActivityType.OTHER && it != 0 },
+                    subjectId = focus.itemId.takeIf {
+                        linkedTaskId == null && focus.type == FocusActivityType.STUDY && it != 0
+                    },
+                    otherActivityId = focus.itemId.takeIf {
+                        linkedTaskId == null && focus.type == FocusActivityType.OTHER && it != 0
+                    },
                     title = focus.itemName,
                     startedAt = startMillis,
                     endedAt = endMillis
@@ -403,6 +544,8 @@ class PomodoroViewModel(
     fun endBreakToIdle() {
         if (_mode.value == TimerMode.BREAK || _mode.value == TimerMode.BREAK_PAUSED) {
             timerJob?.cancel()
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.cancel(NOTIFICATION_BREAK_COMPLETE_ID)
             _mode.value = TimerMode.IDLE
             _remaining.value = _focusDuration.value
         }
@@ -414,6 +557,10 @@ class PomodoroViewModel(
         _tickerStartTime.value = startTime
         _tickerEndTime.value = endTime
         tickerJob?.cancel()
+        if (!enabled) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.cancel(NOTIFICATION_TICKER_ID)
+        }
         if (enabled && startTime != null && endTime != null) {
             tickerJob = viewModelScope.launch {
                 while (true) {
@@ -422,8 +569,10 @@ class PomodoroViewModel(
                         val sinceStart = java.time.Duration.between(startTime, now).toMinutes()
                         if (sinceStart % interval == 0L) {
                             showNotification(
-                                context.getString(R.string.pomodoro_ticker_title),
-                                context.getString(R.string.pomodoro_ticker_message, interval)
+                                notificationId = NOTIFICATION_TICKER_ID,
+                                dedupeKey = "pomodoro-ticker-${now.hour}-${now.minute}",
+                                title = context.getString(R.string.pomodoro_ticker_title),
+                                text = context.getString(R.string.pomodoro_ticker_message, interval)
                             )
                             delay(MINUTE_MS)
                         }
@@ -443,12 +592,18 @@ class PomodoroViewModel(
     fun deleteSubject(id: Int) = viewModelScope.launch { subjectDao.deleteById(id) }
 
     fun addWorkTask(name: String) = viewModelScope.launch {
-        taskDao.insert(TaskEntity(title = name.trim(), isMorningRoutine = false))
+        taskLifecycle.save(
+            TaskEntity(title = name.trim(), isMorningRoutine = false, category = "WORK")
+        )
     }
 
-    fun updateWorkTask(task: TaskEntity) = viewModelScope.launch { taskDao.update(task) }
+    fun updateWorkTask(task: TaskEntity) = viewModelScope.launch {
+        taskLifecycle.rename(task.id, task.title)
+    }
 
-    fun deleteWorkTask(id: Int) = viewModelScope.launch { taskDao.deleteById(id) }
+    fun deleteWorkTask(id: Int) = viewModelScope.launch {
+        taskLifecycle.delete(id)
+    }
 
     fun addOtherActivity(name: String, color: Int) = viewModelScope.launch {
         otherActivityDao.insert(OtherActivityEntity(name = name.trim(), color = color))
@@ -465,7 +620,10 @@ class PomodoroViewModel(
         const val MIN_BREAK_MINUTES = 1L
         const val MAX_BREAK_MINUTES = 30L
         private const val MINUTE_MS = 60L * 1000L
-        private const val POMODORO_CHANNEL = "pomodoro_channel_app_volume_v3"
+        private const val POMODORO_CHANNEL = AppNotificationChannelIds.POMODORO
+        private const val NOTIFICATION_FOCUS_COMPLETE_ID = 670_001
+        private const val NOTIFICATION_BREAK_COMPLETE_ID = 670_002
+        private const val NOTIFICATION_TICKER_ID = 670_003
 
         fun calculateActivityDayRange(nowMillis: Long): Pair<Long, Long> {
             return ActivityDayBoundary.currentBounds(nowMillis, ZoneId.systemDefault())

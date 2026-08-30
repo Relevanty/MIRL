@@ -57,6 +57,8 @@ class LibraryEditViewModel(
     private val _state = MutableStateFlow(LibraryEditState())
     val state: StateFlow<LibraryEditState> = _state
     private var loadJob: Job? = null
+    private var persistedCoverPath: String? = null
+    private var persistedResourcePath: String? = null
 
     /** Загружает существующий элемент для редактирования + его теги. */
     fun load(id: Int) {
@@ -64,6 +66,8 @@ class LibraryEditViewModel(
         loadJob = viewModelScope.launch {
             val item = repository.observeItem(id).first() ?: return@launch
             val tags = repository.observeTagsForItem(id).first()
+            persistedCoverPath = item.coverUri
+            persistedResourcePath = item.localFilePath
 
             _state.value = LibraryEditState(
                 itemId = item.id,
@@ -86,8 +90,11 @@ class LibraryEditViewModel(
 
     /** Начинает создание нового элемента, не переиспользуя данные прошлого редактора. */
     fun resetForCreate() {
+        discardChanges()
         loadJob?.cancel()
         loadJob = null
+        persistedCoverPath = null
+        persistedResourcePath = null
         _state.update { it.clearedForCreate() }
     }
 
@@ -106,8 +113,9 @@ class LibraryEditViewModel(
     fun pickCover(uri: Uri) {
         viewModelScope.launch {
             val path = CoverHelper.copyCover(context, uri) ?: return@launch
-            // Удаляем старую обложку, если была.
-            CoverHelper.deleteCover(_state.value.coverPath)
+            _state.value.coverPath
+                ?.takeIf { it != persistedCoverPath }
+                ?.let(CoverHelper::deleteCover)
             _state.update { it.copy(coverPath = path) }
         }
     }
@@ -116,7 +124,9 @@ class LibraryEditViewModel(
     fun pickResource(uri: Uri) {
         viewModelScope.launch {
             val copied = ResourceFileHelper.copyIntoApp(context, uri) ?: return@launch
-            ResourceFileHelper.delete(_state.value.localFilePath)
+            _state.value.localFilePath
+                ?.takeIf { it != persistedResourcePath }
+                ?.let(ResourceFileHelper::delete)
             _state.update {
                 it.copy(
                     resourceKind = LibraryResourceKind.DOCUMENT,
@@ -128,7 +138,9 @@ class LibraryEditViewModel(
     }
 
     fun removeResource() {
-        ResourceFileHelper.delete(_state.value.localFilePath)
+        _state.value.localFilePath
+            ?.takeIf { it != persistedResourcePath }
+            ?.let(ResourceFileHelper::delete)
         _state.update {
             it.copy(localFilePath = null, originalFileName = "", resourceKind = LibraryResourceKind.NOTE)
         }
@@ -141,6 +153,7 @@ class LibraryEditViewModel(
     fun deleteCurrent() {
         val id = _state.value.itemId ?: return
         viewModelScope.launch {
+            discardStagedCopies()
             val item = repository.observeItem(id).first() ?: return@launch
             repository.deleteItem(item)
         }
@@ -148,7 +161,9 @@ class LibraryEditViewModel(
 
 
     fun removeCover() {
-        CoverHelper.deleteCover(_state.value.coverPath)
+        _state.value.coverPath
+            ?.takeIf { it != persistedCoverPath }
+            ?.let(CoverHelper::deleteCover)
         _state.update { it.copy(coverPath = null) }
     }
 
@@ -195,7 +210,30 @@ class LibraryEditViewModel(
                 ),
                 s.tags
             )
+            if (persistedCoverPath != s.coverPath) CoverHelper.deleteCover(persistedCoverPath)
+            if (persistedResourcePath != s.localFilePath) ResourceFileHelper.delete(persistedResourcePath)
+            persistedCoverPath = s.coverPath
+            persistedResourcePath = s.localFilePath
         }
         return true
+    }
+
+    /** Called when the editor closes without saving. Persisted assets stay intact. */
+    fun discardChanges() {
+        discardStagedCopies()
+    }
+
+    private fun discardStagedCopies() {
+        _state.value.coverPath
+            ?.takeIf { it != persistedCoverPath }
+            ?.let(CoverHelper::deleteCover)
+        _state.value.localFilePath
+            ?.takeIf { it != persistedResourcePath }
+            ?.let(ResourceFileHelper::delete)
+    }
+
+    override fun onCleared() {
+        discardStagedCopies()
+        super.onCleared()
     }
 }

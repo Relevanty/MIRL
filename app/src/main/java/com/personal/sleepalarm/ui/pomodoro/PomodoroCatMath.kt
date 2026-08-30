@@ -1,5 +1,15 @@
 package com.personal.sleepalarm.ui.pomodoro
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import com.personal.sleepalarm.ui.theme.appAccents
+
+/**
+ * Stable compatibility tokens persisted by existing SubjectEntity/OtherActivityEntity rows.
+ * They must not be rendered as ARGB directly: [pomodoroColorForToken] resolves each token
+ * into the active theme's semantic palette.
+ */
 val SUBJECT_COLORS = listOf(
     0xFF9E9E9E,
     0xFF9575CD,
@@ -10,6 +20,62 @@ val SUBJECT_COLORS = listOf(
     0xFF64B5F6,
     0xFFF06292
 ).map { it.toInt() }
+
+/** Stable tokens used by task-backed hub items; kept compatible with existing sessions. */
+internal val STUDY_TASK_COLOR_TOKEN = 0xFF42A5F5.toInt()
+internal val WORK_TASK_COLOR_TOKEN = 0xFF5C6BC0.toInt()
+internal val OTHER_TASK_COLOR_TOKEN = 0xFFAB47BC.toInt()
+
+private enum class PomodoroColorRole {
+    WORK,
+    SLEEP,
+    SUCCESS,
+    URGENT,
+    CALM,
+    WARNING,
+    STUDY,
+    OTHER
+}
+
+private val subjectColorRoles = listOf(
+    PomodoroColorRole.WORK,
+    PomodoroColorRole.SLEEP,
+    PomodoroColorRole.SUCCESS,
+    PomodoroColorRole.URGENT,
+    PomodoroColorRole.CALM,
+    PomodoroColorRole.WARNING,
+    PomodoroColorRole.STUDY,
+    PomodoroColorRole.OTHER
+)
+
+/** Resolves persisted legacy ARGB values as stable semantic tokens for the current theme. */
+@Composable
+internal fun pomodoroColorForToken(token: Int): Color {
+    val accents = MaterialTheme.appAccents
+    return when (pomodoroColorRoleForToken(token)) {
+        PomodoroColorRole.WORK -> accents.work.color
+        PomodoroColorRole.SLEEP -> accents.sleep.color
+        PomodoroColorRole.SUCCESS -> accents.success.color
+        PomodoroColorRole.URGENT -> accents.urgent.color
+        PomodoroColorRole.CALM -> accents.calm.color
+        PomodoroColorRole.WARNING -> accents.warning.color
+        PomodoroColorRole.STUDY -> accents.study.color
+        PomodoroColorRole.OTHER -> accents.other.color
+    }
+}
+
+private fun pomodoroColorRoleForToken(token: Int): PomodoroColorRole = when (token) {
+    STUDY_TASK_COLOR_TOKEN -> PomodoroColorRole.STUDY
+    WORK_TASK_COLOR_TOKEN -> PomodoroColorRole.WORK
+    OTHER_TASK_COLOR_TOKEN -> PomodoroColorRole.OTHER
+    else -> {
+        val knownIndex = SUBJECT_COLORS.indexOf(token)
+        subjectColorRoles[
+            if (knownIndex >= 0) knownIndex
+            else Math.floorMod(token, subjectColorRoles.size)
+        ]
+    }
+}
 
 internal fun calculateMeasuredBigCatScale(
     measuredWidthPx: Float,

@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.pomodoro
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -162,7 +164,7 @@ fun AnimatedFocusCat(
                 .size(width = 190.dp, height = 18.dp)
                 .graphicsLayer(scaleX = 1f + (breath - 1f) * 0.25f)
                 .background(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                    MaterialTheme.appAccents.focus.color.copy(alpha = 0.08f),
                     CircleShape
                 )
         )
@@ -182,7 +184,7 @@ fun AnimatedFocusCat(
                 lineHeight = 29.sp,
                 fontWeight = FontWeight.Bold
             ),
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.appAccents.focus.color,
             textAlign = TextAlign.Start,
             softWrap = false
         )
@@ -198,14 +200,14 @@ fun AnimatedFocusCat(
             val zY = (-15).dp - 110.dp * smoothProgress
             val zColor = if (zProgress < 0.5f) {
                 lerp(
-                    MaterialTheme.colorScheme.primary,
-                    MaterialTheme.colorScheme.tertiary,
+                    MaterialTheme.appAccents.focus.color,
+                    MaterialTheme.appAccents.calm.color,
                     zProgress * 2f
                 )
             } else {
                 lerp(
-                    MaterialTheme.colorScheme.tertiary,
-                    MaterialTheme.colorScheme.primary,
+                    MaterialTheme.appAccents.study.color,
+                    MaterialTheme.appAccents.focus.color,
                     (zProgress - 0.5f) * 2f
                 )
             }

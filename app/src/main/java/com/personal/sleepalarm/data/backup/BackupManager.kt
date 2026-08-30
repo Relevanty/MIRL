@@ -5,22 +5,36 @@ import android.net.Uri
 import android.util.Log
 import androidx.room.withTransaction
 import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.data.db.dao.EnglishProgressWithWordProjection
+import com.personal.sleepalarm.data.db.dao.EnglishDirectionalProgressWithWordProjection
+import com.personal.sleepalarm.data.db.dao.EnglishStudyCardBackupProjection
 import com.personal.sleepalarm.data.db.entity.*
+import com.personal.sleepalarm.data.english.EnglishDictionaryAssetSource
+import com.personal.sleepalarm.data.english.toDirectionalProgressTracks
+import com.personal.sleepalarm.domain.english.EnglishStudyDirection
 import com.personal.sleepalarm.util.ProfileJsonCodec
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.model.FocusProtocolPhase
 import com.personal.sleepalarm.service.focus.FocusProtocolManager
+import com.personal.sleepalarm.alarm.SleepAutomationScheduler
+import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
+import com.personal.sleepalarm.data.preferences.SleepAutomationSettings
+import com.personal.sleepalarm.data.preferences.DailyPlanNudgePreferences
+import com.personal.sleepalarm.data.preferences.DailyPlanNudgeSettings
+import com.personal.sleepalarm.alarm.DailyPlanNudgeScheduler
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Экспорт/импорт всех данных приложения в один JSON-файл.
  *
  * Структура:
  * {
- *   "version": 4,
+ *   "version": 13,
  *   "exportedAt": "...",
  *   "alarmProfile": {...},
  *   "schedule": {...},
@@ -28,6 +42,11 @@ import java.io.InputStreamReader
  *   "studySessions": [...],
  *   "calendarEvents": [...],
  *   "tasks": [...],
+ *   "englishProgress": [...],
+ *   "englishDirectionalProgress": [...],
+ *   "englishStudySets": [...],
+ *   "englishStudyCards": [...],
+ *   "englishCardProgress": [...],
  *   "reminders": [...],
  *   "ddays": [...],
  *   "diary": [...],
@@ -43,20 +62,54 @@ class BackupManager(private val context: Context) {
 
     companion object {
         private const val TAG = "BackupManager"
-        private const val BACKUP_VERSION = 7
+        private const val BACKUP_VERSION = 13
     }
+
+    private data class EnglishBackupSnapshot(
+        val legacyProgress: List<EnglishProgressWithWordProjection>,
+        val directionalProgress: List<EnglishDirectionalProgressWithWordProjection>,
+        val studySets: List<EnglishStudySetEntity>,
+        val studyCards: List<EnglishStudyCardBackupProjection>,
+        val cardProgress: List<EnglishCardProgressEntity>
+    )
 
     private val db: AppDatabase = AppDatabase.getInstance(context)
 
     // ========== ЭКСПОРТ ==========
 
     suspend fun exportToJson(): String {
+        val sleepAutomation = SleepAutomationPreference(context).get()
+        val dailyPlanNudges = DailyPlanNudgePreferences(context).get()
+        // Sets, cards and their progress form one FK graph. Read them under one
+        // database snapshot so a concurrent edit cannot produce orphaned backup rows.
+        val englishBackup = db.withTransaction {
+            EnglishBackupSnapshot(
+                legacyProgress = db.englishStudyDao().getAllProgressWithWords(),
+                directionalProgress = db.englishStudyDao().getAllDirectionalProgressWithWords(),
+                studySets = db.englishStudyDao().getAllStudySets(),
+                studyCards = db.englishStudyDao().getAllStudyCardsForBackup(),
+                cardProgress = db.englishStudyDao().getAllCardProgress()
+            )
+        }
         val root = JSONObject().apply {
             put("version", BACKUP_VERSION)
             put("exportedAt", System.currentTimeMillis())
 
             // Профиль (одна запись или пусто)
             db.alarmProfileDao().getProfile()?.let { put("alarmProfile", profileToJson(it)) }
+            put("sleepAutomation", JSONObject().apply {
+                put("enabled", sleepAutomation.enabled)
+                put("windowStartMinutes", sleepAutomation.windowStartMinutes)
+                put("windowEndMinutes", sleepAutomation.windowEndMinutes)
+            })
+            put("dailyPlanNudges", JSONObject().apply {
+                put("enabled", dailyPlanNudges.enabled)
+                put("bufferMinutes", dailyPlanNudges.bufferMinutes)
+                put("repeatEnabled", dailyPlanNudges.repeatEnabled)
+                put("repeatIntervalMinutes", dailyPlanNudges.repeatIntervalMinutes)
+                put("morningReminderEnabled", dailyPlanNudges.morningReminderEnabled)
+                put("cutoffMinutesOfDay", dailyPlanNudges.cutoffMinutesOfDay)
+            })
 
             // Расписание
             db.scheduleDao().get()?.let {
@@ -105,6 +158,31 @@ class BackupManager(private val context: Context) {
             })
             put("activityRecords", JSONArray().apply {
                 db.activityRecordDao().getAll().forEach { put(activityRecordToJson(it)) }
+            })
+            // The 10,000-word lexicon is bundled with the APK and is re-seeded locally.
+            // Only personal spaced-repetition history belongs in a backup.
+            put("englishProgress", JSONArray().apply {
+                englishBackup.legacyProgress.forEach {
+                    put(englishProgressToJson(it))
+                }
+            })
+            put("englishDirectionalProgress", JSONArray().apply {
+                englishBackup.directionalProgress.forEach {
+                    put(englishDirectionalProgressToJson(it))
+                }
+            })
+            put("englishStudySets", JSONArray().apply {
+                englishBackup.studySets.forEach { put(englishStudySetToJson(it)) }
+            })
+            put("englishStudyCards", JSONArray().apply {
+                englishBackup.studyCards.forEach {
+                    put(englishStudyCardToJson(it))
+                }
+            })
+            put("englishCardProgress", JSONArray().apply {
+                englishBackup.cardProgress.forEach {
+                    put(englishCardProgressToJson(it))
+                }
             })
             put("reminders", JSONArray().apply {
                 db.reminderDao().getAll().forEach { put(reminderToJson(it)) }
@@ -160,11 +238,29 @@ class BackupManager(private val context: Context) {
 
         val version = root.optInt("version", 0)
         if (version > BACKUP_VERSION) {
-            Log.w(
-                TAG,
-                "Импорт версии $version, текущая $BACKUP_VERSION. Часть данных может не импортироваться."
+            // Never perform a destructive downgrade import. A newer backup may contain
+            // required tables, fields or enum values this build cannot preserve.
+            throw IllegalArgumentException(
+                "Версия резервной копии $version новее поддерживаемой версии $BACKUP_VERSION"
             )
         }
+
+        // Resolve saved progress against the current bundled headwords before
+        // touching user data. If the asset is damaged, import remains atomic.
+        val englishProgressJson = root.optJSONArray("englishProgress")
+        val englishDirectionalProgressJson = root.optJSONArray("englishDirectionalProgress")
+        val englishStudyCardsJson = root.optJSONArray("englishStudyCards")
+        val needsEnglishDictionary = listOf(
+            englishProgressJson,
+            englishDirectionalProgressJson,
+            englishStudyCardsJson
+        ).any { (it?.length() ?: 0) > 0 }
+        val currentEnglishWords = if (needsEnglishDictionary) {
+            withContext(Dispatchers.IO) { EnglishDictionaryAssetSource(context).load() }
+        } else {
+            emptyList()
+        }
+        val currentEnglishIdsByWord = currentEnglishWords.associate { it.word to it.id }
 
         // Всё в одной транзакции через стандартный withTransaction от Room
         db.withTransaction {
@@ -174,6 +270,11 @@ class BackupManager(private val context: Context) {
             db.taskAttachmentDao().deleteAll()
             db.taskSubtaskDao().deleteAll()
             db.activityRecordDao().deleteAll()
+            db.englishStudyDao().deleteAllCardProgress()
+            db.englishStudyDao().deleteAllStudyCards()
+            db.englishStudyDao().deleteAllStudySets()
+            db.englishStudyDao().deleteAllDirectionalProgress()
+            db.englishStudyDao().deleteAllProgress()
             db.projectDao().deleteAll()
             db.libraryDao().deleteAllCrossRefs()
             db.libraryDao().deleteAllItems()
@@ -193,6 +294,13 @@ class BackupManager(private val context: Context) {
             db.sleepSessionDao().deleteAll()
             db.scheduleDao().deleteAll()
             db.alarmProfileDao().deleteAll()
+
+            if (currentEnglishWords.isNotEmpty()) {
+                db.englishStudyDao().replaceDictionary(
+                    words = currentEnglishWords,
+                    datasetVersion = EnglishDictionaryAssetSource.DATASET_VERSION
+                )
+            }
 
             // 2. Загружаем данные
             root.optJSONObject("alarmProfile")?.let {
@@ -283,6 +391,62 @@ class BackupManager(private val context: Context) {
                 if (list.isNotEmpty()) db.activityRecordDao().insertAll(list)
             }
 
+            val importedLegacyEnglishProgress = englishProgressJson?.let { arr ->
+                (0 until arr.length()).mapNotNull {
+                    englishProgressFromJson(
+                        o = arr.getJSONObject(it),
+                        currentIdsByWord = currentEnglishIdsByWord
+                    )
+                }
+            }.orEmpty()
+            if (importedLegacyEnglishProgress.isNotEmpty()) {
+                db.englishStudyDao().insertAllProgress(importedLegacyEnglishProgress)
+            }
+
+            val importedDirectionalProgress = englishDirectionalProgressJson?.let { arr ->
+                (0 until arr.length()).mapNotNull {
+                    englishDirectionalProgressFromJson(
+                        o = arr.getJSONObject(it),
+                        currentIdsByWord = currentEnglishIdsByWord
+                    )
+                }
+            }.orEmpty()
+            if (importedDirectionalProgress.isNotEmpty()) {
+                db.englishStudyDao().insertAllDirectionalProgress(importedDirectionalProgress)
+            } else if (importedLegacyEnglishProgress.isNotEmpty()) {
+                // Backup v12 and earlier had one aggregate schedule per word. Preserve that
+                // history in both tracks, matching the database 25 -> 26 migration semantics.
+                db.englishStudyDao().insertAllDirectionalProgress(
+                    importedLegacyEnglishProgress.flatMap { it.toDirectionalProgressTracks() }
+                )
+            }
+
+            val importedSets = root.optJSONArray("englishStudySets")?.let { arr ->
+                (0 until arr.length()).mapNotNull {
+                    englishStudySetFromJson(arr.getJSONObject(it))
+                }
+            }.orEmpty()
+            if (importedSets.isNotEmpty()) db.englishStudyDao().insertAllStudySets(importedSets)
+
+            val validSetIds = importedSets.mapTo(mutableSetOf()) { it.id }
+            val importedCards = englishStudyCardsJson?.let { arr ->
+                (0 until arr.length()).mapNotNull {
+                    englishStudyCardFromJson(
+                        o = arr.getJSONObject(it),
+                        currentIdsByWord = currentEnglishIdsByWord
+                    )
+                }.filter { it.setId in validSetIds }
+            }.orEmpty()
+            if (importedCards.isNotEmpty()) db.englishStudyDao().insertAllStudyCards(importedCards)
+
+            val validCardIds = importedCards.mapTo(mutableSetOf()) { it.id }
+            root.optJSONArray("englishCardProgress")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    englishCardProgressFromJson(arr.getJSONObject(it))
+                }.filter { it.cardId in validCardIds }
+                if (list.isNotEmpty()) db.englishStudyDao().insertAllCardProgress(list)
+            }
+
             root.optJSONArray("reminders")?.let { arr ->
                 val list =
                     (0 until arr.length()).mapNotNull { reminderFromJson(arr.getJSONObject(it)) }
@@ -336,6 +500,37 @@ class BackupManager(private val context: Context) {
             }
         }
 
+        val automationJson = root.optJSONObject("sleepAutomation")
+        SleepAutomationPreference(context).replace(
+            if (automationJson == null) {
+                SleepAutomationSettings()
+            } else {
+                SleepAutomationSettings(
+                    enabled = automationJson.optBoolean("enabled", false),
+                    windowStartMinutes = automationJson.optInt("windowStartMinutes", 22 * 60),
+                    windowEndMinutes = automationJson.optInt("windowEndMinutes", 2 * 60)
+                )
+            }
+        )
+        SleepAutomationScheduler(context).scheduleNext()
+
+        val dailyPlanJson = root.optJSONObject("dailyPlanNudges")
+        DailyPlanNudgePreferences(context).replaceControls(
+            if (dailyPlanJson == null) {
+                DailyPlanNudgeSettings()
+            } else {
+                DailyPlanNudgeSettings(
+                    enabled = dailyPlanJson.optBoolean("enabled", true),
+                    bufferMinutes = dailyPlanJson.optInt("bufferMinutes", 60),
+                    repeatEnabled = dailyPlanJson.optBoolean("repeatEnabled", true),
+                    repeatIntervalMinutes = dailyPlanJson.optInt("repeatIntervalMinutes", 15),
+                    morningReminderEnabled = dailyPlanJson.optBoolean("morningReminderEnabled", true),
+                    cutoffMinutesOfDay = dailyPlanJson.optInt("cutoffMinutesOfDay", 0)
+                )
+            }
+        )
+        DailyPlanNudgeScheduler(context, database = db).reschedule()
+
         FocusProtocolManager(context).reconcileActiveSessions()
         Log.d(TAG, "Импорт завершён успешно")
     }
@@ -359,6 +554,7 @@ class BackupManager(private val context: Context) {
         put("cueVolumePercent", p.cueVolumePercent)
         put("notificationVolumePercent", p.notificationVolumePercent)
         put("mathDifficulty", p.mathDifficulty.name)
+        put("mathChallengeCount", p.mathChallengeCount)
         put("quietAlarmEnabled", p.quietAlarmEnabled)
         put("vibrationEnabled", p.vibrationEnabled)
         put("alarmRingtoneUri", p.alarmRingtoneUri ?: JSONObject.NULL)
@@ -415,6 +611,13 @@ class BackupManager(private val context: Context) {
         put("pomodoroRecorded", s.pomodoroRecorded)
         put("completedCycles", s.completedCycles)
         put("totalFocusMillis", s.totalFocusMillis)
+        put("soundscapeId", s.soundscapeId)
+        put("soundscapeCustomUri", s.soundscapeCustomUri ?: JSONObject.NULL)
+        put("soundscapeCustomName", s.soundscapeCustomName ?: JSONObject.NULL)
+        put("soundscapeVolume", s.soundscapeVolume)
+        put("soundscapeSecondaryId", s.soundscapeSecondaryId ?: JSONObject.NULL)
+        put("soundscapeSecondaryVolume", s.soundscapeSecondaryVolume)
+        put("soundscapePlayDuringRecovery", s.soundscapePlayDuringRecovery)
     }
 
     private fun energySampleToJson(s: EnergySampleEntity) = JSONObject().apply {
@@ -471,6 +674,7 @@ class BackupManager(private val context: Context) {
         put("startAtMillis", t.startAtMillis ?: JSONObject.NULL)
         put("repeatRule", t.repeatRule)
         put("plannedFocusMinutes", t.plannedFocusMinutes)
+        put("isDailyRequired", t.isDailyRequired)
         put("updatedAt", t.updatedAt)
     }
 
@@ -523,6 +727,95 @@ class BackupManager(private val context: Context) {
         put("countsTowardProgress", a.countsTowardProgress); put("createdAt", a.createdAt); put("updatedAt", a.updatedAt)
     }
 
+    private fun englishProgressToJson(saved: EnglishProgressWithWordProjection) = JSONObject().apply {
+        val p = saved.progress
+        put("word", saved.word)
+        put("wordId", p.wordId)
+        put("dueAtMillis", p.dueAtMillis)
+        put("intervalMinutes", p.intervalMinutes)
+        put("easePermille", p.easePermille)
+        put("repetitions", p.repetitions)
+        put("lapses", p.lapses)
+        put("reviewCount", p.reviewCount)
+        put("correctCount", p.correctCount)
+        put("cardReviews", p.cardReviews)
+        put("writingReviews", p.writingReviews)
+        put("pronunciationReviews", p.pronunciationReviews)
+        put("listeningReviews", p.listeningReviews)
+        put("lastGrade", p.lastGrade)
+        put("lastMode", p.lastMode)
+        put("lastReviewedAtMillis", p.lastReviewedAtMillis)
+    }
+
+    private fun englishDirectionalProgressToJson(
+        saved: EnglishDirectionalProgressWithWordProjection
+    ) = JSONObject().apply {
+        val p = saved.progress
+        put("word", saved.word)
+        put("wordId", p.wordId)
+        put("direction", p.direction)
+        put("dueAtMillis", p.dueAtMillis)
+        put("intervalMinutes", p.intervalMinutes)
+        put("easePermille", p.easePermille)
+        put("repetitions", p.repetitions)
+        put("lapses", p.lapses)
+        put("reviewCount", p.reviewCount)
+        put("correctCount", p.correctCount)
+        put("cardReviews", p.cardReviews)
+        put("writingReviews", p.writingReviews)
+        put("pronunciationReviews", p.pronunciationReviews)
+        put("listeningReviews", p.listeningReviews)
+        put("lastGrade", p.lastGrade)
+        put("lastMode", p.lastMode)
+        put("lastReviewedAtMillis", p.lastReviewedAtMillis)
+    }
+
+    private fun englishStudySetToJson(studySet: EnglishStudySetEntity) = JSONObject().apply {
+        put("id", studySet.id)
+        put("title", studySet.title)
+        put("description", studySet.description)
+        put("colorSeed", studySet.colorSeed)
+        put("defaultDirection", studySet.defaultDirection)
+        put("createdAtMillis", studySet.createdAtMillis)
+        put("updatedAtMillis", studySet.updatedAtMillis)
+    }
+
+    private fun englishStudyCardToJson(saved: EnglishStudyCardBackupProjection) = JSONObject().apply {
+        val card = saved.card
+        put("id", card.id)
+        put("setId", card.setId)
+        put("dictionaryWordId", card.dictionaryWordId ?: JSONObject.NULL)
+        put("dictionaryHeadword", saved.dictionaryHeadword ?: JSONObject.NULL)
+        put("term", card.term)
+        put("translation", card.translation)
+        put("definition", card.definition)
+        put("example", card.example)
+        put("exampleTranslation", card.exampleTranslation)
+        put("notes", card.notes)
+        put("position", card.position)
+        put("createdAtMillis", card.createdAtMillis)
+        put("updatedAtMillis", card.updatedAtMillis)
+    }
+
+    private fun englishCardProgressToJson(progress: EnglishCardProgressEntity) = JSONObject().apply {
+        put("cardId", progress.cardId)
+        put("direction", progress.direction)
+        put("dueAtMillis", progress.dueAtMillis)
+        put("intervalMinutes", progress.intervalMinutes)
+        put("easePermille", progress.easePermille)
+        put("repetitions", progress.repetitions)
+        put("lapses", progress.lapses)
+        put("reviewCount", progress.reviewCount)
+        put("correctCount", progress.correctCount)
+        put("cardReviews", progress.cardReviews)
+        put("writingReviews", progress.writingReviews)
+        put("pronunciationReviews", progress.pronunciationReviews)
+        put("listeningReviews", progress.listeningReviews)
+        put("lastGrade", progress.lastGrade)
+        put("lastMode", progress.lastMode)
+        put("lastReviewedAtMillis", progress.lastReviewedAtMillis)
+    }
+
     private fun diaryToJson(d: DiaryEntryEntity) = JSONObject().apply {
         put("id", d.id); put("dateKey", d.dateKey); put("text", d.text)
         put("createdAt", d.createdAt); put("updatedAt", d.updatedAt)
@@ -540,6 +833,7 @@ class BackupManager(private val context: Context) {
         put("cycleLengthMinutes", s.cycleLengthMinutes)
         put("cyclesPlanned", s.cyclesPlanned)
         put("estimatedWakeTime", s.estimatedWakeTime)
+        put("automationSafetyWakeTime", s.automationSafetyWakeTime ?: JSONObject.NULL)
         put("actualWakeTime", s.actualWakeTime ?: JSONObject.NULL)
         put("dismissType", s.dismissType?.name ?: JSONObject.NULL)
         put("cuesEnabled", s.cuesEnabled)
@@ -677,7 +971,30 @@ class BackupManager(private val context: Context) {
             cancelReason = if (o.isNull("cancelReason")) null else o.optString("cancelReason"),
             pomodoroRecorded = o.optBoolean("pomodoroRecorded", false),
             completedCycles = o.optInt("completedCycles", 0),
-            totalFocusMillis = o.optLong("totalFocusMillis", 0L)
+            totalFocusMillis = o.optLong("totalFocusMillis", 0L),
+            soundscapeId = o.optString("soundscapeId", "silence"),
+            soundscapeCustomUri = if (o.isNull("soundscapeCustomUri")) {
+                null
+            } else {
+                o.optString("soundscapeCustomUri").takeIf { it.isNotBlank() }
+            },
+            soundscapeCustomName = if (o.isNull("soundscapeCustomName")) {
+                null
+            } else {
+                o.optString("soundscapeCustomName").takeIf { it.isNotBlank() }
+            },
+            soundscapeVolume = o.optInt("soundscapeVolume", 35).coerceIn(0, 100),
+            soundscapeSecondaryId = if (o.isNull("soundscapeSecondaryId")) {
+                null
+            } else {
+                o.optString("soundscapeSecondaryId").takeIf { it.isNotBlank() }
+            },
+            soundscapeSecondaryVolume = o.optInt("soundscapeSecondaryVolume", 20)
+                .coerceIn(0, 100),
+            soundscapePlayDuringRecovery = o.optBoolean(
+                "soundscapePlayDuringRecovery",
+                false
+            )
         )
     } catch (e: Exception) {
         Log.e(TAG, "Ошибка парсинга протокола фокуса", e); null
@@ -766,6 +1083,7 @@ class BackupManager(private val context: Context) {
             startAtMillis = if (o.isNull("startAtMillis")) null else o.optLong("startAtMillis"),
             repeatRule = o.optString("repeatRule", ""),
             plannedFocusMinutes = o.optInt("plannedFocusMinutes", o.optInt("estimatedMinutes", 25)).coerceIn(5, 480),
+            isDailyRequired = o.optBoolean("isDailyRequired", false),
             updatedAt = o.optLong("updatedAt", o.optLong("createdAt", System.currentTimeMillis()))
         )
     } catch (e: Exception) {
@@ -860,6 +1178,152 @@ class BackupManager(private val context: Context) {
         )
     } catch (e: Exception) { Log.e(TAG, "Ошибка парсинга активности", e); null }
 
+    private fun englishProgressFromJson(
+        o: JSONObject,
+        currentIdsByWord: Map<String, Int>
+    ): EnglishWordProgressEntity? = try {
+        val savedWord = o.optStringOrNull("word")
+        val wordId = resolveEnglishProgressWordId(
+            savedWord = savedWord,
+            legacyWordId = o.optInt("wordId", 0),
+            currentIdsByWord = currentIdsByWord
+        )
+        if (wordId == null) null else EnglishWordProgressEntity(
+            wordId = wordId,
+            dueAtMillis = o.optLong("dueAtMillis", 0L).coerceAtLeast(0L),
+            intervalMinutes = o.optLong("intervalMinutes", 0L).coerceAtLeast(0L),
+            easePermille = o.optInt("easePermille", 2_500).coerceIn(1_300, 3_500),
+            repetitions = o.optInt("repetitions", 0).coerceAtLeast(0),
+            lapses = o.optInt("lapses", 0).coerceAtLeast(0),
+            reviewCount = o.optInt("reviewCount", 0).coerceAtLeast(0),
+            correctCount = o.optInt("correctCount", 0).coerceAtLeast(0),
+            cardReviews = o.optInt("cardReviews", 0).coerceAtLeast(0),
+            writingReviews = o.optInt("writingReviews", 0).coerceAtLeast(0),
+            pronunciationReviews = o.optInt("pronunciationReviews", 0).coerceAtLeast(0),
+            listeningReviews = o.optInt("listeningReviews", 0).coerceAtLeast(0),
+            lastGrade = o.optString("lastGrade", ""),
+            lastMode = o.optString("lastMode", ""),
+            lastReviewedAtMillis = o.optLong("lastReviewedAtMillis", 0L).coerceAtLeast(0L)
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга прогресса английского", e)
+        null
+    }
+
+    private fun englishDirectionalProgressFromJson(
+        o: JSONObject,
+        currentIdsByWord: Map<String, Int>
+    ): EnglishWordDirectionalProgressEntity? = try {
+        val wordId = resolveEnglishProgressWordId(
+            savedWord = o.optStringOrNull("word"),
+            legacyWordId = o.optInt("wordId", 0),
+            currentIdsByWord = currentIdsByWord
+        )
+        val direction = EnglishStudyDirection.fromStorage(o.optString("direction", ""))
+        if (wordId == null || !direction.isConcrete) null else EnglishWordDirectionalProgressEntity(
+            wordId = wordId,
+            direction = direction.name,
+            dueAtMillis = o.optLong("dueAtMillis", 0L).coerceAtLeast(0L),
+            intervalMinutes = o.optLong("intervalMinutes", 0L).coerceAtLeast(0L),
+            easePermille = o.optInt("easePermille", 2_500).coerceIn(1_300, 3_500),
+            repetitions = o.optInt("repetitions", 0).coerceAtLeast(0),
+            lapses = o.optInt("lapses", 0).coerceAtLeast(0),
+            reviewCount = o.optInt("reviewCount", 0).coerceAtLeast(0),
+            correctCount = o.optInt("correctCount", 0).coerceAtLeast(0),
+            cardReviews = o.optInt("cardReviews", 0).coerceAtLeast(0),
+            writingReviews = o.optInt("writingReviews", 0).coerceAtLeast(0),
+            pronunciationReviews = o.optInt("pronunciationReviews", 0).coerceAtLeast(0),
+            listeningReviews = o.optInt("listeningReviews", 0).coerceAtLeast(0),
+            lastGrade = o.optString("lastGrade", ""),
+            lastMode = o.optString("lastMode", ""),
+            lastReviewedAtMillis = o.optLong("lastReviewedAtMillis", 0L).coerceAtLeast(0L)
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга направленного прогресса английского", e)
+        null
+    }
+
+    private fun englishStudySetFromJson(o: JSONObject): EnglishStudySetEntity? = try {
+        val id = o.optLong("id", 0L)
+        val title = o.optString("title", "").trim()
+        val direction = EnglishStudyDirection.fromStorage(o.optString("defaultDirection", "MIXED"))
+        if (id <= 0L || title.isEmpty() || title.length > 80) null else EnglishStudySetEntity(
+            id = id,
+            title = title,
+            // Sets created by older builds had no description length limit. Keep the
+            // complete user-authored text so an export/import round trip is lossless.
+            description = o.optString("description", ""),
+            colorSeed = o.optInt("colorSeed", 0),
+            defaultDirection = direction.name,
+            createdAtMillis = o.optLong("createdAtMillis", 0L).coerceAtLeast(0L),
+            updatedAtMillis = o.optLong("updatedAtMillis", 0L).coerceAtLeast(0L)
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга набора английского", e)
+        null
+    }
+
+    private fun englishStudyCardFromJson(
+        o: JSONObject,
+        currentIdsByWord: Map<String, Int>
+    ): EnglishStudyCardEntity? = try {
+        val id = o.optLong("id", 0L)
+        val setId = o.optLong("setId", 0L)
+        val term = o.optString("term", "").trim()
+        val translation = o.optString("translation", "").trim()
+        val savedHeadword = o.optStringOrNull("dictionaryHeadword")
+        // Numeric dictionary IDs are generated from frequency order and can change
+        // between assets. v13 stores the stable headword; if it is absent, keep the
+        // card's text snapshot but deliberately detach the unsafe numeric link.
+        val dictionaryWordId = savedHeadword?.let(currentIdsByWord::get)
+        if (
+            id <= 0L || setId <= 0L || term.isEmpty() || translation.isEmpty() ||
+            term.length > 120 || translation.length > 240
+        ) null else EnglishStudyCardEntity(
+            id = id,
+            setId = setId,
+            dictionaryWordId = dictionaryWordId,
+            term = term,
+            translation = translation,
+            definition = o.optString("definition", "").take(2_000),
+            example = o.optString("example", "").take(1_000),
+            exampleTranslation = o.optString("exampleTranslation", "").take(1_000),
+            notes = o.optString("notes", "").take(4_000),
+            position = o.optInt("position", 0).coerceAtLeast(0),
+            createdAtMillis = o.optLong("createdAtMillis", 0L).coerceAtLeast(0L),
+            updatedAtMillis = o.optLong("updatedAtMillis", 0L).coerceAtLeast(0L)
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга карточки английского", e)
+        null
+    }
+
+    private fun englishCardProgressFromJson(o: JSONObject): EnglishCardProgressEntity? = try {
+        val cardId = o.optLong("cardId", 0L)
+        val direction = EnglishStudyDirection.fromStorage(o.optString("direction", ""))
+        if (cardId <= 0L || !direction.isConcrete) null else EnglishCardProgressEntity(
+            cardId = cardId,
+            direction = direction.name,
+            dueAtMillis = o.optLong("dueAtMillis", 0L).coerceAtLeast(0L),
+            intervalMinutes = o.optLong("intervalMinutes", 0L).coerceAtLeast(0L),
+            easePermille = o.optInt("easePermille", 2_500).coerceIn(1_300, 3_500),
+            repetitions = o.optInt("repetitions", 0).coerceAtLeast(0),
+            lapses = o.optInt("lapses", 0).coerceAtLeast(0),
+            reviewCount = o.optInt("reviewCount", 0).coerceAtLeast(0),
+            correctCount = o.optInt("correctCount", 0).coerceAtLeast(0),
+            cardReviews = o.optInt("cardReviews", 0).coerceAtLeast(0),
+            writingReviews = o.optInt("writingReviews", 0).coerceAtLeast(0),
+            pronunciationReviews = o.optInt("pronunciationReviews", 0).coerceAtLeast(0),
+            listeningReviews = o.optInt("listeningReviews", 0).coerceAtLeast(0),
+            lastGrade = o.optString("lastGrade", ""),
+            lastMode = o.optString("lastMode", ""),
+            lastReviewedAtMillis = o.optLong("lastReviewedAtMillis", 0L).coerceAtLeast(0L)
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга прогресса карточки английского", e)
+        null
+    }
+
     private fun diaryFromJson(o: JSONObject): DiaryEntryEntity? = try {
         DiaryEntryEntity(
             id = o.optInt("id", 0),
@@ -892,6 +1356,8 @@ class BackupManager(private val context: Context) {
             cycleLengthMinutes = o.optInt("cycleLengthMinutes", 90),
             cyclesPlanned = o.optInt("cyclesPlanned"),
             estimatedWakeTime = o.optLong("estimatedWakeTime"),
+            automationSafetyWakeTime = if (o.isNull("automationSafetyWakeTime")) null
+                else o.optLong("automationSafetyWakeTime"),
             actualWakeTime = if (o.isNull("actualWakeTime")) null else o.optLong("actualWakeTime"),
             dismissType = o.optStringOrNull("dismissType")
                 ?.let { enumValueOrNull<com.personal.sleepalarm.domain.model.DismissType>(it) },
@@ -998,4 +1464,15 @@ class BackupManager(private val context: Context) {
             null
         }
 
+}
+
+internal fun resolveEnglishProgressWordId(
+    savedWord: String?,
+    legacyWordId: Int,
+    currentIdsByWord: Map<String, Int>
+): Int? = if (savedWord == null) {
+    // Compatibility with the short-lived v11 shape and older local files.
+    legacyWordId.takeIf { it in 1..EnglishDictionaryAssetSource.EXPECTED_WORD_COUNT }
+} else {
+    currentIdsByWord[savedWord]
 }

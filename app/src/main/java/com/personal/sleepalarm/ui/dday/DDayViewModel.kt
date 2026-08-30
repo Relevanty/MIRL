@@ -8,6 +8,7 @@ import com.personal.sleepalarm.data.db.entity.DDayEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.data.repository.DDayRepository
+import com.personal.sleepalarm.domain.model.primaryLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -77,7 +78,7 @@ class DDayViewModel(
         val plans = events.mapNotNull { event ->
             val task = event.taskId?.let(taskById::get)
             val project = event.projectId?.let(projectById::get)
-            val title = task?.title ?: project?.title ?: return@mapNotNull null
+            val title = task?.primaryLabel() ?: project?.title ?: return@mapNotNull null
             val budgetMinutes = task?.workBudgetMinutes ?: project?.workBudgetMinutes ?: 0
             val spentMillis = task?.spentMillis ?: project?.spentMillis ?: 0L
             val spentMinutes = (spentMillis / 60_000L).toInt()

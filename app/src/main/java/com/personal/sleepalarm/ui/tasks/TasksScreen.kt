@@ -1,9 +1,11 @@
 package com.personal.sleepalarm.ui.tasks
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -74,8 +76,17 @@ import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.model.effectiveWorkBudgetMinutes
+import com.personal.sleepalarm.domain.model.remainingWorkMillisOrNull
+import com.personal.sleepalarm.domain.calculator.DailyTaskFocusCalculator
+import com.personal.sleepalarm.domain.calculator.DailyTaskFocusProgress
+import com.personal.sleepalarm.domain.calculator.liveTaskFocusIntervals
 import com.personal.sleepalarm.ui.activity.ManualActivitySheet
+import com.personal.sleepalarm.ui.components.DailyFocusProgressCard
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
+import com.personal.sleepalarm.ui.theme.appAccents
+import java.time.ZoneId
 
 /** Живая матрица задач, полная карточка и доска завершённого. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,13 +96,18 @@ fun TasksScreen(
     onAddReminder: (taskId: Int) -> Unit = {},
     onOpenCalendar: () -> Unit = {},
     onStartFocus: (TaskEntity) -> Unit = {},
+    onOpenLibraryItem: (Int) -> Unit = {},
     openTaskId: Int? = null,
+    onOpenTaskRequestConsumed: (Int) -> Unit = {},
+    createTaskCategory: String? = null,
+    onCreateTaskRequestConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val activityRecords by viewModel.activityRecords.collectAsStateWithLifecycle()
+    val activeFocusProtocol by viewModel.activeFocusProtocol.collectAsStateWithLifecycle()
+    val progressNowMillis by viewModel.progressNowMillis.collectAsStateWithLifecycle()
     val projects by viewModel.projects.collectAsStateWithLifecycle()
-    val canUndoMove by viewModel.canUndoMove.collectAsStateWithLifecycle()
     val libraryItems by viewModel.libraryItems.collectAsStateWithLifecycle()
     val libraryLinks by viewModel.libraryLinks.collectAsStateWithLifecycle()
     var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
@@ -104,11 +120,40 @@ fun TasksScreen(
     var isDraggingTask by remember { mutableStateOf(false) }
     var deletingTask by remember { mutableStateOf<TaskEntity?>(null) }
     val detailTask = state.generalTasks.firstOrNull { it.id == detailTaskId }
+    val liveFocusIntervals = remember(activeFocusProtocol, progressNowMillis) {
+        activeFocusProtocol?.liveTaskFocusIntervals(progressNowMillis).orEmpty()
+    }
+    val dailyProgressByTask = remember(
+        state.generalTasks,
+        activityRecords,
+        progressNowMillis,
+        liveFocusIntervals
+    ) {
+        DailyTaskFocusCalculator.calculateForTasks(
+            tasks = state.generalTasks,
+            records = activityRecords,
+            nowMillis = progressNowMillis,
+            zoneId = ZoneId.systemDefault(),
+            liveIntervals = liveFocusIntervals
+        )
+    }
 
     LaunchedEffect(openTaskId, state.generalTasks) {
-        if (openTaskId != null && state.generalTasks.any { it.id == openTaskId }) {
-            detailTaskId = openTaskId
-        }
+        val requestedId = openTaskId ?: return@LaunchedEffect
+        val task = state.generalTasks.firstOrNull { it.id == requestedId }
+            ?: return@LaunchedEffect
+        detailTaskId = task.id
+        onOpenTaskRequestConsumed(task.id)
+    }
+
+    LaunchedEffect(createTaskCategory) {
+        val category = createTaskCategory?.takeIf { it in setOf("STUDY", "WORK", "OTHER") }
+            ?: return@LaunchedEffect
+        editingTask = TaskEntity(title = "", matrixQuadrant = 2, category = category)
+        detailTaskId = null
+        expandedQuadrant = null
+        showCompletedBoard = false
+        onCreateTaskRequestConsumed()
     }
 
     if (showProjects) {
@@ -148,13 +193,14 @@ fun TasksScreen(
             quadrant = quadrant,
             allTasks = state.activeMatrixTasks,
             projects = projects,
+            dailyProgress = dailyProgressByTask,
             onBack = { expandedQuadrant = null },
             onSelectQuadrant = { expandedQuadrant = it },
             onOpenTask = { detailTaskId = it.id },
             onFocus = { task -> onStartFocus(task) },
             onMove = { task, direction -> viewModel.moveTaskWithinQuadrant(task, direction) },
             onCreate = {
-                editingTask = TaskEntity(title = "", matrixQuadrant = quadrant.storageValue)
+                editingTask = TaskEntity(title = "", matrixQuadrant = quadrant.storageValue, category = "")
                 expandedQuadrant = null
             },
             modifier = modifier
@@ -183,12 +229,11 @@ fun TasksScreen(
             ) {
                 TaskMatrixHeader(
                     activeCount = state.activeMatrixTasks.size,
+                    projectCount = projects.count { !it.isArchived },
+                    completedCount = state.completedMatrixTasks.size,
                     onOpenCalendar = onOpenCalendar,
                     onOpenBoard = { showCompletedBoard = true },
-                    onOpenProjects = { showProjects = true },
-                    onCreate = {
-                        editingTask = TaskEntity(title = "", matrixQuadrant = TaskQuadrant.SCHEDULE.storageValue)
-                    }
+                    onOpenProjects = { showProjects = true }
                 )
                 Spacer(Modifier.height(8.dp))
                 Box(modifier = Modifier.weight(1f)) {
@@ -199,7 +244,7 @@ fun TasksScreen(
                         onReorderTask = viewModel::moveTaskToIndex,
                         onCompleteTask = viewModel::completeTask,
                         onCreateInQuadrant = {
-                            editingTask = TaskEntity(title = "", matrixQuadrant = it.storageValue)
+                            editingTask = TaskEntity(title = "", matrixQuadrant = it.storageValue, category = "")
                         },
                         onOpenQuadrant = { expandedQuadrant = it },
                         onDraggingChanged = { isDraggingTask = it },
@@ -211,13 +256,6 @@ fun TasksScreen(
                                 completedCount = state.completedMatrixTasks.size,
                                 onClick = { showCompletedBoard = true }
                             )
-                        }
-                    }
-                }
-                if (canUndoMove && !isDraggingTask) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = viewModel::undoLastMove) {
-                            Text(stringResource(R.string.task_undo_move))
                         }
                     }
                 }
@@ -243,10 +281,12 @@ fun TasksScreen(
                 },
                 onAddTime = { manualActivityTaskId = task.id },
                 activities = activityRecords.filter { it.taskId == task.id },
+                dailyProgress = dailyProgressByTask[task.id],
                 onEditActivity = { editingActivity = it },
                 libraryItems = libraryItems,
                 linkedLibraryIds = libraryLinks.filter { it.taskId == task.id }.mapTo(linkedSetOf()) { it.libraryItemId },
                 onToggleLibrary = { viewModel.toggleLibraryLink(task.id, it) },
+                onOpenLibrary = onOpenLibraryItem,
                 onComplete = {
                     if (task.isDone) viewModel.restoreTask(task) else viewModel.completeTask(task)
                     detailTaskId = null
@@ -271,7 +311,7 @@ fun TasksScreen(
                         viewModel.deleteTask(task)
                         deletingTask = null
                     }
-                ) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
+                ) { Text("Удалить", color = MaterialTheme.appAccents.urgent.color) }
             },
             dismissButton = {
                 TextButton(onClick = { deletingTask = null }) { Text(stringResource(R.string.action_cancel)) }
@@ -294,12 +334,13 @@ fun TasksScreen(
 @Composable
 private fun TaskMatrixHeader(
     activeCount: Int,
+    projectCount: Int,
+    completedCount: Int,
     onOpenCalendar: () -> Unit,
     onOpenBoard: () -> Unit,
-    onOpenProjects: () -> Unit,
-    onCreate: () -> Unit
+    onOpenProjects: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -314,27 +355,55 @@ private fun TaskMatrixHeader(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Button(onClick = onCreate) {
-                Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                Spacer(Modifier.size(5.dp))
-                Text("Задача")
-            }
         }
-        Row(modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onOpenCalendar, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.CalendarMonth, null, Modifier.size(18.dp))
-                Spacer(Modifier.size(4.dp))
-                Text("Календарь", maxLines = 1)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                onClick = onOpenProjects,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.appAccents.work.container,
+                tonalElevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    Icon(Icons.Default.AccountTree, null, Modifier.size(20.dp), tint = MaterialTheme.appAccents.work.color)
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.task_projects_hub), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            stringResource(R.string.task_projects_count, projectCount),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
-            TextButton(onClick = onOpenProjects, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.AccountTree, null, Modifier.size(18.dp))
-                Spacer(Modifier.size(4.dp))
-                Text("Проекты", maxLines = 1)
+            IconButton(onClick = onOpenCalendar) {
+                Icon(
+                    Icons.Default.CalendarMonth,
+                    stringResource(R.string.task_open_calendar),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            TextButton(onClick = onOpenBoard, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.CheckCircle, null, Modifier.size(18.dp))
-                Spacer(Modifier.size(4.dp))
-                Text("Готово", maxLines = 1)
+            Surface(
+                onClick = onOpenBoard,
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(Icons.Default.CheckCircle, stringResource(R.string.task_open_done_board), Modifier.size(20.dp))
+                    Text(completedCount.toString(), fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
@@ -363,7 +432,7 @@ private fun CompletedDock(completedCount: Int, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Text(completedCount.toString(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+            Text(completedCount.toString(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.appAccents.success.color)
         }
     }
 }
@@ -376,10 +445,12 @@ private fun TaskDetailSheet(
     onReminder: () -> Unit,
     onAddTime: () -> Unit,
     activities: List<ActivityRecordEntity>,
+    dailyProgress: DailyTaskFocusProgress?,
     onEditActivity: (ActivityRecordEntity) -> Unit,
     libraryItems: List<LibraryItemEntity>,
     linkedLibraryIds: Set<Int>,
     onToggleLibrary: (Int) -> Unit,
+    onOpenLibrary: (Int) -> Unit,
     onComplete: () -> Unit,
     onDelete: () -> Unit,
     onToggleChecklistItem: (Int) -> Unit
@@ -395,9 +466,15 @@ private fun TaskDetailSheet(
         Row(verticalAlignment = Alignment.Top) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
+                    task.primaryLabel(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
                     TaskQuadrant.fromStorage(task.matrixQuadrant).displayName(),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.appAccents.focus.color
                 )
             }
             IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, stringResource(R.string.task_edit)) }
@@ -415,12 +492,22 @@ private fun TaskDetailSheet(
         DetailText(stringResource(R.string.task_field_if_then), task.ifThenPlan)
         DetailText(stringResource(R.string.task_field_materials), task.materials)
 
+        dailyProgress?.let { progress ->
+            DailyFocusProgressCard(
+                progress = progress,
+                boutElapsedMillis = 0L,
+                boutMinutes = task.estimatedMinutes,
+                requiredToday = task.isDailyRequired,
+                showBoutProgress = false
+            )
+        }
+
         val checklistItems = parseTaskChecklist(task.checklist)
         if (checklistItems.isNotEmpty()) {
             Text(
                 stringResource(R.string.task_field_checklist),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.focus.color
             )
             checklistItems.forEachIndexed { index, item ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -439,8 +526,20 @@ private fun TaskDetailSheet(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            TaskMetaChip("${task.plannedFocusMinutes} ${stringResource(R.string.task_minutes_short)}")
-            TaskMetaChip(formatSpentTime(task.spentMillis, effectiveBudgetMinutes(task)))
+            TaskMetaChip(stringResource(R.string.daily_focus_bout_duration, task.estimatedMinutes))
+            if (task.isDailyRequired) {
+                TaskMetaChip(stringResource(R.string.daily_focus_required_badge))
+            }
+            TaskMetaChip(
+                if (task.effectiveWorkBudgetMinutes() > 0) {
+                    formatSpentTime(task.spentMillis, task.effectiveWorkBudgetMinutes())
+                } else {
+                    stringResource(
+                        R.string.daily_focus_total_spent_unlimited,
+                        task.spentMillis / 60_000L
+                    )
+                }
+            )
             task.dueAtMillis?.let { TaskMetaChip(formatDetailDate(it)) }
             if (task.contextTag.isNotBlank()) TaskMetaChip(task.contextTag)
         }
@@ -474,16 +573,16 @@ private fun TaskDetailSheet(
             Text(stringResource(R.string.activity_add_spent))
         }
         TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error)
+            Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.appAccents.urgent.color)
             Spacer(Modifier.size(8.dp))
-            Text("Удалить задачу", color = MaterialTheme.colorScheme.error)
+            Text("Удалить задачу", color = MaterialTheme.appAccents.urgent.color)
         }
 
         if (activities.isNotEmpty()) {
             Text(
                 stringResource(R.string.activity_history),
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.work.color
             )
             activities.take(6).forEach { activity ->
                 Surface(
@@ -508,7 +607,7 @@ private fun TaskDetailSheet(
                             Text(
                                 stringResource(R.string.activity_added_manually),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.tertiary
+                                color = MaterialTheme.appAccents.calm.color
                             )
                         }
                     }
@@ -520,17 +619,29 @@ private fun TaskDetailSheet(
             Text(
                 stringResource(R.string.task_library_materials),
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.focus.color
             )
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 libraryItems.forEach { item ->
+                    val linked = item.id in linkedLibraryIds
                     FilterChip(
-                        selected = item.id in linkedLibraryIds,
-                        onClick = { onToggleLibrary(item.id) },
-                        label = { Text(item.title, maxLines = 1) }
+                        selected = linked,
+                        onClick = {
+                            if (linked) onOpenLibrary(item.id) else onToggleLibrary(item.id)
+                        },
+                        label = { Text(item.title, maxLines = 1) },
+                        trailingIcon = if (linked) {
+                            {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.task_unlink_material),
+                                    modifier = Modifier.size(18.dp).clickable { onToggleLibrary(item.id) }
+                                )
+                            }
+                        } else null
                     )
                 }
             }
@@ -551,6 +662,7 @@ private fun ExpandedTaskQuadrant(
     quadrant: TaskQuadrant,
     allTasks: List<TaskEntity>,
     projects: List<ProjectEntity>,
+    dailyProgress: Map<Int, DailyTaskFocusProgress>,
     onBack: () -> Unit,
     onSelectQuadrant: (TaskQuadrant) -> Unit,
     onOpenTask: (TaskEntity) -> Unit,
@@ -578,8 +690,7 @@ private fun ExpandedTaskQuadrant(
                 when (sortMode) {
                     "DEADLINE" -> sequence.sortedBy { it.dueAtMillis ?: Long.MAX_VALUE }
                     "REMAINING" -> sequence.sortedByDescending {
-                        val budget = it.workBudgetMinutes.takeIf { value -> value > 0 } ?: it.estimatedMinutes
-                        (budget * 60_000L - it.spentMillis).coerceAtLeast(0L)
+                        it.remainingWorkMillisOrNull() ?: Long.MAX_VALUE
                     }
                     else -> sequence.sortedWith(compareBy<TaskEntity> { it.sortOrder }.thenByDescending { it.createdAt })
                 }
@@ -677,12 +788,19 @@ private fun ExpandedTaskQuadrant(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                TaskBallPreview(task)
+                                TaskBallPreview(task, dailyProgress[task.id])
                                 IconButton(onClick = { onFocus(task) }) {
                                     Icon(Icons.Default.PlayArrow, "Начать фокус")
                                 }
                                 Text(
-                                    formatSpentTime(task.spentMillis, effectiveBudgetMinutes(task)),
+                                    if (task.effectiveWorkBudgetMinutes() > 0) {
+                                        formatSpentTime(task.spentMillis, task.effectiveWorkBudgetMinutes())
+                                    } else {
+                                        stringResource(
+                                            R.string.daily_focus_total_spent_unlimited,
+                                            task.spentMillis / 60_000L
+                                        )
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,
@@ -701,6 +819,7 @@ private fun ExpandedTaskQuadrant(
                     items(visibleTasks, key = { it.id }) { task ->
                         ReorderableTaskRow(
                             task = task,
+                            dailyProgress = dailyProgress[task.id],
                             onOpen = { onOpenTask(task) },
                             onFocus = { onFocus(task) },
                             projectTitle = projects.firstOrNull { it.id == task.projectId }?.title,
@@ -717,6 +836,7 @@ private fun ExpandedTaskQuadrant(
 @Composable
 private fun ReorderableTaskRow(
     task: TaskEntity,
+    dailyProgress: DailyTaskFocusProgress?,
     onOpen: () -> Unit,
     onFocus: () -> Unit,
     projectTitle: String?,
@@ -727,9 +847,18 @@ private fun ReorderableTaskRow(
     var dragging by remember(task.id) { mutableStateOf(false) }
     val animatedY by animateFloatAsState(
         targetValue = if (dragging) dragY else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioNoBouncy),
+        // Track the finger directly; use the spring only for the final landing.
+        animationSpec = if (dragging) snap() else spring(
+            stiffness = Spring.StiffnessLow,
+            dampingRatio = Spring.DampingRatioNoBouncy
+        ),
         label = "task_row_settle"
     )
+    fun commitDrag() {
+        calculateReorderDirection(dragY)?.let(onMove)
+        dragging = false
+        dragY = 0f
+    }
     Surface(
         onClick = onOpen,
         modifier = modifier
@@ -750,47 +879,61 @@ private fun ReorderableTaskRow(
                             dragY += amount.y
                         },
                         onDragCancel = {
-                            dragging = false
-                            dragY = 0f
+                            // System pointer cancellation commits the current
+                            // placement; there is no separate user-facing undo.
+                            commitDrag()
                         },
-                        onDragEnd = {
-                            val direction = when {
-                                dragY > 34f -> 1
-                                dragY < -34f -> -1
-                                else -> 0
-                            }
-                            if (direction != 0) onMove(direction)
-                            dragging = false
-                            dragY = 0f
-                        }
+                        onDragEnd = ::commitDrag
                     )
                 }
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            TaskBallPreview(task)
+            TaskBallPreview(task, dailyProgress)
             Column(Modifier.weight(1f)) {
-                val descriptionPreview = task.description
-                    .ifBlank { task.nextAction }
-                    .ifBlank { stringResource(R.string.task_untitled) }
                 Text(
-                    descriptionPreview,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
+                    task.primaryLabel(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                task.description
+                    .takeIf { it.isNotBlank() && it.trim() != task.primaryLabel() }
+                    ?.let { description ->
+                        Text(
+                            description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 Text(
-                    formatSpentTime(task.spentMillis, effectiveBudgetMinutes(task)),
+                    dailyProgress?.let {
+                        stringResource(
+                            R.string.daily_focus_today_value,
+                            it.spentMinutes,
+                            it.targetMinutes
+                        )
+                    } ?: if (task.effectiveWorkBudgetMinutes() > 0) {
+                        formatSpentTime(task.spentMillis, task.effectiveWorkBudgetMinutes())
+                    } else {
+                        stringResource(
+                            R.string.daily_focus_total_spent_unlimited,
+                            task.spentMillis / 60_000L
+                        )
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 task.nextAction.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.appAccents.focus.color, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 val meta = listOfNotNull(projectTitle, task.category.takeIf(String::isNotBlank)).joinToString(" · ")
                 if (meta.isNotBlank()) {
-                    Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                    Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.appAccents.other.color)
                 }
             }
             IconButton(onClick = onFocus) { Icon(Icons.Default.PlayArrow, "Начать фокус") }
@@ -798,18 +941,22 @@ private fun ReorderableTaskRow(
     }
 }
 
+internal fun calculateReorderDirection(dragY: Float, thresholdPx: Float = 34f): Int? = when {
+    dragY > thresholdPx -> 1
+    dragY < -thresholdPx -> -1
+    else -> null
+}
+
 @Composable
-private fun TaskBallPreview(task: TaskEntity) {
-    val budget = effectiveBudgetMinutes(task)
-    val progress = if (budget <= 0) 0f
-    else (task.spentMillis / 60_000f / budget).coerceIn(0f, 1f)
+private fun TaskBallPreview(task: TaskEntity, dailyProgress: DailyTaskFocusProgress? = null) {
+    val progress = dailyProgress?.progressFraction ?: 0f
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(52.dp)) {
         androidx.compose.material3.CircularProgressIndicator(
             progress = { progress },
             modifier = Modifier.fillMaxSize(),
             strokeWidth = 4.dp,
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.appAccents.focus.color
         )
         if (task.imagePath != null) {
             LocalTaskImage(task.imagePath, Modifier.size(38.dp), circular = true)
@@ -821,6 +968,23 @@ private fun TaskBallPreview(task: TaskEntity) {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        if (task.isDailyRequired) {
+            val requiredTone = MaterialTheme.appAccents.warning
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd).size(18.dp),
+                shape = CircleShape,
+                color = requiredTone.color
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        "!",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = requiredTone.onColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -828,7 +992,7 @@ private fun TaskBallPreview(task: TaskEntity) {
 private fun DetailText(label: String, value: String) {
     if (value.isBlank()) return
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.appAccents.calm.color)
         Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
     }
 }
@@ -842,12 +1006,10 @@ private fun TaskMetaChip(text: String) {
 
 private fun formatSpentTime(spentMillis: Long, estimateMinutes: Int): String {
     val spentMinutes = (spentMillis / 60_000L).toInt()
+    if (estimateMinutes <= 0) return "$spentMinutes мин"
     val remaining = (estimateMinutes - spentMinutes).coerceAtLeast(0)
     return "${spentMinutes}/${estimateMinutes} мин · осталось $remaining"
 }
-
-private fun effectiveBudgetMinutes(task: TaskEntity): Int =
-    task.workBudgetMinutes.takeIf { it > 0 } ?: task.estimatedMinutes
 
 @Composable
 internal fun TaskQuadrant.displayName(): String = when (this) {

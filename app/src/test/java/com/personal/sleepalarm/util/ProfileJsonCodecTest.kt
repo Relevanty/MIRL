@@ -42,6 +42,7 @@ class ProfileJsonCodecTest {
         cueVolumePercent = 15,
         notificationVolumePercent = 65,
         mathDifficulty = MathDifficulty.HARD,
+        mathChallengeCount = 7,
         quietAlarmEnabled = true,
         updatedAt = 1_700_000_000_000L,
         vibrationEnabled = false,
@@ -146,6 +147,7 @@ class ProfileJsonCodecTest {
         assertEquals(defaults.smartRepeatMaxCount, decoded.smartRepeatMaxCount)
         assertEquals(defaults.vibrationEnabled, decoded.vibrationEnabled)
         assertEquals(defaults.notificationVolumePercent, decoded.notificationVolumePercent)
+        assertEquals(1, decoded.mathChallengeCount)
     }
 
     @Test
@@ -164,6 +166,19 @@ class ProfileJsonCodecTest {
         assertEquals(100, decoded.cueVolumePercent)
         assertEquals(0, decoded.notificationVolumePercent)
         assertEquals(20, decoded.smartRepeatMaxCount)
+    }
+
+    @Test
+    fun `math challenge count is clamped to supported range`() {
+        val belowMinimum = JSONObject(ProfileJsonCodec.encode(fullProfile())).apply {
+            put("mathChallengeCount", 0)
+        }
+        val aboveMaximum = JSONObject(ProfileJsonCodec.encode(fullProfile())).apply {
+            put("mathChallengeCount", 11)
+        }
+
+        assertEquals(1, ProfileJsonCodec.decode(belowMinimum.toString())!!.mathChallengeCount)
+        assertEquals(10, ProfileJsonCodec.decode(aboveMaximum.toString())!!.mathChallengeCount)
     }
 
     @Test
@@ -186,7 +201,8 @@ class ProfileJsonCodecTest {
             "smartRepeatIntervalMinutes",
             "smartRepeatMaxCount",
             "mirrorToSystemClock",
-            "notificationVolumePercent"
+            "notificationVolumePercent",
+            "mathChallengeCount"
         ).forEach { key ->
             assertTrue("encode должен содержать ключ $key", obj.has(key))
         }

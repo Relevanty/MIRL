@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.settings
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -192,7 +194,7 @@ private fun LauncherIconCard(
     onClick: () -> Unit
 ) {
     val borderColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        targetValue = if (selected) MaterialTheme.appAccents.focus.color else Color.Transparent,
         label = "launcherIconBorder"
     )
     Card(
@@ -222,13 +224,13 @@ private fun LauncherIconCard(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .size(30.dp)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape),
+                        .background(MaterialTheme.appAccents.focus.color, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Check,
                         contentDescription = stringResource(R.string.launcher_icon_selected),
-                        tint = MaterialTheme.colorScheme.onPrimary,
+                        tint = MaterialTheme.appAccents.focus.onColor,
                         modifier = Modifier.size(18.dp)
                     )
                 }

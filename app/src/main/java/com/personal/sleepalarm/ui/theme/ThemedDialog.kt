@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -12,7 +13,9 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
@@ -39,9 +42,7 @@ fun ThemedAlertDialog(
         .observeThemeId()
         .collectAsStateWithLifecycle(initialValue = ThemeCatalog.DEFAULT_ID)
 
-    MaterialTheme(
-        colorScheme = buildColorSchemeForId(themeId)
-    ) {
+    ThemedOverlayContent(themeId = themeId) {
         AlertDialog(
             onDismissRequest = onDismissRequest,
             confirmButton = confirmButton,
@@ -72,9 +73,7 @@ fun ThemedModalBottomSheet(
         .observeThemeId()
         .collectAsStateWithLifecycle(initialValue = ThemeCatalog.DEFAULT_ID)
 
-    MaterialTheme(
-        colorScheme = buildColorSchemeForId(themeId)
-    ) {
+    ThemedOverlayContent(themeId = themeId) {
         ModalBottomSheet(
             onDismissRequest = onDismissRequest,
             modifier = modifier,
@@ -100,7 +99,30 @@ fun ThemedModalBottomSheet(
     }
 }
 /**
- * Строит ColorScheme по themeId — вынесено из Theme.kt.
+ * Provides the same visual tokens as [SleepAlarmTheme] without touching the
+ * activity's system bars. Dialogs and sheets live in their own window, so the
+ * complete set of locals has to cross that boundary explicitly.
  */
-private fun buildColorSchemeForId(themeId: String) =
-    buildColorScheme(ThemeCatalog.byId(themeId))
+@Composable
+private fun ThemedOverlayContent(
+    themeId: String,
+    content: @Composable () -> Unit
+) {
+    val preset = remember(themeId) { ThemeCatalog.byId(themeId) }
+    val colorScheme = remember(preset) { buildColorScheme(preset) }
+    val appAccents = remember(preset, colorScheme) {
+        buildAppAccentPalette(preset, colorScheme)
+    }
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = SleepAlarmTypography
+    ) {
+        CompositionLocalProvider(
+            LocalAppAccentPalette provides appAccents,
+            LocalContentColor provides colorScheme.onBackground
+        ) {
+            content()
+        }
+    }
+}

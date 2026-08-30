@@ -6,9 +6,11 @@ import android.content.Intent
 import android.util.Log
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
+import com.personal.sleepalarm.domain.automation.isAutomationPausedForFocus
 import com.personal.sleepalarm.domain.model.CueEventState
 import com.personal.sleepalarm.domain.model.DismissType
 import com.personal.sleepalarm.service.SleepForegroundService
+import com.personal.sleepalarm.service.SleepNotificationBuilder
 import com.personal.sleepalarm.util.WakeLocks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,9 +39,7 @@ class BootReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent
     ) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED &&
-            intent.action != Intent.ACTION_MY_PACKAGE_REPLACED
-        ) {
+        if (intent.action !in SUPPORTED_ACTIONS) {
             return
         }
         val pendingResult = goAsync()
@@ -53,12 +53,23 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val applicationContext = context.applicationContext
                 val app = applicationContext as com.personal.sleepalarm.app.App
-                val enabledReminders = app.serviceLocator.reminderRepository.getEnabled()
+                val reminderRepository = app.serviceLocator.reminderRepository
+                val enabledReminders = reminderRepository.getEnabled()
+                    .mapNotNull { reminder -> reminderRepository.reconcileForScheduling(reminder) }
                 app.serviceLocator.reminderScheduler.rescheduleAll(enabledReminders)
                 app.serviceLocator.focusProtocolManager.reconcileActiveSessions()
 
                 val database = AppDatabase.getInstance(applicationContext)
-                TaskDeadlineScheduler(applicationContext).rescheduleAll(database.taskDao().getAll())
+                val deadlineScheduler = TaskDeadlineScheduler(applicationContext)
+                val explicitDeadlineTaskIds = enabledReminders.asSequence()
+                    .filter { it.linkedType == "TASK" }
+                    .filter { it.triggerRule in setOf("BEFORE_DEADLINE", "BECOMES_URGENT") }
+                    .mapNotNull { it.linkedId }
+                    .toSet()
+                database.taskDao().getAll().forEach { task ->
+                    if (task.id in explicitDeadlineTaskIds) deadlineScheduler.cancel(task.id)
+                    else deadlineScheduler.schedule(task)
+                }
 
                 val repository = SleepSessionRepository(
                     database = database,
@@ -68,8 +79,13 @@ class BootReceiver : BroadcastReceiver() {
 
                 // События календаря
                 val eventDao = database.calendarEventDao()
-                val allEvents = eventDao.observeAllOnce()
+                val allEvents = eventDao.getSchedulableForAlarms()
                 EventAlarmScheduler(context).rescheduleAll(allEvents)
+
+                // Восстанавливаем и следующую ночь, даже когда активной
+                // сессии сна после перезагрузки нет.
+                SleepAutomationScheduler(applicationContext).scheduleNext()
+                DailyPlanNudgeScheduler(applicationContext, database = database).reschedule()
 
                 val scheduler = AlarmScheduler.create(
                     context = applicationContext,
@@ -79,6 +95,9 @@ class BootReceiver : BroadcastReceiver() {
                 val session = repository.getActiveSession()
 
                 if (session == null) {
+                    SleepNotificationBuilder.cancelSleepNotification(applicationContext)
+                    SleepNotificationBuilder.cancelAlarmNotification(applicationContext)
+                    SleepNotificationBuilder.cancelTransientNotifications(applicationContext)
                     Log.i(TAG, "No active session after boot")
                     return@launch
                 }
@@ -110,6 +129,9 @@ class BootReceiver : BroadcastReceiver() {
                         actualWakeTime = now,
                         dismissType = DismissType.MISSED
                     )
+                    SleepNotificationBuilder.cancelSleepNotification(applicationContext)
+                    SleepNotificationBuilder.cancelAlarmNotification(applicationContext)
+                    SleepNotificationBuilder.cancelTransientNotifications(applicationContext)
                     return@launch
                 }
 
@@ -143,6 +165,15 @@ class BootReceiver : BroadcastReceiver() {
                 // Переставляем основной будильник и оставшиеся cue.
                 scheduler.rescheduleAllForSession(session)
 
+                val focusActive = database.focusProtocolDao().getActive().isNotEmpty()
+                if (session.isAutomationPausedForFocus() || focusActive) {
+                    // The morning AlarmManager entry remains restored, but a
+                    // reboot during focus must not restart sleep detection.
+                    SleepNotificationBuilder.cancelSleepNotification(applicationContext)
+                    Log.i(TAG, "Sleep sensor runtime remains paused while focus is active")
+                    return@launch
+                }
+
                 // Запускаем сервис, чтобы он держал сессию,
                 // обновлял уведомление и мог играть cues.
 // ДОБАВЛЕНО: передаём время подъёма и первого пиипа в сервис,
@@ -155,7 +186,8 @@ class BootReceiver : BroadcastReceiver() {
                     context = context,
                     sessionId = session.id,
                     wakeTime = session.estimatedWakeTime,
-                    firstCueTime = firstCueTime
+                    firstCueTime = firstCueTime,
+                    showStartConfirmation = false
                 )
             } catch (throwable: Throwable) {
                 Log.e(TAG, "Error in BootReceiver", throwable)
@@ -167,6 +199,12 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        private val SUPPORTED_ACTIONS = setOf(
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_TIME_CHANGED,
+            Intent.ACTION_TIMEZONE_CHANGED
+        )
         private const val TAG = "BootReceiver"
         private const val MINUTE_MS = 60L * 1000L
         private const val BOOT_WAKE_LOCK_TIMEOUT_MS = 20_000L

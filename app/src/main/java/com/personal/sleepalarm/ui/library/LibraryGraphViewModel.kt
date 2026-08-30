@@ -27,6 +27,18 @@ data class GraphNode(
 /** Ребро графа — два элемента с общим тегом. */
 data class GraphEdge(val a: Int, val b: Int)
 
+internal fun buildLibraryGraphEdges(
+    groups: Iterable<List<Int>>,
+    validItemIds: Set<Int>
+): List<GraphEdge> = groups.flatMap { ids ->
+    val distinct = ids.asSequence().filter(validItemIds::contains).distinct().sorted().toList()
+    buildList {
+        for (i in distinct.indices) for (j in i + 1 until distinct.size) {
+            add(GraphEdge(distinct[i], distinct[j]))
+        }
+    }
+}.distinct()
+
 /** Состояние графа. */
 data class GraphState(
     val nodes: List<GraphNode> = emptyList(),
@@ -58,21 +70,24 @@ class LibraryGraphViewModel(
     init {
         // Структура графа: узлы из элементов, рёбра из общих тегов.
         viewModelScope.launch {
-            combine(dao.observeItems(), dao.observeAllCrossRefs()) { items, refs ->
+            combine(
+                dao.observeItems(),
+                dao.observeAllCrossRefs(),
+                database.taskLibraryLinkDao().observeAll(),
+                database.taskDao().observeAll()
+            ) { items, refs, taskLinks, tasks ->
                 val nodes = items.map {
                     GraphNode(it.id, it.title, it.type, it.coverUri)
                 }
 
-                // tagId -> список itemId; все пары внутри тега = рёбра.
+                // All pairs in a tag or a current task become material edges.
+                val itemIds = nodes.map(GraphNode::id).toSet()
                 val byTag = refs.groupBy({ it.tagId }, { it.itemId })
-                val edges = byTag.values.flatMap { ids ->
-                    val d = ids.distinct()
-                    val out = mutableListOf<GraphEdge>()
-                    for (i in d.indices) {
-                        for (j in i + 1 until d.size) out += GraphEdge(d[i], d[j])
-                    }
-                    out
-                }.distinct()
+                val taskIds = tasks.map { it.id }.toSet()
+                val byTask = taskLinks
+                    .filter { it.taskId in taskIds }
+                    .groupBy({ it.taskId }, { it.libraryItemId })
+                val edges = buildLibraryGraphEdges(byTag.values + byTask.values, itemIds)
 
                 GraphState(nodes = nodes, edges = edges)
             }.collect { struct ->

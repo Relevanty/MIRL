@@ -3,7 +3,10 @@ package com.personal.sleepalarm.di
 import android.content.Context
 import com.personal.sleepalarm.alarm.AlarmScheduler
 import com.personal.sleepalarm.alarm.ReminderScheduler
+import com.personal.sleepalarm.alarm.TaskLinkedReminderCoordinator
 import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.data.english.EnglishDictionaryAssetSource
+import com.personal.sleepalarm.data.english.EnglishVocabularyRepository
 import com.personal.sleepalarm.data.preferences.BriefingPreference
 import com.personal.sleepalarm.data.preferences.LauncherIconPreference
 import com.personal.sleepalarm.data.preferences.ThemePreference
@@ -81,8 +84,19 @@ class ServiceLocator(
         TaskRepository(database.taskDao())
     }
 
+    val taskLinkedReminderCoordinator: TaskLinkedReminderCoordinator by lazy {
+        TaskLinkedReminderCoordinator(appContext, database)
+    }
+
     val activityRecordRepository: ActivityRecordRepository by lazy {
-        ActivityRecordRepository(database)
+        ActivityRecordRepository(database, taskLinkedReminderCoordinator)
+    }
+
+    val englishVocabularyRepository: EnglishVocabularyRepository by lazy {
+        EnglishVocabularyRepository(
+            dao = database.englishStudyDao(),
+            assetSource = EnglishDictionaryAssetSource(appContext)
+        )
     }
 
     val reminderRepository: ReminderRepository by lazy {

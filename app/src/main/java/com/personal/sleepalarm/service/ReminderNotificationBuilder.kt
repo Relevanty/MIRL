@@ -12,8 +12,9 @@ import androidx.core.app.NotificationManagerCompat
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.alarm.ReminderReceiver
 import com.personal.sleepalarm.data.db.entity.ReminderEntity
+import com.personal.sleepalarm.data.preferences.AppSignalPreferences
+import com.personal.sleepalarm.data.preferences.AppSignalType
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
-import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
 import com.personal.sleepalarm.ui.MainActivity
 
 /**
@@ -28,8 +29,8 @@ class ReminderNotificationBuilder(
     companion object {
         private const val TAG = "ReminderNotify"
 
-        const val CHANNEL_PRE = "reminder_pre_channel"
-        const val CHANNEL_FIRE = "reminder_fire_channel_app_volume_v2"
+        const val CHANNEL_PRE = AppNotificationChannelIds.REMINDER_PRE
+        const val CHANNEL_FIRE = AppNotificationChannelIds.REMINDER_FIRE
 
         const val PRE_NOTIFICATION_ID_BASE = 90_000
         const val FIRE_NOTIFICATION_ID_BASE = 95_000
@@ -37,6 +38,7 @@ class ReminderNotificationBuilder(
 
     private val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private val signalPreferences = AppSignalPreferences(context)
 
     init {
         createChannels()
@@ -63,6 +65,7 @@ class ReminderNotificationBuilder(
                 enableLights(true)
                 enableVibration(true)
                 setSound(null, null)
+                setBypassDnd(true)
             }
 
             notificationManager.createNotificationChannel(pre)
@@ -85,6 +88,7 @@ class ReminderNotificationBuilder(
             .setSilent(true)
             .setAutoCancel(false)
             .setOngoing(false)
+            .setTimeoutAfter(10L * 60L * 1000L)
             .build()
     }
 
@@ -114,8 +118,10 @@ class ReminderNotificationBuilder(
             .setContentText(context.getString(R.string.reminder_fire_text))
             .setWhen(System.currentTimeMillis())
             .setShowWhen(true)
-            .setSilent(false)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
             .setAutoCancel(true)
+            .setTimeoutAfter(12L * 60L * 60L * 1000L)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(openIntent(reminder))
@@ -192,7 +198,11 @@ class ReminderNotificationBuilder(
                 fireNotificationId(reminder.id),
                 buildFireNotification(reminder)
             )
-            AppNotificationSoundPlayer.play(context, PomodoroSoundPreference(context).getUri())
+            AppNotificationSoundPlayer.play(
+                context = context,
+                settings = signalPreferences.get(AppSignalType.REMINDER),
+                dedupeKey = "reminder-${reminder.id}-${reminder.nextTriggerTime}"
+            )
             Log.d(TAG, "FIRE shown id=${reminder.id}")
         } catch (se: SecurityException) {
             Log.e(TAG, "FIRE SecurityException (POST_NOTIFICATIONS не выдан)", se)

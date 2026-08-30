@@ -24,6 +24,9 @@ interface ActivityRecordDao {
     @Query("SELECT * FROM activity_records WHERE endedAt > :from AND startedAt < :to ORDER BY startedAt ASC")
     fun observeOverlapping(from: Long, to: Long): Flow<List<ActivityRecordEntity>>
 
+    @Query("SELECT * FROM activity_records WHERE endedAt > :from AND startedAt < :to ORDER BY startedAt ASC")
+    suspend fun getOverlapping(from: Long, to: Long): List<ActivityRecordEntity>
+
     @Query("SELECT * FROM activity_records WHERE taskId = :taskId ORDER BY startedAt DESC")
     fun observeForTask(taskId: Int): Flow<List<ActivityRecordEntity>>
 
@@ -67,6 +70,29 @@ interface ActivityRecordDao {
 
     @Query("SELECT COALESCE(SUM(durationMillis), 0) FROM activity_records WHERE projectId = :projectId AND countsTowardProgress = 1")
     suspend fun sumForProject(projectId: Int): Long
+
+    @Query("UPDATE activity_records SET projectId = :projectId WHERE taskId = :taskId")
+    suspend fun reassignProjectForTask(taskId: Int, projectId: Int?)
+
+    @Query(
+        """
+        UPDATE tasks SET spentMillis = COALESCE((
+            SELECT SUM(durationMillis) FROM activity_records
+            WHERE activity_records.taskId = tasks.id AND countsTowardProgress = 1
+        ), 0)
+        """
+    )
+    suspend fun rebuildAllTaskTotals()
+
+    @Query(
+        """
+        UPDATE projects SET spentMillis = COALESCE((
+            SELECT SUM(durationMillis) FROM activity_records
+            WHERE activity_records.projectId = projects.id AND countsTowardProgress = 1
+        ), 0)
+        """
+    )
+    suspend fun rebuildAllProjectTotals()
 }
 
 @Dao
@@ -121,6 +147,12 @@ interface TaskSubtaskDao {
 
     @Query("DELETE FROM task_subtasks WHERE id = :id")
     suspend fun deleteById(id: Int)
+
+    @Query("DELETE FROM task_subtasks WHERE taskId = :taskId")
+    suspend fun deleteForTask(taskId: Int)
+
+    @Query("DELETE FROM task_subtasks WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_subtasks.taskId)")
+    suspend fun deleteOrphans()
 }
 
 @Dao
@@ -142,6 +174,15 @@ interface TaskAttachmentDao {
 
     @Query("DELETE FROM task_attachments WHERE id = :id")
     suspend fun deleteById(id: Int)
+
+    @Query("SELECT * FROM task_attachments WHERE taskId = :taskId")
+    suspend fun getForTask(taskId: Int): List<TaskAttachmentEntity>
+
+    @Query("DELETE FROM task_attachments WHERE taskId = :taskId")
+    suspend fun deleteForTask(taskId: Int)
+
+    @Query("DELETE FROM task_attachments WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_attachments.taskId)")
+    suspend fun deleteOrphans()
 }
 
 @Dao
@@ -161,9 +202,27 @@ interface TaskLibraryLinkDao {
     @Query("SELECT * FROM task_library_links WHERE taskId = :taskId ORDER BY createdAt ASC")
     fun observeForTask(taskId: Int): Flow<List<TaskLibraryLinkEntity>>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM task_library_links WHERE taskId = :taskId AND libraryItemId = :libraryItemId)")
+    suspend fun exists(taskId: Int, libraryItemId: Int): Boolean
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(link: TaskLibraryLinkEntity)
 
     @Query("DELETE FROM task_library_links WHERE taskId = :taskId AND libraryItemId = :libraryItemId")
     suspend fun delete(taskId: Int, libraryItemId: Int)
+
+    @Query("DELETE FROM task_library_links WHERE taskId = :taskId")
+    suspend fun deleteForTask(taskId: Int)
+
+    @Query("DELETE FROM task_library_links WHERE libraryItemId = :libraryItemId")
+    suspend fun deleteForLibraryItem(libraryItemId: Int)
+
+    @Query(
+        """
+        DELETE FROM task_library_links
+        WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_library_links.taskId)
+           OR NOT EXISTS (SELECT 1 FROM library_items WHERE library_items.id = task_library_links.libraryItemId)
+        """
+    )
+    suspend fun deleteOrphans()
 }

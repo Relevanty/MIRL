@@ -86,7 +86,7 @@ data class TaskEntity(
     val projectTag: String = "",
     val assignee: String = "",
 
-    /** The whole task budget, separate from the duration of one focus cycle. */
+    /** The whole task budget; zero means that no total limit is configured. */
     val workBudgetMinutes: Int = 0,
     val projectId: Int? = null,
     val category: String = "WORK",
@@ -95,6 +95,9 @@ data class TaskEntity(
     val expectedResult: String = "",
     val startAtMillis: Long? = null,
     val repeatRule: String = "",
+    /** Daily focus target, reset at local midnight. */
     val plannedFocusMinutes: Int = 25,
+    /** Opt-in: urgency/morning layers may require this target today. */
+    val isDailyRequired: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis()
 )

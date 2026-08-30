@@ -9,6 +9,7 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
+import com.personal.sleepalarm.domain.automation.isAutomationArmed
 import com.personal.sleepalarm.ui.AlarmActivity
 import com.personal.sleepalarm.ui.MainActivity
 import com.personal.sleepalarm.util.IntentExtras
@@ -82,37 +83,6 @@ class SleepNotificationBuilder(
     }
 
     /**
-     * Канал мог быть создан до выдачи доступа «Не беспокоить». После выдачи
-     * пересоздаём только канал будильника, чтобы setBypassDnd(true) применился.
-     */
-    fun ensureAlarmChannelCanBypassDnd() {
-        if (!notificationManager.isNotificationPolicyAccessGranted) return
-
-        val existing = notificationManager.getNotificationChannel(CHANNEL_ALARM)
-        if (existing?.canBypassDnd() == true) return
-
-        if (existing != null) {
-            notificationManager.deleteNotificationChannel(CHANNEL_ALARM)
-        }
-
-        val alarmChannel = NotificationChannel(
-            CHANNEL_ALARM,
-            context.getString(R.string.notification_channel_alarm_name),
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = context.getString(R.string.notification_channel_alarm_description)
-            setShowBadge(true)
-            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            setBypassDnd(true)
-            enableVibration(true)
-            setSound(null, null)
-        }
-        notificationManager.createNotificationChannel(alarmChannel)
-    }
-
-
-
-    /**
      * ДОБАВЛЕНО: уведомление-подтверждение сразу после установки будильника.
      * Показывает время подъёма и время ближайшей подсказки.
      */
@@ -178,6 +148,10 @@ class SleepNotificationBuilder(
         currentCycle: Int?
     ): Notification {
         val now = System.currentTimeMillis()
+
+        if (session.isAutomationArmed()) {
+            return buildAutomationWaitingNotification(session)
+        }
 
         val cyclePart = if (currentCycle != null) {
             context.getString(
@@ -248,6 +222,47 @@ class SleepNotificationBuilder(
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(contentPendingIntent)
+            .addAction(
+                0,
+                context.getString(R.string.sleep_notification_action_cancel),
+                stopPendingIntent
+            )
+            .build()
+    }
+
+    private fun buildAutomationWaitingNotification(session: SleepSessionEntity): Notification {
+        val contentText = context.getString(
+            R.string.sleep_notification_automation_waiting,
+            formatTime(session.estimatedWakeTime, session.zoneId)
+        )
+        val contentIntent = PendingIntent.getActivity(
+            context,
+            REQUEST_CODE_OPEN_MAIN,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val stopPendingIntent = PendingIntent.getService(
+            context,
+            REQUEST_CODE_STOP_SESSION,
+            Intent(context, SleepForegroundService::class.java).apply {
+                action = SleepForegroundService.ACTION_STOP_AND_CANCEL
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(context, CHANNEL_SLEEP)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.sleep_notification_automation_title))
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(contentIntent)
             .addAction(
                 0,
                 context.getString(R.string.sleep_notification_action_cancel),
@@ -332,6 +347,7 @@ class SleepNotificationBuilder(
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setOngoing(false)
+            .setTimeoutAfter(ALARM_SET_TIMEOUT_MS)
             .setOnlyAlertOnce(false)
             .setSilent(false)
             .build()
@@ -357,10 +373,10 @@ class SleepNotificationBuilder(
     }
 
     companion object {
-        const val CHANNEL_SLEEP = "sleep_session_channel"
-        const val CHANNEL_ALARM = "alarm_channel"
+        const val CHANNEL_SLEEP = AppNotificationChannelIds.SLEEP_SESSION
+        const val CHANNEL_ALARM = AppNotificationChannelIds.ALARM
 
-        const val CHANNEL_ALARM_SET = "alarm_set_channel"
+        const val CHANNEL_ALARM_SET = AppNotificationChannelIds.ALARM_SET
         const val ALARM_SET_NOTIFICATION_ID = 1003
 
         const val SLEEP_NOTIFICATION_ID = 1001
@@ -368,6 +384,7 @@ class SleepNotificationBuilder(
 
         private const val REQUEST_CODE_OPEN_MAIN = 10_001
         private const val REQUEST_CODE_STOP_SESSION = 10_002
+        private const val ALARM_SET_TIMEOUT_MS = 2L * 60L * 1000L
 
         fun cancelAlarmNotification(context: Context) {
             val notificationManager =
@@ -379,6 +396,12 @@ class SleepNotificationBuilder(
             val notificationManager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(SLEEP_NOTIFICATION_ID)
+        }
+
+        fun cancelTransientNotifications(context: Context) {
+            val notificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(ALARM_SET_NOTIFICATION_ID)
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.library
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import com.personal.sleepalarm.ui.theme.ThemedAlertDialog
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -45,6 +47,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,6 +74,8 @@ import kotlinx.coroutines.flow.Flow
 fun LibraryScreen(
     onBack: (() -> Unit)? = null,
     viewModel: LibraryViewModel = viewModel(),
+    openItemId: Int? = null,
+    onOpenItemConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -81,6 +86,14 @@ fun LibraryScreen(
     var showEdit by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<Int?>(null) }
     var showGraph by remember { mutableStateOf(false) }
+
+    LaunchedEffect(openItemId) {
+        openItemId?.let { itemId ->
+            editTarget = itemId
+            showEdit = true
+            onOpenItemConsumed()
+        }
+    }
 
     if (showGraph) {
         LibraryGraphScreen(
@@ -111,8 +124,8 @@ fun LibraryScreen(
                     editTarget = null
                     showEdit = true
                 },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+                containerColor = MaterialTheme.appAccents.study.color,
+                contentColor = MaterialTheme.appAccents.study.onColor
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
             }
@@ -152,7 +165,7 @@ fun LibraryScreen(
                 }
                 CatText(
                     text = "=^..^=",
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.appAccents.study.color,
                     fontSize = 16.sp
                 )
             }
@@ -208,7 +221,7 @@ fun LibraryScreen(
                             lineHeight = 46.sp,
                             fontWeight = FontWeight.Bold
                         ),
-                        color = MaterialTheme.colorScheme.secondary
+                        color = MaterialTheme.appAccents.other.color
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -225,6 +238,7 @@ fun LibraryScreen(
                         LibraryCard(
                             item = item,
                             tagsFlow = viewModel.tagsForItem(item.id),
+                            linkedTaskLabels = state.linkedTaskLabels[item.id].orEmpty(),
                             onClick = {
                                 editTarget = item.id
                                 showEdit = true
@@ -286,7 +300,7 @@ fun LibraryScreen(
                 ) {
                     Text(
                         stringResource(R.string.library_delete),
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.appAccents.urgent.color
                     )
                 }
             },
@@ -333,6 +347,7 @@ private fun FilterTypeRow(
 private fun LibraryCard(
     item: LibraryItemEntity,
     tagsFlow: Flow<List<LibraryTagEntity>>,
+    linkedTaskLabels: List<String>,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -387,7 +402,18 @@ private fun LibraryCard(
                 Text(
                     text = tags.joinToString(" · ") { "#${it.name}" },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.appAccents.study.color
+                )
+            }
+            if (linkedTaskLabels.isNotEmpty()) {
+                Text(
+                    text = stringResource(
+                        R.string.library_linked_tasks,
+                        linkedTaskLabels.take(2).joinToString(" · ")
+                    ),
+                    maxLines = 2,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.appAccents.calm.color
                 )
             }
             val resourceLabel = when {
@@ -400,7 +426,7 @@ private fun LibraryCard(
                     text = resourceLabel,
                     maxLines = 1,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
+                    color = MaterialTheme.appAccents.other.color
                 )
             }
         }
@@ -408,7 +434,7 @@ private fun LibraryCard(
         if (item.rating > 0) {
             Text(
                 text = "★".repeat(item.rating),
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.appAccents.warning.color,
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -444,7 +470,7 @@ private fun LibraryActionsDialog(
                     stringResource(R.string.library_delete),
                     true,
                     onDelete,
-                    MaterialTheme.colorScheme.error
+                    MaterialTheme.appAccents.urgent.color
                 )
             }
         },

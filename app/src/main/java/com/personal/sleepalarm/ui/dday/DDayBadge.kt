@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.dday
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -42,14 +44,14 @@ fun DDayBadge(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .background(MaterialTheme.appAccents.urgent.container)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Default.Flag,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            tint = MaterialTheme.appAccents.urgent.onContainer,
             modifier = Modifier.size(16.dp)
         )
         Text(
@@ -59,7 +61,7 @@ fun DDayBadge(
                 stringResource(R.string.dday_badge, event.title, days)
             },
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = MaterialTheme.appAccents.urgent.onContainer,
             modifier = Modifier.padding(start = 8.dp)
         )
     }

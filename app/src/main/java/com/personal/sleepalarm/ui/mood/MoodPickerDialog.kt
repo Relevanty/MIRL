@@ -6,12 +6,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import com.personal.sleepalarm.R
+import com.personal.sleepalarm.ui.theme.appAccents
 
 /**
  * Диалог «как вы себя чувствуете?» — один тап из 5.
@@ -28,6 +30,13 @@ fun MoodPickerDialog(
         "🙂" to 4,
         "😄" to 5
     )
+    val tones = listOf(
+        MaterialTheme.appAccents.urgent,
+        MaterialTheme.appAccents.warning,
+        MaterialTheme.appAccents.other,
+        MaterialTheme.appAccents.calm,
+        MaterialTheme.appAccents.success
+    )
 
     ThemedAlertDialog(
         onDismissRequest = { /* обязательный выбор */ },
@@ -37,9 +46,9 @@ fun MoodPickerDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                options.forEach { (emoji, value) ->
+                options.forEachIndexed { index, (emoji, value) ->
                     IconButton(onClick = { onSelect(value) }) {
-                        Text(text = emoji, fontSize = 28.sp)
+                        Text(text = emoji, fontSize = 28.sp, color = tones[index].color)
                     }
                 }
             }

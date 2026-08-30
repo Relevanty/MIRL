@@ -52,6 +52,7 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
 import com.personal.sleepalarm.domain.calculator.ActivityDayBoundary
 import com.personal.sleepalarm.domain.model.DismissType
+import com.personal.sleepalarm.ui.theme.appAccents
 import com.personal.sleepalarm.util.TimeFormatter
 import java.time.Instant
 import java.time.LocalDate
@@ -231,11 +232,12 @@ private fun SleepSummaryGrid(nights: List<SleepNight>, zone: ZoneId) {
     val average = if (nights.isEmpty()) 0L else total / nights.size
     val bedTime = averageClock(nights.map { it.bedTimeMillis }, zone, wrapAfterNoon = true)
     val wakeTime = averageClock(nights.map { it.endMillis }, zone, wrapAfterNoon = false)
+    val accents = MaterialTheme.appAccents
     val colors = listOf(
-        MaterialTheme.colorScheme.tertiary,
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.secondary,
-        MaterialTheme.colorScheme.error
+        accents.sleep.color,
+        accents.focus.color,
+        accents.warning.color,
+        accents.success.color
     )
     val values = listOf(
         Triple(stringResource(R.string.sleep_stats_total), TimeFormatter.formatMinutes(total / MINUTE_MS), colors[0]),
@@ -312,7 +314,7 @@ private fun SelectedNightCard(night: SleepNight, zone: ZoneId, onEdit: (SleepNig
             Text(
                 stringResource(R.string.stats_detected_onset, latency),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary
+                color = MaterialTheme.appAccents.calm.color
             )
         }
     }
@@ -320,8 +322,8 @@ private fun SelectedNightCard(night: SleepNight, zone: ZoneId, onEdit: (SleepNig
 
 @Composable
 private fun DurationComparisonChart(nights: List<SleepNight>) {
-    val actualColor = MaterialTheme.colorScheme.tertiary
-    val plannedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)
+    val actualColor = MaterialTheme.appAccents.sleep.color
+    val plannedColor = MaterialTheme.appAccents.study.color.copy(alpha = 0.55f)
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
     val visible = nights.takeLast(MAX_GRAPH_NIGHTS)
     val maxValue = visible.maxOfOrNull { maxOf(it.durationMillis, it.plannedDurationMillis) }
@@ -365,7 +367,7 @@ private fun DurationComparisonChart(nights: List<SleepNight>) {
 @Composable
 private fun SleepScheduleChart(nights: List<SleepNight>, zone: ZoneId, locale: Locale) {
     val visible = nights.takeLast(10)
-    val accent = MaterialTheme.colorScheme.tertiary
+    val accent = MaterialTheme.appAccents.sleep.color
     val track = MaterialTheme.colorScheme.surfaceVariant
     val formatter = remember(locale) { DateTimeFormatter.ofPattern("d MMM", locale) }
     SleepChartCard(stringResource(R.string.sleep_stats_schedule_chart)) {
@@ -416,8 +418,8 @@ private fun SleepScheduleChart(nights: List<SleepNight>, zone: ZoneId, locale: L
 @Composable
 private fun BedWakeTrendChart(nights: List<SleepNight>, zone: ZoneId) {
     val visible = nights.takeLast(MAX_GRAPH_NIGHTS)
-    val bedColor = MaterialTheme.colorScheme.primary
-    val wakeColor = MaterialTheme.colorScheme.tertiary
+    val bedColor = MaterialTheme.appAccents.sleep.color
+    val wakeColor = MaterialTheme.appAccents.warning.color
     val grid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
     SleepChartCard(stringResource(R.string.sleep_stats_regularity_chart)) {
         Canvas(Modifier.fillMaxWidth().height(160.dp)) {
@@ -455,7 +457,7 @@ private fun BedWakeTrendChart(nights: List<SleepNight>, zone: ZoneId) {
 private fun LatencyChart(nights: List<SleepNight>) {
     val values = nights.mapNotNull { night -> night.latencyMinutes?.let { night to it } }.takeLast(10)
     val maxValue = values.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
-    val accent = MaterialTheme.colorScheme.secondary
+    val accent = MaterialTheme.appAccents.calm.color
     SleepChartCard(stringResource(R.string.sleep_stats_latency_chart)) {
         if (values.isEmpty()) {
             Text(
@@ -498,10 +500,10 @@ private fun LatencyChart(nights: List<SleepNight>) {
 @Composable
 private fun OutcomeChart(nights: List<SleepNight>) {
     val visuals = listOf(
-        Triple(SleepOutcome.NORMAL, stringResource(R.string.stats_badge_normal), MaterialTheme.colorScheme.secondary),
-        Triple(SleepOutcome.SNOOZE, stringResource(R.string.stats_badge_snooze), MaterialTheme.colorScheme.primary),
-        Triple(SleepOutcome.MISSED, stringResource(R.string.stats_badge_missed), MaterialTheme.colorScheme.error),
-        Triple(SleepOutcome.ACTIVE, stringResource(R.string.stats_badge_active), MaterialTheme.colorScheme.tertiary)
+        Triple(SleepOutcome.NORMAL, stringResource(R.string.stats_badge_normal), MaterialTheme.appAccents.success.color),
+        Triple(SleepOutcome.SNOOZE, stringResource(R.string.stats_badge_snooze), MaterialTheme.appAccents.warning.color),
+        Triple(SleepOutcome.MISSED, stringResource(R.string.stats_badge_missed), MaterialTheme.appAccents.urgent.color),
+        Triple(SleepOutcome.ACTIVE, stringResource(R.string.stats_badge_active), MaterialTheme.appAccents.focus.color)
     )
     SleepChartCard(stringResource(R.string.sleep_stats_outcomes_chart)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -544,7 +546,7 @@ private fun CueEfficiencyCard(nights: List<SleepNight>) {
     val played = nights.sumOf { it.cuesPlayed }
     val scheduled = nights.sumOf { it.cuesScheduled }
     val ratio = if (scheduled == 0) 0f else (played.toFloat() / scheduled).coerceIn(0f, 1f)
-    val accent = MaterialTheme.colorScheme.primary
+    val accent = MaterialTheme.appAccents.focus.color
     SleepChartCard(stringResource(R.string.sleep_stats_cues_chart)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
@@ -584,7 +586,7 @@ private fun SleepHeatmap(month: YearMonth, nights: List<SleepNight>, locale: Loc
     val maximum = durationByDate.values.maxOrNull()?.coerceAtLeast(1L) ?: 1L
     val offset = month.atDay(1).dayOfWeek.value - 1
     val cells = ceil((offset + month.lengthOfMonth()) / 7f).toInt() * 7
-    val accent = MaterialTheme.colorScheme.tertiary
+    val accent = MaterialTheme.appAccents.sleep.color
     SleepChartCard(stringResource(R.string.sleep_stats_calendar_chart)) {
         Row(Modifier.fillMaxWidth()) {
             (1..7).forEach { day ->
@@ -692,7 +694,7 @@ private fun SleepHistoryRow(night: SleepNight, zone: ZoneId, onEdit: (SleepNight
                 TimeFormatter.formatMinutes(night.durationMillis / MINUTE_MS),
                 modifier = Modifier.padding(horizontal = 10.dp),
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.tertiary
+                color = MaterialTheme.appAccents.sleep.color
             )
             SleepOutcomeBadge(night.outcome)
             if (night.outcome != SleepOutcome.ACTIVE) {
@@ -756,10 +758,10 @@ private fun SleepDurationEditDialog(
 @Composable
 private fun SleepOutcomeBadge(outcome: SleepOutcome) {
     val (text, color) = when (outcome) {
-        SleepOutcome.NORMAL -> stringResource(R.string.stats_badge_normal) to MaterialTheme.colorScheme.secondary
-        SleepOutcome.SNOOZE -> stringResource(R.string.stats_badge_snooze) to MaterialTheme.colorScheme.primary
-        SleepOutcome.MISSED -> stringResource(R.string.stats_badge_missed) to MaterialTheme.colorScheme.error
-        SleepOutcome.ACTIVE -> stringResource(R.string.stats_badge_active) to MaterialTheme.colorScheme.tertiary
+        SleepOutcome.NORMAL -> stringResource(R.string.stats_badge_normal) to MaterialTheme.appAccents.success.color
+        SleepOutcome.SNOOZE -> stringResource(R.string.stats_badge_snooze) to MaterialTheme.appAccents.warning.color
+        SleepOutcome.MISSED -> stringResource(R.string.stats_badge_missed) to MaterialTheme.appAccents.urgent.color
+        SleepOutcome.ACTIVE -> stringResource(R.string.stats_badge_active) to MaterialTheme.appAccents.focus.color
     }
     Box(
         Modifier
@@ -782,7 +784,7 @@ private fun SleepEmptyCard() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("☾", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.tertiary)
+        Text("☾", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.appAccents.sleep.color)
         Text(stringResource(R.string.stats_empty_title), fontWeight = FontWeight.Bold)
         Text(
             stringResource(R.string.sleep_stats_empty_period),

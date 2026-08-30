@@ -1,5 +1,18 @@
 package com.personal.sleepalarm.ui.assistant
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,6 +37,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,11 +45,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
+import com.personal.sleepalarm.domain.assistant.DailyPlanCommand
 import com.personal.sleepalarm.ui.activity.ManualActivitySheet
 import java.time.Instant
 import java.time.ZoneId
@@ -54,9 +72,11 @@ fun AssistantScreen(
     val insights by viewModel.insights.collectAsStateWithLifecycle()
     val activityGap by viewModel.activityGap.collectAsStateWithLifecycle()
     val proposedAction by viewModel.proposedAction.collectAsStateWithLifecycle()
+    val pendingDailyPlanChange by viewModel.pendingDailyPlanChange.collectAsStateWithLifecycle()
 
     var input by remember { mutableStateOf("") }
     var showActivityForm by remember { mutableStateOf(false) }
+    var speechStatusRes by remember { mutableStateOf<Int?>(null) }
 
     Column(
         modifier = modifier
@@ -88,7 +108,7 @@ fun AssistantScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.72f))
+                    .background(MaterialTheme.appAccents.calm.container.copy(alpha = 0.82f))
                     .padding(12.dp)
             ) {
                 Text(
@@ -96,12 +116,12 @@ fun AssistantScreen(
                         "${Instant.ofEpochMilli(gap.endMillis).atZone(zone).format(formatter)} нет активности. " +
                         "Вы работали без таймера?",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                    color = MaterialTheme.appAccents.calm.onContainer
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { viewModel.dismissActivityGap() }) { Text("Нет") }
                     TextButton(onClick = { showActivityForm = true }) { Text("Добавить время") }
-                    TextButton(onClick = viewModel::dismissActivityGap) { Text("Позже") }
+                    TextButton(onClick = viewModel::snoozeActivityGap) { Text("Позже") }
                 }
             }
         }
@@ -110,7 +130,7 @@ fun AssistantScreen(
             Spacer(modifier = Modifier.height(10.dp))
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer).padding(12.dp)
+                    .background(MaterialTheme.appAccents.focus.container).padding(12.dp)
             ) {
                 Text("Начать «${action.title}» · ${action.focusMinutes} мин?", style = MaterialTheme.typography.titleSmall)
                 Text("Запустится выбранная задача без повторной настройки.", style = MaterialTheme.typography.bodySmall)
@@ -122,6 +142,15 @@ fun AssistantScreen(
                     }) { Text("Подтвердить") }
                 }
             }
+        }
+
+        pendingDailyPlanChange?.let { pending ->
+            Spacer(modifier = Modifier.height(10.dp))
+            DailyPlanConfirmationCard(
+                pending = pending,
+                onCancel = viewModel::cancelDailyPlanChange,
+                onConfirm = viewModel::confirmDailyPlanChange
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -174,6 +203,14 @@ fun AssistantScreen(
                 placeholder = { Text(stringResource(R.string.assistant_placeholder)) },
                 singleLine = true
             )
+            OfflineSpeechCommandButton(
+                onBeforeListen = viewModel::stopVoiceForListening,
+                onRecognized = { recognized ->
+                    input = recognized
+                    speechStatusRes = null
+                },
+                onStatus = { speechStatusRes = it }
+            )
             IconButton(
                 onClick = {
                     viewModel.ask(input)
@@ -183,6 +220,14 @@ fun AssistantScreen(
             ) {
                 Icon(Icons.Default.Send, contentDescription = stringResource(R.string.assistant_send))
             }
+        }
+        speechStatusRes?.let { status ->
+            Text(
+                text = stringResource(status),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 12.dp, top = 2.dp)
+            )
         }
     }
 
@@ -196,6 +241,189 @@ fun AssistantScreen(
         )
     }
 }
+
+@Composable
+private fun DailyPlanConfirmationCard(
+    pending: PendingDailyPlanChange,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val body = when (pending) {
+        is PendingDailyPlanChange.TaskChange -> when (pending.field) {
+            AssistantTaskPlanField.DAILY_TARGET -> stringResource(
+                R.string.daily_plan_change_target,
+                pending.taskTitle,
+                pending.oldIntValue ?: 0,
+                pending.newIntValue ?: 0
+            )
+            AssistantTaskPlanField.BOUT_DURATION -> stringResource(
+                R.string.daily_plan_change_bout,
+                pending.taskTitle,
+                pending.oldIntValue ?: 0,
+                pending.newIntValue ?: 0
+            )
+            AssistantTaskPlanField.DAILY_REQUIRED -> stringResource(
+                if (pending.newBooleanValue == true) {
+                    R.string.daily_plan_change_required_on
+                } else {
+                    R.string.daily_plan_change_required_off
+                },
+                pending.taskTitle
+            )
+        }
+        is PendingDailyPlanChange.GlobalChange -> stringResource(
+            R.string.daily_plan_change_global,
+            stringResource(pending.command.settingLabelResource()),
+            pending.oldValue,
+            pending.newValue
+        )
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.appAccents.success.container)
+            .padding(14.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.daily_plan_confirmation_title),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.appAccents.success.onContainer
+        )
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.appAccents.success.onContainer
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.daily_plan_cancel))
+            }
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.daily_plan_confirm))
+            }
+        }
+    }
+}
+
+private fun DailyPlanCommand.settingLabelResource(): Int = when (this) {
+    is DailyPlanCommand.SetUrgencyEnabled -> R.string.daily_plan_setting_urgency
+    is DailyPlanCommand.SetUrgencyBuffer -> R.string.daily_plan_setting_buffer
+    is DailyPlanCommand.SetRepeatEnabled -> R.string.daily_plan_setting_repeats
+    is DailyPlanCommand.SetRepeatInterval -> R.string.daily_plan_setting_repeat_interval
+    is DailyPlanCommand.SetMorningReminderEnabled -> R.string.daily_plan_setting_morning_reminder
+    is DailyPlanCommand.SetCutoffMinutesOfDay -> R.string.daily_plan_setting_cutoff
+    is DailyPlanCommand.SetDailyPlanSignalVolume -> R.string.daily_plan_setting_signal_volume
+    is DailyPlanCommand.SetDailyPlanSignalMode -> R.string.daily_plan_setting_signal_sound
+    else -> R.string.daily_plan_confirmation_title
+}
+
+@Composable
+private fun OfflineSpeechCommandButton(
+    onBeforeListen: () -> Unit,
+    onRecognized: (String) -> Unit,
+    onStatus: (Int?) -> Unit
+) {
+    val context = LocalContext.current
+    val supported = remember(context) { isStrictOfflineSpeechAvailable(context) }
+    val recognizer = remember(context, supported) {
+        if (supported && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching { SpeechRecognizer.createOnDeviceSpeechRecognizer(context) }.getOrNull()
+        } else {
+            null
+        }
+    }
+    val intent = remember {
+        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+    }
+
+    DisposableEffect(recognizer) {
+        recognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {
+                onStatus(R.string.daily_plan_speech_listening)
+            }
+
+            override fun onResults(results: Bundle?) {
+                val result = results
+                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()
+                    ?.trim()
+                if (result.isNullOrEmpty()) {
+                    onStatus(R.string.daily_plan_speech_error)
+                } else {
+                    onRecognized(result)
+                }
+            }
+
+            override fun onError(error: Int) {
+                onStatus(R.string.daily_plan_speech_error)
+            }
+
+            override fun onBeginningOfSpeech() = Unit
+            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onBufferReceived(buffer: ByteArray?) = Unit
+            override fun onEndOfSpeech() = Unit
+            override fun onPartialResults(partialResults: Bundle?) = Unit
+            override fun onEvent(eventType: Int, params: Bundle?) = Unit
+        })
+        onDispose {
+            recognizer?.cancel()
+            recognizer?.destroy()
+        }
+    }
+
+    fun startRecognition() {
+        if (recognizer == null) {
+            onStatus(R.string.daily_plan_speech_unavailable)
+            return
+        }
+        // Avoid feeding MIRL's own TTS response back into the recognizer.
+        onBeforeListen()
+        onStatus(R.string.daily_plan_speech_listening)
+        runCatching { recognizer.startListening(intent) }
+            .onFailure { onStatus(R.string.daily_plan_speech_error) }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startRecognition()
+        else onStatus(R.string.daily_plan_speech_permission_denied)
+    }
+
+    IconButton(
+        onClick = {
+            if (!supported) {
+                onStatus(R.string.daily_plan_speech_unavailable)
+            } else if (
+                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                startRecognition()
+            } else {
+                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    ) {
+        Icon(
+            Icons.Default.Mic,
+            contentDescription = stringResource(R.string.daily_plan_speech_content_description),
+            tint = if (supported) {
+                MaterialTheme.appAccents.calm.color
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+            }
+        )
+    }
+}
+
+internal fun isStrictOfflineSpeechAvailable(context: Context): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
 
 // =====================================================================
 // Карточки предсказаний
@@ -215,14 +443,14 @@ private fun InsightsRow(insights: AssistantInsights) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .background(MaterialTheme.appAccents.calm.container)
                     .padding(12.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.assistant_insight_morning),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = MaterialTheme.appAccents.calm.onContainer
                     )
                     Text(
                         text = if (insights.isHeavyMorning) {
@@ -231,13 +459,13 @@ private fun InsightsRow(insights: AssistantInsights) {
                             stringResource(R.string.assistant_good)
                         },
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = MaterialTheme.appAccents.calm.onContainer
                     )
                     insights.predictedMood?.let {
                         Text(
                             text = stringResource(R.string.assistant_predicted, "%.1f".format(it)),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = MaterialTheme.appAccents.calm.onContainer
                         )
                     }
                 }
@@ -246,12 +474,12 @@ private fun InsightsRow(insights: AssistantInsights) {
                         Text(
                             text = stringResource(R.string.assistant_insight_snooze),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = MaterialTheme.appAccents.calm.onContainer
                         )
                         Text(
                             text = limit.toString(),
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = MaterialTheme.appAccents.calm.onContainer
                         )
                     }
                 }
@@ -272,12 +500,12 @@ private fun InsightsRow(insights: AssistantInsights) {
 @Composable
 private fun ChatBubble(fromUser: Boolean, text: String) {
     val bg = if (fromUser) {
-        MaterialTheme.colorScheme.primaryContainer
+        MaterialTheme.appAccents.focus.container
     } else {
         MaterialTheme.colorScheme.surfaceVariant
     }
     val fg = if (fromUser) {
-        MaterialTheme.colorScheme.onPrimaryContainer
+        MaterialTheme.appAccents.focus.onContainer
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }

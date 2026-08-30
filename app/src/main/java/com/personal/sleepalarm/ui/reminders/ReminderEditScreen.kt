@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.reminders
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.RepeatMode
+import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.domain.calculator.ReminderTimeCalculator
 import com.personal.sleepalarm.ui.components.TimeStepper
 import com.personal.sleepalarm.ui.components.CatText
@@ -88,7 +91,7 @@ fun ReminderEditScreen(
             )
             CatText(
                 text = "=^..^=",
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.appAccents.calm.color,
                 fontSize = 16.sp
             )
         }
@@ -98,7 +101,7 @@ fun ReminderEditScreen(
         Text(
             text = "Связь и условие",
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.secondary,
+            color = MaterialTheme.appAccents.other.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
         Column(
@@ -111,7 +114,7 @@ fun ReminderEditScreen(
             Box {
                 val selectedTask = tasks.firstOrNull { it.id == state.linkedTaskId }
                 OutlinedButton(onClick = { taskMenuExpanded = true }) {
-                    Text(selectedTask?.title?.ifBlank { "Задача с изображением" } ?: "Связать с задачей")
+                    Text(selectedTask?.primaryLabel() ?: "Связать с задачей")
                 }
                 DropdownMenu(
                     expanded = taskMenuExpanded,
@@ -126,7 +129,7 @@ fun ReminderEditScreen(
                     )
                     tasks.forEach { task ->
                         DropdownMenuItem(
-                            text = { Text(task.title.ifBlank { "Задача #${task.id}" }) },
+                            text = { Text(task.primaryLabel()) },
                             onClick = {
                                 viewModel.setLinkedTask(task.id)
                                 taskMenuExpanded = false
@@ -158,7 +161,7 @@ fun ReminderEditScreen(
             if (requiresTask && state.linkedTaskId == null) {
                 Text(
                     "Для этого условия выберите задачу",
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.appAccents.warning.color,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -167,7 +170,7 @@ fun ReminderEditScreen(
             ) {
                 Text(
                     "У выбранной задачи должен быть дедлайн",
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.appAccents.warning.color,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -176,7 +179,7 @@ fun ReminderEditScreen(
             ) {
                 Text(
                     "У задачи должно быть запланированное время начала",
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.appAccents.warning.color,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -202,7 +205,7 @@ fun ReminderEditScreen(
         Text(
             text = stringResource(R.string.reminder_edit_title),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.appAccents.calm.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -225,7 +228,7 @@ fun ReminderEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                        focusedIndicatorColor = MaterialTheme.appAccents.calm.color
                     )
                 )
 
@@ -248,7 +251,7 @@ fun ReminderEditScreen(
         Text(
             text = stringResource(R.string.reminder_field_repeat),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.secondary,
+            color = MaterialTheme.appAccents.other.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -307,11 +310,11 @@ fun ReminderEditScreen(
                         Spacer(modifier = Modifier.weight(1f))
                         IconButton(onClick = { viewModel.setIntervalDays(state.intervalDays - 1) }) {
                             Text("−", style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.secondary)
+                                color = MaterialTheme.appAccents.other.color)
                         }
                         IconButton(onClick = { viewModel.setIntervalDays(state.intervalDays + 1) }) {
                             Text("+", style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.secondary)
+                                color = MaterialTheme.appAccents.other.color)
                         }
                     }
                 }

@@ -49,10 +49,13 @@ import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.domain.calculator.ActivityDayBoundary
 import com.personal.sleepalarm.domain.calculator.ActivityPeriodCalculator
 import com.personal.sleepalarm.domain.calculator.ActivityPeriodTotals
+import com.personal.sleepalarm.domain.calculator.effectiveActivityEndMillis
 import com.personal.sleepalarm.domain.calculator.TrackedActivityType
 import com.personal.sleepalarm.domain.calculator.TrackedInterval
 import com.personal.sleepalarm.domain.model.DismissType
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.projectActivityRecords
+import com.personal.sleepalarm.ui.theme.appAccents
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -206,7 +209,7 @@ fun ActivityStatsContent(
                     categories = categories,
                     labelCount = if (period == ActivityStatsPeriod.WEEK) 7 else 6
                 )
-                TrendChart(daily, MaterialTheme.colorScheme.primary)
+                TrendChart(daily, MaterialTheme.appAccents.focus.color)
                 if (period == ActivityStatsPeriod.MONTH) {
                     ActivityHeatmap(
                         month = YearMonth.from(periodDates.first),
@@ -305,7 +308,7 @@ private fun CompletedStudyBlocksCard(
                         formatDuration(block.totalFocusMillis)
                     ),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.appAccents.work.color
                 )
             }
         }
@@ -317,7 +320,7 @@ private fun StudyMetric(value: String, label: String, modifier: Modifier = Modif
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+            .background(MaterialTheme.appAccents.work.container)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -331,22 +334,22 @@ private fun categoryVisuals(): List<CategoryVisual> = listOf(
     CategoryVisual(
         TrackedActivityType.SLEEP,
         stringResource(R.string.activity_sleep),
-        MaterialTheme.colorScheme.tertiary
+        MaterialTheme.appAccents.sleep.color
     ),
     CategoryVisual(
         TrackedActivityType.STUDY,
         stringResource(R.string.activity_study),
-        MaterialTheme.colorScheme.primary
+        MaterialTheme.appAccents.study.color
     ),
     CategoryVisual(
         TrackedActivityType.WORK,
         stringResource(R.string.activity_work),
-        MaterialTheme.colorScheme.secondary
+        MaterialTheme.appAccents.work.color
     ),
     CategoryVisual(
         TrackedActivityType.OTHER,
         stringResource(R.string.activity_other),
-        MaterialTheme.colorScheme.error
+        MaterialTheme.appAccents.other.color
     )
 )
 
@@ -515,6 +518,7 @@ private fun DayTimelineChart(
 ) {
     val periodDuration = (periodEnd - periodStart).coerceAtLeast(1L)
     val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
+    val gridLineColor = MaterialTheme.colorScheme.outlineVariant
     ChartCard(stringResource(R.string.activity_chart_timeline)) {
         categories.forEach { category ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -545,7 +549,7 @@ private fun DayTimelineChart(
                         }
                     (1..3).forEach { index ->
                         val x = size.width * index / 4f
-                        drawLine(Color.White.copy(alpha = 0.28f), Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
+                        drawLine(gridLineColor, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
                     }
                 }
             }
@@ -836,22 +840,22 @@ private fun ChartCard(title: String, content: @Composable ColumnScope.() -> Unit
 }
 
 private fun ActivityStatsSource.toActivityRecords(): List<ActivityRecord> {
-    val focus = if (activityRecords.isNotEmpty()) activityRecords.mapNotNull { record ->
-        val end = minOf(record.endedAt, record.startedAt + record.durationMillis)
+    val focus = if (activityRecords.isNotEmpty()) projectActivityRecords(
+        records = activityRecords,
+        currentTasks = currentTasks
+    ).mapNotNull { projection ->
+        val record = projection.record
+        val end = record.effectiveActivityEndMillis()
         if (end <= record.startedAt) return@mapNotNull null
         ActivityRecord(
-            type = when (record.category.uppercase(Locale.ROOT)) {
-                "STUDY", "УЧЁБА", "УЧЕБА" -> TrackedActivityType.STUDY
-                "WORK", "РАБОТА" -> TrackedActivityType.WORK
-                else -> when (record.activityType) {
-                    FocusActivityType.STUDY -> TrackedActivityType.STUDY
-                    FocusActivityType.WORK -> TrackedActivityType.WORK
-                    FocusActivityType.OTHER -> TrackedActivityType.OTHER
-                }
+            type = when (projection.activityType) {
+                FocusActivityType.STUDY -> TrackedActivityType.STUDY
+                FocusActivityType.WORK -> TrackedActivityType.WORK
+                FocusActivityType.OTHER -> TrackedActivityType.OTHER
             },
             startMillis = record.startedAt,
             endMillis = end,
-            label = record.title
+            label = projection.label
         )
     } else focusSessions.mapNotNull { session ->
         val naturalEnd = session.startedAt + session.actualDurationMillis

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="daily_plan_command_syntax">Command not recognized. Example: “Set daily target for ‘Thesis’ to 120 minutes” or “Set session duration for ‘Thesis’ to 40 minutes”.</string>
+    <string name="daily_plan_command_invalid_duration">Enter a whole number of minutes or hours.</string>
+    <string name="daily_plan_command_target_range">The daily target must be 5–480 minutes. To remove a task from the required plan, say: “Make Task name optional”.</string>
+    <string name="daily_plan_command_bout_range">One focus bout must be 5–180 minutes.</string>
+    <string name="daily_plan_command_buffer_range">The buffer must be 0–720 minutes.</string>
+    <string name="daily_plan_command_repeat_range">The repeat interval must be 5–120 minutes.</string>
+    <string name="daily_plan_command_signal_volume_range">The daily-plan signal volume must be from 0 to 100 percent.</string>
+    <string name="daily_plan_command_invalid_time">Enter the cutoff as HH:MM, for example 23:30 or 00:00.</string>
+    <string name="daily_plan_task_missing">No single active task exactly matches “%1$s”. Nothing was changed.</string>
+    <string name="daily_plan_task_ambiguous">Several active tasks are named “%1$s”. Clarify the name; nothing was changed.</string>
+    <string name="daily_plan_confirmation_prompt">Review the change. It is applied only after confirmation.</string>
+    <string name="daily_plan_confirmation_title">Change the daily plan?</string>
+    <string name="daily_plan_change_target">“%1$s”: daily target %2$d → %3$d min</string>
+    <string name="daily_plan_change_bout">“%1$s”: one bout %2$d → %3$d min</string>
+    <string name="daily_plan_change_required_on">“%1$s”: include in the required daily plan every day until you turn this off</string>
+    <string name="daily_plan_change_required_off">“%1$s”: no longer include in the required daily plan</string>
+    <string name="daily_plan_change_global">%1$s: %2$s → %3$s</string>
+    <string name="daily_plan_setting_urgency">Daily-plan checks</string>
+    <string name="daily_plan_setting_buffer">Cutoff buffer</string>
+    <string name="daily_plan_setting_repeats">Check repeats</string>
+    <string name="daily_plan_setting_repeat_interval">Repeat interval</string>
+    <string name="daily_plan_setting_morning_reminder">Morning daily-plan reminders</string>
+    <string name="daily_plan_setting_cutoff">Daily cutoff</string>
+    <string name="daily_plan_setting_signal_volume">Daily-plan signal volume</string>
+    <string name="daily_plan_setting_signal_sound">Daily-plan sound</string>
+    <string name="daily_plan_value_enabled">enabled</string>
+    <string name="daily_plan_value_disabled">disabled</string>
+    <string name="daily_plan_value_minutes">%1$d min</string>
+    <string name="daily_plan_value_percent">%1$d%%</string>
+    <string name="daily_plan_value_sound_system">system</string>
+    <string name="daily_plan_value_sound_custom">selected file</string>
+    <string name="daily_plan_value_sound_silent">silent</string>
+    <string name="daily_plan_change_applied">Done. The daily plan was updated.</string>
+    <string name="daily_plan_change_cancelled">The change was canceled.</string>
+    <string name="daily_plan_change_stale">The task changed after the card was shown. Nothing was saved; repeat the command.</string>
+    <string name="daily_plan_change_failed">The change could not be applied safely. Data was not changed.</string>
+    <string name="daily_plan_confirm">Confirm</string>
+    <string name="daily_plan_cancel">Cancel</string>
+    <string name="daily_plan_speech_content_description">Dictate an offline command</string>
+    <string name="daily_plan_speech_listening">Listening on device…</string>
+    <string name="daily_plan_speech_unavailable">On-device speech recognition is unavailable. Text commands still work fully offline.</string>
+    <string name="daily_plan_speech_permission_denied">Microphone permission is needed for dictation. Text commands work without it.</string>
+    <string name="daily_plan_speech_error">The command could not be recognized on device. Enter it as text.</string>
+
+    <string name="briefing_daily_not_started_prefix">Required tasks not started today:</string>
+    <string name="briefing_daily_task_item">%1$s — %2$d minutes</string>
+    <string name="briefing_daily_more">And %1$d more.</string>
+    <string name="briefing_daily_remaining">The required plan has %1$d minutes remaining.</string>
+    <string name="briefing_daily_slack_warning">There are %1$d minutes of slack before the cutoff. The plan needs attention.</string>
+    <string name="briefing_daily_overloaded_warning">The plan is short by about %1$d minutes before the cutoff.</string>
+    <string name="briefing_daily_complete">Today’s required plan is complete.</string>
+</resources>

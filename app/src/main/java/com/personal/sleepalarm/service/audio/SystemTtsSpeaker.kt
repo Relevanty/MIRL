@@ -2,7 +2,6 @@
 package com.personal.sleepalarm.service.audio
 
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Bundle
@@ -22,10 +21,7 @@ class SystemTtsSpeaker(
 
     private var tts: TextToSpeech? = null
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val speechAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        .build()
+    private val speechAttributes = AppAudioAttributes.speech
     private val audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
         .setAudioAttributes(speechAttributes)
         .setWillPauseWhenDucked(true)
@@ -40,7 +36,8 @@ class SystemTtsSpeaker(
     private var ready = false
 
     private val callbackLock = Any()
-    private val callbacks = mutableMapOf<String, () -> Unit>()
+    private val pendingUtterances = mutableMapOf<String, PendingUtterance>()
+    private var audioFocusGeneration = 0L
 
     private val utteranceListener = object : UtteranceProgressListener() {
         override fun onStart(utteranceId: String?) = Unit
@@ -91,8 +88,7 @@ class SystemTtsSpeaker(
             return
         }
 
-        val focusResult = audioManager.requestAudioFocus(audioFocusRequest)
-        if (focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+        val focusGeneration = requestAudioFocus() ?: run {
             onFinished()
             return
         }
@@ -107,7 +103,7 @@ class SystemTtsSpeaker(
             ?: offlineVoices.firstOrNull { it.locale.toLanguageTag() == requestedLocale.toLanguageTag() }
             ?: offlineVoices.firstOrNull { it.locale.language == requestedLocale.language }
         if (requestedVoice == null) {
-            audioManager.abandonAudioFocusRequest(audioFocusRequest)
+            abandonAudioFocus(focusGeneration)
             onFinished()
             return
         }
@@ -117,18 +113,33 @@ class SystemTtsSpeaker(
         engine.setPitch(settings.pitchPercent / 100f)
 
         val utteranceId = "briefing_${System.currentTimeMillis()}"
+        val volumeGain = BriefingVolumePolicy.gainForPercent(settings.volumePercent)
+        val streamLease = if (volumeGain > 0f) {
+            AlarmStreamVolumeController.acquire(context)
+        } else {
+            null
+        }
         synchronized(callbackLock) {
-            callbacks[utteranceId] = onFinished
+            pendingUtterances[utteranceId] = PendingUtterance(
+                onFinished = onFinished,
+                streamLease = streamLease,
+                audioFocusGeneration = focusGeneration,
+            )
         }
 
-        val result = engine.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            Bundle().apply {
-                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, settings.volumePercent / 100f)
-            },
-            utteranceId
-        )
+        val result = runCatching {
+            engine.speak(
+                text,
+                TextToSpeech.QUEUE_FLUSH,
+                Bundle().apply {
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volumeGain)
+                },
+                utteranceId
+            )
+        }.getOrElse { error ->
+            Log.w(TAG, "speak() завершился исключением", error)
+            TextToSpeech.ERROR
+        }
         if (result != TextToSpeech.SUCCESS) {
             Log.w(TAG, "speak() вернул ошибку: $result")
             completeUtterance(utteranceId)
@@ -139,7 +150,6 @@ class SystemTtsSpeaker(
         val result = runCatching { tts?.stop() ?: TextToSpeech.ERROR }
             .getOrDefault(TextToSpeech.ERROR)
         completeAllUtterances()
-        audioManager.abandonAudioFocusRequest(audioFocusRequest)
         return result == TextToSpeech.SUCCESS
     }
 
@@ -149,23 +159,66 @@ class SystemTtsSpeaker(
             tts?.shutdown()
         }
         completeAllUtterances()
-        audioManager.abandonAudioFocusRequest(audioFocusRequest)
         tts = null
         ready = false
     }
 
     private fun completeUtterance(utteranceId: String?) {
         if (utteranceId == null) return
-        val callback = synchronized(callbackLock) {
-            callbacks.remove(utteranceId)
+        val pending = synchronized(callbackLock) {
+            pendingUtterances.remove(utteranceId).also { completed ->
+                if (
+                    completed != null &&
+                    pendingUtterances.isEmpty() &&
+                    completed.audioFocusGeneration == audioFocusGeneration
+                ) {
+                    audioManager.abandonAudioFocusRequest(audioFocusRequest)
+                }
+            }
         }
-        callback?.let { runCatching(it) }
+        pending?.streamLease?.let { runCatching { it.close() } }
+        pending?.onFinished?.let { runCatching(it) }
     }
 
     private fun completeAllUtterances() {
         val pending = synchronized(callbackLock) {
-            callbacks.values.toList().also { callbacks.clear() }
+            pendingUtterances.values.toList().also { completed ->
+                pendingUtterances.clear()
+                if (completed.any { it.audioFocusGeneration == audioFocusGeneration }) {
+                    audioManager.abandonAudioFocusRequest(audioFocusRequest)
+                }
+            }
         }
-        pending.forEach { runCatching(it) }
+        pending.forEach { utterance ->
+            utterance.streamLease?.let { runCatching { it.close() } }
+        }
+        pending.forEach { utterance -> runCatching(utterance.onFinished) }
     }
+
+    private data class PendingUtterance(
+        val onFinished: () -> Unit,
+        val streamLease: AutoCloseable?,
+        val audioFocusGeneration: Long,
+    )
+
+    private fun requestAudioFocus(): Long? = synchronized(callbackLock) {
+        if (audioManager.requestAudioFocus(audioFocusRequest) !=
+            AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        ) {
+            null
+        } else {
+            ++audioFocusGeneration
+        }
+    }
+
+    private fun abandonAudioFocus(generation: Long) = synchronized(callbackLock) {
+        if (generation == audioFocusGeneration) {
+            audioManager.abandonAudioFocusRequest(audioFocusRequest)
+        }
+    }
+}
+
+internal object BriefingVolumePolicy {
+    fun gainForPercent(volumePercent: Int): Float =
+        AppVolumeScale.gainForPercent(volumePercent)
 }

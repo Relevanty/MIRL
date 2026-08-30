@@ -15,6 +15,18 @@ interface CalendarEventDao {
     @Query("SELECT * FROM events")
     suspend fun getAll(): List<CalendarEventEntity>
 
+    @Query("SELECT * FROM events WHERE taskId = :taskId")
+    suspend fun getLinkedToTask(taskId: Int): List<CalendarEventEntity>
+
+    @Query(
+        """
+        SELECT events.* FROM events
+        LEFT JOIN tasks ON tasks.id = events.taskId
+        WHERE events.taskId IS NULL OR tasks.isDone = 0
+        """
+    )
+    suspend fun getSchedulableForAlarms(): List<CalendarEventEntity>
+
     @Query("DELETE FROM events")
     suspend fun deleteAll()
 
@@ -32,6 +44,37 @@ interface CalendarEventDao {
 
     @Update
     suspend fun update(event: CalendarEventEntity)
+
+    /** Keeps only task-owned projection fields in sync; custom event titles survive. */
+    @Query(
+        """
+        UPDATE events
+        SET title = CASE
+                WHEN TRIM(title) = '' OR title = :oldTaskLabel THEN :newTaskLabel
+                ELSE title
+            END,
+            projectId = :projectId
+        WHERE taskId = :taskId
+        """
+    )
+    suspend fun syncTaskProjection(
+        taskId: Int,
+        oldTaskLabel: String,
+        newTaskLabel: String,
+        projectId: Int?
+    )
+
+    @Query("UPDATE events SET taskId = NULL WHERE taskId = :taskId")
+    suspend fun detachTask(taskId: Int)
+
+    @Query(
+        """
+        UPDATE events SET taskId = NULL
+        WHERE taskId IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = events.taskId)
+        """
+    )
+    suspend fun detachMissingTasks()
 
 
 }

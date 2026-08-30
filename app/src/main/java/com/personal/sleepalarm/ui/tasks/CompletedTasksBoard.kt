@@ -55,6 +55,9 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
+import com.personal.sleepalarm.domain.calculator.ActivityProgressCalculator
+import com.personal.sleepalarm.domain.model.effectiveWorkBudgetMinutes
+import com.personal.sleepalarm.ui.theme.appAccents
 import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneId
@@ -153,12 +156,14 @@ internal fun CompletedTasksBoard(
 private fun BoardSummary(tasks: List<TaskEntity>, activities: List<ActivityRecordEntity>) {
     val ids = tasks.mapTo(mutableSetOf()) { it.id }
     val taskActivities = activities.filter { it.taskId in ids }
-    val spentMinutes = taskActivities.sumOf { it.durationMillis } / 60_000L
-    val plannedMinutes = tasks.sumOf { it.workBudgetMinutes.takeIf { value -> value > 0 } ?: it.estimatedMinutes }
-    val pomodoroCount = taskActivities.count { it.source == "TIMER" }
+    val spentMinutes = ActivityProgressCalculator.uniqueCountedMillis(taskActivities) / 60_000L
+    val plannedMinutes = tasks.sumOf(TaskEntity::effectiveWorkBudgetMinutes)
+    val pomodoroCount = taskActivities.count { it.countsTowardProgress && it.source == "TIMER" }
+    val successTone = MaterialTheme.appAccents.success
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f)
+        color = successTone.container.copy(alpha = 0.82f),
+        contentColor = successTone.onContainer
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -175,7 +180,7 @@ private fun BoardSummary(tasks: List<TaskEntity>, activities: List<ActivityRecor
                 Text(
                     "Факт ${spentMinutes / 60} ч ${spentMinutes % 60} мин · план ${plannedMinutes / 60} ч ${plannedMinutes % 60} мин · $pomodoroCount фокусов",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f)
+                    color = successTone.onContainer.copy(alpha = 0.78f)
                 )
             }
         }
@@ -192,17 +197,19 @@ private fun CompletedTaskNote(
     onDuplicate: (TaskEntity) -> Unit,
     onDelete: (TaskEntity) -> Unit
 ) {
-    val color = when (TaskQuadrant.fromStorage(task.matrixQuadrant)) {
-        TaskQuadrant.NOW -> MaterialTheme.colorScheme.errorContainer
-        TaskQuadrant.SCHEDULE -> MaterialTheme.colorScheme.primaryContainer
-        TaskQuadrant.DELEGATE -> MaterialTheme.colorScheme.tertiaryContainer
-        TaskQuadrant.LET_GO -> MaterialTheme.colorScheme.surfaceContainerHighest
+    val accents = MaterialTheme.appAccents
+    val tone = when (TaskQuadrant.fromStorage(task.matrixQuadrant)) {
+        TaskQuadrant.NOW -> accents.urgent
+        TaskQuadrant.SCHEDULE -> accents.study
+        TaskQuadrant.DELEGATE -> accents.other
+        TaskQuadrant.LET_GO -> accents.calm
     }
     Surface(
         onClick = { onOpenTask(task) },
         modifier = Modifier.graphicsLayer { rotationZ = ((task.id % 5) - 2) * 0.55f },
         shape = RoundedCornerShape(6.dp, 22.dp, 8.dp, 18.dp),
-        color = color,
+        color = tone.container,
+        contentColor = tone.onContainer,
         shadowElevation = 3.dp
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -211,7 +218,7 @@ private fun CompletedTaskNote(
                     Icons.Default.PushPin,
                     null,
                     Modifier.size(17.dp).graphicsLayer { rotationZ = -18f },
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = tone.color
                 )
                 Spacer(Modifier.weight(1f))
                 task.completedAt?.let {
@@ -245,12 +252,13 @@ private fun CompletedTaskNote(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            val spent = activities.sumOf { it.durationMillis } / 60_000L
+            val countedActivities = activities.filter(ActivityRecordEntity::countsTowardProgress)
+            val spent = ActivityProgressCalculator.countedMillis(countedActivities) / 60_000L
             Text(
                 listOfNotNull(
                     projectTitle,
                     "${spent / 60} ч ${spent % 60} мин",
-                    "${activities.count { it.source == "TIMER" }} фокусов"
+                    "${countedActivities.count { it.source == "TIMER" }} фокусов"
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -268,7 +276,7 @@ private fun CompletedTaskNote(
                         Icons.Default.DeleteOutline,
                         stringResource(R.string.tasks_delete),
                         Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.error
+                        tint = MaterialTheme.appAccents.urgent.color
                     )
                 }
             }
@@ -297,9 +305,9 @@ private fun EmptyBoard(modifier: Modifier = Modifier) {
 
 @Composable
 internal fun BoardCat(modifier: Modifier = Modifier) {
-    val primary = MaterialTheme.colorScheme.primary
-    val secondary = MaterialTheme.colorScheme.secondary
-    val ink = MaterialTheme.colorScheme.onSecondaryContainer
+    val primary = MaterialTheme.appAccents.focus.color
+    val secondary = MaterialTheme.appAccents.calm.color
+    val ink = MaterialTheme.appAccents.calm.onContainer
     Canvas(modifier) {
         val center = Offset(size.width * 0.5f, size.height * 0.55f)
         val r = size.minDimension * 0.30f

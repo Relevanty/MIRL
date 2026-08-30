@@ -57,9 +57,12 @@ class LibraryRepository(
         }
     }
 
-    /** Удаляет элемент и его обложку. Связи чистятся каскадно (FK). */
+    /** Удаляет элемент и обе стороны task/material graph atomically. */
     suspend fun deleteItem(item: LibraryItemEntity) {
-        dao.deleteItem(item.id)
+        database.withTransaction {
+            database.taskLibraryLinkDao().deleteForLibraryItem(item.id)
+            dao.deleteItem(item.id)
+        }
         CoverHelperDelete(item.coverUri)
         com.personal.sleepalarm.util.ResourceFileHelper.delete(item.localFilePath)
     }

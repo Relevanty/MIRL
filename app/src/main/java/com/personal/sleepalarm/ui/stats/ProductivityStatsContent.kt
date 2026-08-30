@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.stats
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,16 +19,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.domain.calculator.ActivityProgressCalculator
+import com.personal.sleepalarm.domain.model.effectiveWorkBudgetMinutes
+import com.personal.sleepalarm.domain.model.primaryLabel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -69,15 +76,24 @@ fun ProductivityStatsContent(
     val completed = regularTasks.count(TaskEntity::isDone)
     val overdue = regularTasks.count { !it.isDone && (it.dueAtMillis ?: Long.MAX_VALUE) < now }
     val plannedMinutes = regularTasks.sumOf(::taskBudgetMinutes)
-    val actualMinutes = state.activities.sumOf { it.durationMillis } / 60_000L
+    val regularTaskIds = regularTasks.map(TaskEntity::id).toSet()
+    val countedActivities = state.activities.filter(ActivityRecordEntity::countsTowardProgress)
+    val taskActivities = countedActivities.filter { it.taskId in regularTaskIds }
+    val actualMinutes = ActivityProgressCalculator.uniqueCountedMillis(taskActivities) / 60_000L
     val completedWithBudget = regularTasks.filter { it.isDone && taskBudgetMinutes(it) > 0 }
     val averageError = completedWithBudget.map { task ->
-        val actual = state.activities.filter { it.taskId == task.id }.sumOf { it.durationMillis } / 60_000.0
+        val actual = ActivityProgressCalculator.countedMillis(
+            countedActivities.filter { it.taskId == task.id }
+        ) / 60_000.0
         abs(actual - taskBudgetMinutes(task)) / taskBudgetMinutes(task) * 100.0
     }.average().takeUnless(Double::isNaN)?.toInt() ?: 0
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.appAccents.work.container,
+            contentColor = MaterialTheme.appAccents.work.onContainer
+        ) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("Задачи и проекты", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text("Выполнено $completed · просрочено $overdue")
@@ -92,8 +108,12 @@ fun ProductivityStatsContent(
                 val projectTasks = regularTasks.filter { it.projectId == project.id }
                 val budget = project.workBudgetMinutes.takeIf { it > 0 }
                     ?: projectTasks.sumOf(::taskBudgetMinutes)
-                val spent = state.activities.filter { it.projectId == project.id || it.taskId in projectTasks.map(TaskEntity::id) }
-                    .distinctBy(ActivityRecordEntity::id).sumOf { it.durationMillis }
+                val projectTaskIds = projectTasks.map(TaskEntity::id).toSet()
+                val spent = ActivityProgressCalculator.countedMillis(
+                    countedActivities
+                        .filter { it.projectId == project.id || it.taskId in projectTaskIds }
+                        .distinctBy(ActivityRecordEntity::id)
+                )
                 StatCard(
                     title = project.title,
                     subtitle = "${projectTasks.count(TaskEntity::isDone)}/${projectTasks.size} задач · ${formatMinutes(spent / 60_000L)} из ${formatMinutes(budget.toLong())}",
@@ -108,15 +128,25 @@ fun ProductivityStatsContent(
         }
         shownTasks.take(20).forEach { task ->
             val activities = state.activities.filter { it.taskId == task.id }
-            val actual = activities.sumOf { it.durationMillis }
+            val actual = ActivityProgressCalculator.countedMillis(activities)
             val budget = taskBudgetMinutes(task)
             val remaining = (budget * 60_000L - actual).coerceAtLeast(0L)
             val timers = activities.count { it.source == "TIMER" }
             val manual = activities.count { it.source == "MANUAL" }
-            val title = task.title.ifBlank { task.description.ifBlank { "Задача ${task.id}" } }
+            val title = task.primaryLabel()
             StatCard(
                 title = title,
-                subtitle = "План ${formatMinutes(budget.toLong())} · факт ${formatMinutes(actual / 60_000L)} · осталось ${formatMinutes(remaining / 60_000L)} · $timers фокусов · $manual вручную · квадрат ${task.matrixQuadrant}",
+                subtitle = if (budget > 0) {
+                    "План ${formatMinutes(budget.toLong())} · факт ${formatMinutes(actual / 60_000L)} · осталось ${formatMinutes(remaining / 60_000L)} · $timers фокусов · $manual вручную · квадрат ${task.matrixQuadrant}"
+                } else {
+                    stringResource(
+                        R.string.daily_focus_stats_unlimited,
+                        formatMinutes(actual / 60_000L),
+                        timers,
+                        manual,
+                        task.matrixQuadrant
+                    )
+                },
                 progress = if (budget > 0) (actual / 60_000f / budget).coerceIn(0f, 1f) else 0f
             )
         }
@@ -135,7 +165,7 @@ private fun StatCard(title: String, subtitle: String, progress: Float) {
 }
 
 private fun taskBudgetMinutes(task: TaskEntity): Int =
-    task.workBudgetMinutes.takeIf { it > 0 } ?: task.estimatedMinutes.coerceAtLeast(0)
+    task.effectiveWorkBudgetMinutes()
 
 private fun formatMinutes(minutes: Long): String {
     val safe = minutes.coerceAtLeast(0)

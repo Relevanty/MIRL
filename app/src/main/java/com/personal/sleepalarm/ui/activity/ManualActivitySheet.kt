@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.activity
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -46,6 +48,8 @@ import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.repository.ActivityConflictStrategy
 import com.personal.sleepalarm.data.repository.ManualActivityInput
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.focusActivityType
+import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -101,11 +105,14 @@ fun ManualActivitySheet(
     var showDatePicker by remember { mutableStateOf(false) }
     var pendingInput by remember { mutableStateOf<ManualActivityInput?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val selectedTask = tasks.firstOrNull { it.id == selectedTaskId }
 
     LaunchedEffect(tasks, selectedTaskId) {
         val task = tasks.firstOrNull { it.id == selectedTaskId }
-        if (title.isBlank() && task != null) title = task.title.ifBlank { task.description }
-        if (task != null) activityType = categoryToActivityType(task.category)
+        if (task != null) {
+            if (title.isBlank()) title = task.primaryLabel()
+            activityType = task.focusActivityType()
+        }
     }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
@@ -134,14 +141,19 @@ fun ManualActivitySheet(
             value
         }
         val task = tasks.firstOrNull { it.id == selectedTaskId }
+        val resolvedActivityType = task?.focusActivityType() ?: activityType
         return ManualActivityInput(
             id = editing?.id ?: 0,
             taskId = selectedTaskId,
             projectId = task?.projectId,
-            activityType = activityType,
-            subjectId = editing?.subjectId ?: initialSubjectId.takeIf { activityType == FocusActivityType.STUDY },
-            otherActivityId = editing?.otherActivityId ?: initialOtherActivityId.takeIf { activityType == FocusActivityType.OTHER },
-            title = title.ifBlank { task?.title.orEmpty() },
+            activityType = resolvedActivityType,
+            subjectId = (editing?.subjectId ?: initialSubjectId).takeIf {
+                task == null && resolvedActivityType == FocusActivityType.STUDY
+            },
+            otherActivityId = (editing?.otherActivityId ?: initialOtherActivityId).takeIf {
+                task == null && resolvedActivityType == FocusActivityType.OTHER
+            },
+            title = title.ifBlank { task?.primaryLabel().orEmpty() },
             startedAt = start,
             endedAt = end,
             result = result,
@@ -177,7 +189,8 @@ fun ManualActivitySheet(
                 FocusActivityType.entries.forEach { type ->
                     FilterChip(
                         selected = activityType == type,
-                        onClick = { activityType = type },
+                        onClick = { if (selectedTask == null) activityType = type },
+                        enabled = selectedTask == null,
                         label = { Text(activityTypeLabel(type)) }
                     )
                 }
@@ -196,9 +209,10 @@ fun ManualActivitySheet(
                             selected = selectedTaskId == task.id,
                             onClick = {
                                 selectedTaskId = task.id
-                                if (title.isBlank()) title = task.title.ifBlank { task.description }
+                                activityType = task.focusActivityType()
+                                title = task.primaryLabel()
                             },
-                            label = { Text(task.title.ifBlank { task.description }.take(28)) }
+                            label = { Text(task.primaryLabel().take(28)) }
                         )
                     }
                 }
@@ -307,12 +321,12 @@ fun ManualActivitySheet(
                 minLines = 2
             )
             error?.let {
-                Text(stringResource(R.string.activity_invalid), color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.activity_invalid), color = MaterialTheme.appAccents.warning.color)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 if (editing != null) {
                     TextButton(onClick = { viewModel.delete(editing.id) }) {
-                        Text(stringResource(R.string.reminders_delete), color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.reminders_delete), color = MaterialTheme.appAccents.urgent.color)
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -391,12 +405,6 @@ private fun activityTypeLabel(type: FocusActivityType): String = when (type) {
     FocusActivityType.STUDY -> stringResource(R.string.activity_study)
     FocusActivityType.WORK -> stringResource(R.string.activity_work)
     FocusActivityType.OTHER -> stringResource(R.string.activity_other)
-}
-
-private fun categoryToActivityType(category: String): FocusActivityType = when (category.uppercase()) {
-    "STUDY", "УЧЁБА", "УЧЕБА" -> FocusActivityType.STUDY
-    "OTHER", "ДРУГОЕ" -> FocusActivityType.OTHER
-    else -> FocusActivityType.WORK
 }
 
 private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")

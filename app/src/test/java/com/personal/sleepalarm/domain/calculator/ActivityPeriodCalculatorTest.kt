@@ -4,6 +4,20 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ActivityPeriodCalculatorTest {
+
+    @Test
+    fun uniqueActiveMillis_countsCrossCategoryOverlapOnce() {
+        val total = ActivityPeriodCalculator.uniqueActiveMillis(
+            periodStartMillis = 0L,
+            periodEndMillis = 10_000L,
+            intervals = listOf(
+                TrackedInterval(TrackedActivityType.STUDY, 1_000L, 6_000L),
+                TrackedInterval(TrackedActivityType.WORK, 4_000L, 9_000L)
+            )
+        )
+
+        assertEquals(8_000L, total)
+    }
     @Test
     fun clipsIntervalsToFourAmDay() {
         val hour = 60L * 60L * 1000L

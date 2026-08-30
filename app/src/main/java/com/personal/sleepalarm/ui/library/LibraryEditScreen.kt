@@ -1,7 +1,10 @@
 package com.personal.sleepalarm.ui.library
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import com.personal.sleepalarm.ui.theme.ThemedAlertDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -83,6 +86,11 @@ fun LibraryEditScreen(
     }
 
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val discardAndBack = {
+        viewModel.discardChanges()
+        onBack()
+    }
+    BackHandler(onBack = discardAndBack)
 
     Column(
         modifier = Modifier
@@ -92,7 +100,7 @@ fun LibraryEditScreen(
     ) {
         // === Заголовок с котом ===
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = discardAndBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.action_back))
             }
             Text(
@@ -103,7 +111,7 @@ fun LibraryEditScreen(
             )
             CatText(
                 text = "=^..^=",
-                color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.appAccents.study.color,
                 fontSize = 16.sp
             )
         }
@@ -114,7 +122,7 @@ fun LibraryEditScreen(
         Text(
             text = stringResource(R.string.library_section_main),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.appAccents.study.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -149,7 +157,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
                     )
                 )
 
@@ -166,7 +174,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
                     )
                 )
             }
@@ -177,7 +185,7 @@ fun LibraryEditScreen(
         Text(
             text = "Рабочий материал",
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.appAccents.study.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
         Column(
@@ -239,7 +247,7 @@ fun LibraryEditScreen(
         Text(
             text = stringResource(R.string.library_section_cover),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.secondary,
+            color = MaterialTheme.appAccents.other.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -285,7 +293,7 @@ fun LibraryEditScreen(
         Text(
             text = stringResource(R.string.library_section_notes),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.tertiary,
+            color = MaterialTheme.appAccents.calm.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -306,7 +314,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
                     )
                 )
 
@@ -321,7 +329,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
                     )
                 )
 
@@ -336,7 +344,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
                     )
                 )
             }
@@ -348,7 +356,7 @@ fun LibraryEditScreen(
         Text(
             text = stringResource(R.string.library_section_rating_tags),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.appAccents.study.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -372,7 +380,7 @@ fun LibraryEditScreen(
                         IconButton(onClick = { viewModel.setRating(index + 1) }) {
                             Text(
                                 text = if (index < state.rating) "★" else "☆",
-                                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.appAccents.study.color,
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -393,7 +401,7 @@ fun LibraryEditScreen(
                             unfocusedContainerColor = Color.Transparent,
                             focusedContainerColor = Color.Transparent,
                             unfocusedIndicatorColor = Color.Transparent,
-                            focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
                         )
                     )
                     IconButton(onClick = { viewModel.addTag() }) {
@@ -446,7 +454,7 @@ fun LibraryEditScreen(
             ) {
                 Text(
                     text = stringResource(R.string.library_delete),
-                    color = MaterialTheme.colorScheme.error
+                    color = MaterialTheme.appAccents.urgent.color
                 )
             }
         }
@@ -469,7 +477,7 @@ fun LibraryEditScreen(
                 ) {
                     Text(
                         stringResource(R.string.library_delete),
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.appAccents.urgent.color
                     )
                 }
             },

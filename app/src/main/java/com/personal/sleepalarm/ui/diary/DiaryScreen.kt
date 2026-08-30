@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.diary
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.TextFieldValue
@@ -161,7 +163,7 @@ fun DiaryScreen(
                 actions = {
                     if (selectedEntries.isNotEmpty()) {
                         IconButton(onClick = { showSelectionMenu = true }) {
-                            Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.Delete, null, tint = MaterialTheme.appAccents.urgent.color)
                         }
                         IconButton(onClick = {
                             val text = currentEntries
@@ -308,7 +310,7 @@ fun DiaryScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f))
+                        .background(MaterialTheme.appAccents.urgent.container.copy(alpha = 0.72f))
                         .clickable {
                             viewModel.deleteEntries(selectedEntries.toList())
                             selectedEntries = emptySet()
@@ -319,13 +321,13 @@ fun DiaryScreen(
                     Icon(
                         Icons.Default.Delete,
                         null,
-                        tint = MaterialTheme.colorScheme.error
+                        tint = MaterialTheme.appAccents.urgent.color
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         stringResource(R.string.library_delete),
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.appAccents.urgent.color
                     )
                 }
 
@@ -369,7 +371,7 @@ private fun DiaryRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(
-                if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                if (isSelected) MaterialTheme.appAccents.calm.container
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
             )
             .combinedClickable(
@@ -531,7 +533,7 @@ private fun DiaryEditor(
                             contentDescription = stringResource(
                                 if (isPreviewMode) R.string.diary_edit else R.string.diary_preview
                             ),
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.appAccents.calm.color
                         )
                     }
                 }
@@ -571,7 +573,7 @@ private fun DiaryEditor(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onBackground
                 ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                cursorBrush = SolidColor(MaterialTheme.appAccents.calm.color),
                 visualTransformation = markdownTransformation,
                 decorationBox = { innerTextField ->
                     if (textFieldValue.text.isEmpty()) {

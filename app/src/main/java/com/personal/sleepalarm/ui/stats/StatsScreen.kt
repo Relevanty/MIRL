@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.util.CsvExporter
 import com.personal.sleepalarm.ui.activity.ManualActivitySheet
+import com.personal.sleepalarm.ui.theme.appAccents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +48,7 @@ fun StatsScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val accents = MaterialTheme.appAccents
     var statsMode by remember { mutableStateOf("sleep") }
     var showManualActivity by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -97,17 +100,29 @@ fun StatsScreen(
                 FilterChip(
                     selected = statsMode == "sleep",
                     onClick = { statsMode = "sleep" },
-                    label = { Text(stringResource(R.string.tab_home)) }
+                    label = { Text(stringResource(R.string.tab_home)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = accents.sleep.container,
+                        selectedLabelColor = accents.sleep.onContainer
+                    )
                 )
                 FilterChip(
                     selected = statsMode == "activity",
                     onClick = { statsMode = "activity" },
-                    label = { Text(stringResource(R.string.stats_tab_study)) }
+                    label = { Text(stringResource(R.string.stats_tab_study)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = accents.study.container,
+                        selectedLabelColor = accents.study.onContainer
+                    )
                 )
                 FilterChip(
                     selected = statsMode == "productivity",
                     onClick = { statsMode = "productivity" },
-                    label = { Text("Задачи") }
+                    label = { Text("Задачи") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = accents.work.container,
+                        selectedLabelColor = accents.work.onContainer
+                    )
                 )
             }
 

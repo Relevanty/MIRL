@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
@@ -60,6 +59,7 @@ import com.personal.sleepalarm.app.App
 import com.personal.sleepalarm.ui.assistant.AssistantScreen
 import com.personal.sleepalarm.ui.components.RequiredPermissionsScreen
 import com.personal.sleepalarm.ui.dday.DDayScreen
+import com.personal.sleepalarm.ui.english.EnglishVocabularyRoute
 import com.personal.sleepalarm.ui.home.HomeScreen
 import com.personal.sleepalarm.ui.home.HomeViewModel
 import com.personal.sleepalarm.ui.library.LibraryScreen
@@ -67,6 +67,7 @@ import com.personal.sleepalarm.ui.library.LibraryViewModel
 import com.personal.sleepalarm.ui.misc.BriefingSettingsScreen
 import com.personal.sleepalarm.ui.misc.MiscBottomSheet
 import com.personal.sleepalarm.ui.misc.MiscScreen
+import com.personal.sleepalarm.ui.mathpractice.MathPracticeScreen
 import com.personal.sleepalarm.ui.pomodoro.PomodoroScreen
 import com.personal.sleepalarm.ui.pomodoro.PomodoroViewModel
 import com.personal.sleepalarm.ui.reminders.ReminderEditScreen
@@ -74,12 +75,15 @@ import com.personal.sleepalarm.ui.reminders.RemindersScreen
 import com.personal.sleepalarm.ui.settings.SettingsScreen
 import com.personal.sleepalarm.ui.settings.SettingsViewModel
 import com.personal.sleepalarm.ui.tasks.TasksScreen
+import com.personal.sleepalarm.domain.model.NextActionRanker
 import com.personal.sleepalarm.ui.tasks.TasksViewModel
 import com.personal.sleepalarm.ui.stats.StatsScreen
 import com.personal.sleepalarm.ui.stats.StatsViewModel
 import com.personal.sleepalarm.ui.theme.SleepAlarmTheme
+import com.personal.sleepalarm.ui.theme.appAccents
 import com.personal.sleepalarm.ui.theme.ThemeCatalog
 import com.personal.sleepalarm.service.SleepNotificationBuilder
+import com.personal.sleepalarm.service.DndBypassCoordinator
 import com.personal.sleepalarm.util.PermissionChecker
 import com.personal.sleepalarm.util.PermissionState
 import com.personal.sleepalarm.util.AppLanguageManager
@@ -100,6 +104,9 @@ class MainActivity : ComponentActivity() {
     private var permissionState by mutableStateOf(PermissionState())
     private var navigationDestination by mutableStateOf<String?>(null)
     private var navigationTaskId by mutableStateOf<Int?>(null)
+    private var navigationEventId by mutableStateOf<Int?>(null)
+    private var navigationEventStart by mutableStateOf<Long?>(null)
+    private var navigationRequestToken by mutableIntStateOf(0)
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -123,7 +130,10 @@ class MainActivity : ComponentActivity() {
                 if (permissionState.allRequiredGranted) {
                     SleepAlarmRoot(
                         navigationDestination = navigationDestination,
-                        navigationTaskId = navigationTaskId
+                        navigationTaskId = navigationTaskId,
+                        navigationEventId = navigationEventId,
+                        navigationEventStart = navigationEventStart,
+                        navigationRequestToken = navigationRequestToken
                     )
                 } else {
                     RequiredPermissionsScreen(
@@ -155,6 +165,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleNavigationIntent(intent: Intent?) {
+        navigationRequestToken += 1
         navigationDestination = intent?.getStringExtra(EXTRA_DESTINATION)
             ?.takeIf {
                 it == DESTINATION_FOCUS_PROTOCOL ||
@@ -163,6 +174,8 @@ class MainActivity : ComponentActivity() {
                     it == DESTINATION_REMINDERS
             }
         navigationTaskId = intent?.getIntExtra(EXTRA_TASK_ID, 0)?.takeIf { it > 0 }
+        navigationEventId = intent?.getIntExtra(EXTRA_EVENT_ID, 0)?.takeIf { it > 0 }
+        navigationEventStart = intent?.getLongExtra(EXTRA_EVENT_START, 0L)?.takeIf { it > 0L }
     }
 
     override fun onResume() {
@@ -203,11 +216,7 @@ class MainActivity : ComponentActivity() {
     private fun refreshPermissionState() {
         val state = PermissionChecker.state(this)
         if (state.notificationPolicyAccessGranted) {
-            val preferences = getSharedPreferences(PERMISSION_PREFS, MODE_PRIVATE)
-            if (!preferences.getBoolean(KEY_DND_CHANNEL_CONFIGURED, false)) {
-                SleepNotificationBuilder(this).ensureAlarmChannelCanBypassDnd()
-                preferences.edit().putBoolean(KEY_DND_CHANNEL_CONFIGURED, true).apply()
-            }
+            DndBypassCoordinator.reconcile(this)
         }
         permissionState = PermissionChecker.state(this)
     }
@@ -223,26 +232,30 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_DESTINATION = "extra_navigation_destination"
         const val EXTRA_TASK_ID = "extra_navigation_task_id"
+        const val EXTRA_EVENT_ID = "extra_navigation_event_id"
+        const val EXTRA_EVENT_START = "extra_navigation_event_start"
         const val DESTINATION_FOCUS_PROTOCOL = "focus_protocol"
         const val DESTINATION_TASKS = "tasks"
         const val DESTINATION_CALENDAR = "calendar"
         const val DESTINATION_REMINDERS = "reminders"
         private const val PERMISSION_PREFS = "required_permissions"
         private const val KEY_NOTIFICATIONS_REQUESTED = "notifications_requested"
-        private const val KEY_DND_CHANNEL_CONFIGURED = "dnd_channel_configured"
     }
 }
 
 private const val TAB_SLEEP = 0
 private const val TAB_TASKS = 1
 private const val TAB_POMODORO = 2
-private const val TAB_ANALYTICS = 3
+private const val TAB_CALENDAR = 3
 private const val TAB_SETTINGS = 4
 
 @Composable
 private fun SleepAlarmRoot(
     navigationDestination: String? = null,
-    navigationTaskId: Int? = null
+    navigationTaskId: Int? = null,
+    navigationEventId: Int? = null,
+    navigationEventStart: Long? = null,
+    navigationRequestToken: Int = 0
 ) {
     var selectedTab by rememberSaveable {
         mutableIntStateOf(
@@ -259,22 +272,32 @@ private fun SleepAlarmRoot(
     var miscScreen by remember { mutableStateOf<MiscScreen?>(null) }
     var linkedTaskForReminder by rememberSaveable { mutableStateOf<Int?>(null) }
     var showDiary by rememberSaveable { mutableStateOf(false) }
-    var showCalendar by rememberSaveable { mutableStateOf(false) }
-    var requestedTaskId by rememberSaveable { mutableStateOf<Int?>(navigationTaskId) }
+    var showAnalytics by rememberSaveable { mutableStateOf(false) }
+    var showMathPractice by rememberSaveable { mutableStateOf(false) }
+    var showEnglishLearning by rememberSaveable { mutableStateOf(false) }
+    // Opening a task is an event, not persistent screen state. Keeping the id here
+    // after the sheet was dismissed made every task-list update open it again.
+    var requestedTaskId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var requestedNewTaskCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    var requestedLibraryItemId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var handledNavigationRequestToken by rememberSaveable { mutableIntStateOf(-1) }
 
-    LaunchedEffect(navigationDestination) {
-        if (navigationDestination == MainActivity.DESTINATION_FOCUS_PROTOCOL) {
-            selectedTab = TAB_POMODORO
-        } else if (navigationDestination == MainActivity.DESTINATION_TASKS) {
-            selectedTab = TAB_TASKS
-        } else if (navigationDestination == MainActivity.DESTINATION_CALENDAR) {
-            showCalendar = true
-        } else if (navigationDestination == MainActivity.DESTINATION_REMINDERS) {
-            miscScreen = MiscScreen.Reminders
+    LaunchedEffect(navigationDestination, navigationTaskId, navigationRequestToken) {
+        if (handledNavigationRequestToken == navigationRequestToken) return@LaunchedEffect
+        handledNavigationRequestToken = navigationRequestToken
+        when (navigationDestination) {
+            MainActivity.DESTINATION_FOCUS_PROTOCOL -> selectedTab = TAB_POMODORO
+            MainActivity.DESTINATION_TASKS -> {
+                requestedTaskId = navigationTaskId
+                selectedTab = TAB_TASKS
+            }
+            MainActivity.DESTINATION_CALENDAR -> selectedTab = TAB_CALENDAR
+            MainActivity.DESTINATION_REMINDERS -> miscScreen = MiscScreen.Reminders
         }
     }
 
     val homeViewModel: HomeViewModel = viewModel()
+    val app = LocalContext.current.applicationContext as App
     val tasksViewModel: TasksViewModel = viewModel()
     val pomodoroViewModel: PomodoroViewModel = viewModel()
     val libraryViewModel: LibraryViewModel = viewModel()
@@ -282,16 +305,19 @@ private fun SleepAlarmRoot(
     val statsViewModel: StatsViewModel = viewModel()
     val tasksState by tasksViewModel.uiState.collectAsStateWithLifecycle()
     var preparedNavigationTaskId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var preparedNavigationRequestToken by rememberSaveable { mutableIntStateOf(-1) }
 
-    LaunchedEffect(navigationDestination, navigationTaskId, tasksState.generalTasks) {
+    LaunchedEffect(navigationDestination, navigationTaskId, navigationRequestToken, tasksState.generalTasks) {
         val taskId = navigationTaskId
         if (
             navigationDestination == MainActivity.DESTINATION_FOCUS_PROTOCOL &&
-            taskId != null && preparedNavigationTaskId != taskId
+            taskId != null &&
+            (preparedNavigationTaskId != taskId || preparedNavigationRequestToken != navigationRequestToken)
         ) {
             tasksState.generalTasks.firstOrNull { it.id == taskId }?.let { task ->
                 pomodoroViewModel.prepareWorkTask(task)
                 preparedNavigationTaskId = taskId
+                preparedNavigationRequestToken = navigationRequestToken
                 selectedTab = TAB_POMODORO
             }
         }
@@ -305,21 +331,28 @@ private fun SleepAlarmRoot(
         return
     }
 
-    if (showCalendar) {
-        BackHandler { showCalendar = false }
+    if (showAnalytics) {
+        BackHandler { showAnalytics = false }
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-            CalendarScreen(
-                onBack = { showCalendar = false },
-                onOpenTask = { taskId ->
-                    requestedTaskId = taskId
-                    showCalendar = false
-                    selectedTab = TAB_TASKS
-                },
-                onStartFocus = { taskId ->
-                    tasksState.generalTasks.firstOrNull { it.id == taskId }?.let(pomodoroViewModel::prepareWorkTask)
-                    showCalendar = false
-                    selectedTab = TAB_POMODORO
-                }
+            StatsScreen(viewModel = statsViewModel, onBack = { showAnalytics = false })
+        }
+        return
+    }
+
+    if (showMathPractice) {
+        BackHandler { showMathPractice = false }
+        Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+            MathPracticeScreen(onBack = { showMathPractice = false })
+        }
+        return
+    }
+
+    if (showEnglishLearning) {
+        BackHandler { showEnglishLearning = false }
+        Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+            EnglishVocabularyRoute(
+                repository = app.serviceLocator.englishVocabularyRepository,
+                onBack = { showEnglishLearning = false }
             )
         }
         return
@@ -351,19 +384,27 @@ private fun SleepAlarmRoot(
             when (miscScreen) {
                 MiscScreen.Library -> LibraryScreen(
                     onBack = { miscScreen = null },
-                    viewModel = libraryViewModel
+                    viewModel = libraryViewModel,
+                    openItemId = requestedLibraryItemId,
+                    onOpenItemConsumed = { requestedLibraryItemId = null }
                 )
                 MiscScreen.Reminders -> RemindersScreen(onBack = { miscScreen = null })
                 MiscScreen.DDay -> DDayScreen(onBack = { miscScreen = null })
                 MiscScreen.Assistant -> AssistantScreen(
                     onBack = { miscScreen = null },
                     onStartTaskFocus = { taskId ->
-                        tasksState.generalTasks.firstOrNull { it.id == taskId }?.let(pomodoroViewModel::prepareWorkTask)
-                        miscScreen = null
-                        selectedTab = TAB_POMODORO
+                        tasksState.generalTasks.firstOrNull { it.id == taskId }?.let { task ->
+                            if (pomodoroViewModel.prepareWorkTask(task)) {
+                                miscScreen = null
+                                selectedTab = TAB_POMODORO
+                            }
+                        }
                     }
                 )
-                MiscScreen.Briefing -> BriefingSettingsScreen(onBack = { miscScreen = null })
+                MiscScreen.Briefing -> BriefingSettingsScreen(
+                    onBack = { miscScreen = null },
+                    onOpenDailyPlanAssistant = { miscScreen = MiscScreen.Assistant }
+                )
                 null -> { /* недостижимо */ }
             }
         }
@@ -378,7 +419,7 @@ private fun SleepAlarmRoot(
                 stringResource(R.string.tab_today),
                 stringResource(R.string.tab_plan),
                 stringResource(R.string.tab_focus),
-                stringResource(R.string.tab_analytics),
+                stringResource(R.string.tab_calendar),
                 stringResource(R.string.tab_settings)
             )
             BoxWithConstraints {
@@ -387,13 +428,13 @@ private fun SleepAlarmRoot(
                     navigationWidth = maxWidth
                 )
                 val navigationColors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    selectedIconColor = MaterialTheme.appAccents.focus.onContainer,
+                    selectedTextColor = MaterialTheme.appAccents.chrome.onNavigation,
+                    indicatorColor = MaterialTheme.appAccents.focus.container,
+                    unselectedIconColor = MaterialTheme.appAccents.chrome.onNavigationMuted,
+                    unselectedTextColor = MaterialTheme.appAccents.chrome.onNavigationMuted
                 )
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                NavigationBar(containerColor = MaterialTheme.appAccents.chrome.navigation) {
                     NavigationBarItem(
                         selected = selectedTab == TAB_SLEEP,
                         onClick = { selectedTab = TAB_SLEEP },
@@ -416,9 +457,9 @@ private fun SleepAlarmRoot(
                         colors = navigationColors
                     )
                     NavigationBarItem(
-                        selected = selectedTab == TAB_ANALYTICS,
-                        onClick = { selectedTab = TAB_ANALYTICS },
-                        icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
+                        selected = selectedTab == TAB_CALENDAR,
+                        onClick = { selectedTab = TAB_CALENDAR },
+                        icon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
                         label = { NavigationLabel(navigationLabels[3], labelFontSize) },
                         colors = navigationColors
                     )
@@ -443,45 +484,74 @@ private fun SleepAlarmRoot(
                     viewModel = homeViewModel,
                     onOpenDiary = { showDiary = true },
                     onOpenTasks = { selectedTab = TAB_TASKS },
-                    onOpenStats = { selectedTab = TAB_ANALYTICS },
+                    onOpenStats = { showAnalytics = true },
                     onOpenMore = { showMiscSheet = true },
                     onOpenAssistant = { miscScreen = MiscScreen.Assistant },
+                    onOpenMathPractice = { showMathPractice = true },
+                    onOpenEnglishLearning = { showEnglishLearning = true },
                     openTaskCount = tasksState.activeMatrixTasks.size,
-                    upcomingTasks = tasksState.activeMatrixTasks
-                        .sortedWith(compareBy<com.personal.sleepalarm.data.db.entity.TaskEntity> { it.matrixQuadrant }.thenBy { it.dueAtMillis ?: Long.MAX_VALUE })
-                        .take(3),
+                    upcomingTasks = NextActionRanker.rank(tasksState.activeMatrixTasks).take(3),
                     onStartTaskFocus = { task ->
-                        pomodoroViewModel.prepareWorkTask(task)
-                        selectedTab = TAB_POMODORO
+                        if (pomodoroViewModel.prepareWorkTask(task)) selectedTab = TAB_POMODORO
                     }
                 )
                 TAB_TASKS -> TasksScreen(
                     viewModel = tasksViewModel,
                     openTaskId = requestedTaskId,
+                    onOpenTaskRequestConsumed = { openedTaskId ->
+                        if (requestedTaskId == openedTaskId) requestedTaskId = null
+                    },
+                    createTaskCategory = requestedNewTaskCategory,
+                    onCreateTaskRequestConsumed = { requestedNewTaskCategory = null },
                     onAddReminder = { linkedTaskForReminder = it },
-                    onOpenCalendar = { showCalendar = true },
+                    onOpenCalendar = { selectedTab = TAB_CALENDAR },
+                    onOpenLibraryItem = { itemId ->
+                        requestedLibraryItemId = itemId
+                        miscScreen = MiscScreen.Library
+                    },
                     onStartFocus = { task ->
-                        pomodoroViewModel.prepareWorkTask(task)
-                        selectedTab = TAB_POMODORO
+                        if (pomodoroViewModel.prepareWorkTask(task)) selectedTab = TAB_POMODORO
                     }
                 )
-                TAB_POMODORO -> PomodoroScreen(viewModel = pomodoroViewModel)
-                TAB_ANALYTICS -> StatsScreen(viewModel = statsViewModel)
+                TAB_POMODORO -> PomodoroScreen(
+                    viewModel = pomodoroViewModel,
+                    onOpenTask = { taskId ->
+                        requestedTaskId = taskId
+                        selectedTab = TAB_TASKS
+                    },
+                    onCreateTask = { activityType ->
+                        requestedNewTaskCategory = activityType.name
+                        selectedTab = TAB_TASKS
+                    }
+                )
+                TAB_CALENDAR -> CalendarScreen(
+                    openEventId = navigationEventId,
+                    openOccurrenceStart = navigationEventStart,
+                    openRequestToken = navigationRequestToken,
+                    onOpenTask = { taskId ->
+                        requestedTaskId = taskId
+                        selectedTab = TAB_TASKS
+                    },
+                    onStartFocus = { taskId ->
+                        tasksState.generalTasks.firstOrNull { it.id == taskId }?.let { task ->
+                            if (pomodoroViewModel.prepareWorkTask(task)) selectedTab = TAB_POMODORO
+                        }
+                    }
+                )
                 TAB_SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
                 else -> HomeScreen(
                     viewModel = homeViewModel,
                     onOpenDiary = { showDiary = true },
                     onOpenTasks = { selectedTab = TAB_TASKS },
-                    onOpenStats = { selectedTab = TAB_ANALYTICS },
+                    onOpenStats = { showAnalytics = true },
                     onOpenMore = { showMiscSheet = true },
                     onOpenAssistant = { miscScreen = MiscScreen.Assistant },
+                    onOpenMathPractice = { showMathPractice = true },
+                    onOpenEnglishLearning = { showEnglishLearning = true },
                     openTaskCount = tasksState.activeMatrixTasks.size,
-                    upcomingTasks = tasksState.activeMatrixTasks
-                        .sortedWith(compareBy<com.personal.sleepalarm.data.db.entity.TaskEntity> { it.matrixQuadrant }.thenBy { it.dueAtMillis ?: Long.MAX_VALUE })
-                        .take(3),
+                    upcomingTasks = NextActionRanker.rank(tasksState.activeMatrixTasks).take(3),
                     onStartTaskFocus = { task ->
-                        pomodoroViewModel.prepareWorkTask(task)
-                        selectedTab = TAB_POMODORO
+                        if (pomodoroViewModel.prepareWorkTask(task)) selectedTab = TAB_POMODORO
                     }
                 )
             }

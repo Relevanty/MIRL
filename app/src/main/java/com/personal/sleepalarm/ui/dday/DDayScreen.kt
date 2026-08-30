@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.dday
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.DDayEntity
+import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.ui.components.CatText
 
 @Composable
@@ -87,7 +90,7 @@ fun DDayScreen(
             )
             CatText(
                 text = "=^..^=",
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.appAccents.urgent.color,
                 fontSize = 16.sp
             )
         }
@@ -98,7 +101,7 @@ fun DDayScreen(
         Text(
             text = stringResource(R.string.dday_new_event),
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.appAccents.urgent.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -195,7 +198,7 @@ fun DDayScreen(
                         FilterChip(
                             selected = selectedTaskId == task.id,
                             onClick = { selectedTaskId = task.id; selectedProjectId = null },
-                            label = { Text("Задача: ${task.title}", maxLines = 1) }
+                            label = { Text("Задача: ${task.primaryLabel()}", maxLines = 1) }
                         )
                     }
                 }
@@ -217,7 +220,7 @@ fun DDayScreen(
                     Text(
                         text = stringResource(R.string.dday_error_date),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.appAccents.warning.color
                     )
                 }
 
@@ -255,7 +258,7 @@ fun DDayScreen(
         Text(
             text = stringResource(R.string.dday_events_section),
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.secondary,
+            color = MaterialTheme.appAccents.other.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -275,7 +278,7 @@ fun DDayScreen(
                         lineHeight = 46.sp,
                         fontWeight = FontWeight.Bold
                     ),
-                    color = MaterialTheme.colorScheme.secondary
+                    color = MaterialTheme.appAccents.other.color
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -347,7 +350,7 @@ private fun DDayRow(
                 },
                 style = MaterialTheme.typography.titleMedium,
                 color = if (days in 0..30) {
-                    MaterialTheme.colorScheme.primary
+                    MaterialTheme.appAccents.warning.color
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 }
@@ -357,7 +360,7 @@ private fun DDayRow(
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = stringResource(R.string.dday_delete),
-                    tint = MaterialTheme.colorScheme.error
+                    tint = MaterialTheme.appAccents.urgent.color
                 )
             }
         }
@@ -378,14 +381,14 @@ private fun DDayRow(
                     }
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (plan.isOnTrack) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.error
+                color = if (plan.isOnTrack) MaterialTheme.appAccents.success.color
+                else MaterialTheme.appAccents.urgent.color
             )
             Text(
                 text = if (plan.isOnTrack) "Темп достаточный" else "Нужно увеличить темп",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (plan.isOnTrack) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.error
+                color = if (plan.isOnTrack) MaterialTheme.appAccents.success.color
+                else MaterialTheme.appAccents.urgent.color
             )
         }
     }

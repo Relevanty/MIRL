@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.library
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -21,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
@@ -58,6 +59,12 @@ fun LibraryGraphScreen(
 
     val edgeColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     val labelColor = MaterialTheme.colorScheme.onBackground
+    val bookColor = MaterialTheme.appAccents.study.color
+    val bookHighlight = MaterialTheme.appAccents.study.onColor
+    val movieColor = MaterialTheme.appAccents.other.color
+    val movieHighlight = MaterialTheme.appAccents.other.onColor
+    val musicColor = MaterialTheme.appAccents.calm.color
+    val musicHighlight = MaterialTheme.appAccents.calm.onColor
 
     Box(
         modifier = modifier
@@ -124,7 +131,11 @@ fun LibraryGraphScreen(
             state.nodes.forEach { node ->
                 val p = pos[node.id] ?: return@forEach
                 val c = center + p
-                val color = colorFor(node.type)
+                val (color, highlight) = when (node.type) {
+                    LibraryItemType.BOOK -> bookColor to bookHighlight
+                    LibraryItemType.MOVIE -> movieColor to movieHighlight
+                    LibraryItemType.MUSIC -> musicColor to musicHighlight
+                }
 
                 drawCircle(
                     color = color,
@@ -132,7 +143,7 @@ fun LibraryGraphScreen(
                     center = c
                 )
                 drawCircle(
-                    color = Color.White.copy(alpha = 0.25f),
+                    color = highlight.copy(alpha = 0.20f),
                     radius = LibraryGraphViewModel.NODE_RADIUS - 6f,
                     center = c
                 )
@@ -181,10 +192,4 @@ fun LibraryGraphScreen(
             )
         }
     }
-}
-
-private fun colorFor(type: LibraryItemType): Color = when (type) {
-    LibraryItemType.BOOK -> Color(0xFF63D8C2)   // teal
-    LibraryItemType.MOVIE -> Color(0xFFFFB86B) // amber
-    LibraryItemType.MUSIC -> Color(0xFF7FB3FF) // blue
 }

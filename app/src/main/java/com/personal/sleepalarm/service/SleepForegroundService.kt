@@ -14,9 +14,19 @@ import com.personal.sleepalarm.alarm.AlarmScheduler
 import com.personal.sleepalarm.alarm.PendingIntentFactory
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
+import com.personal.sleepalarm.data.db.entity.CueEventEntity
+import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
+import com.personal.sleepalarm.domain.automation.isAutomationArmed
+import com.personal.sleepalarm.domain.automation.isAutomationPausedForFocus
+import com.personal.sleepalarm.domain.automation.isAutomaticSleepSession
+import com.personal.sleepalarm.domain.automation.AUTOMATION_WINDOW_EXPIRED_SOURCE
+import com.personal.sleepalarm.domain.automation.AUTOMATION_DETECTED_SOURCE
+import com.personal.sleepalarm.domain.automation.SleepAutomationWindow
+import com.personal.sleepalarm.domain.calculator.CueScheduleCalculator
 import com.personal.sleepalarm.domain.model.DismissType
+import com.personal.sleepalarm.domain.model.SleepWindow
 import com.personal.sleepalarm.service.audio.AlarmSoundPlayer
 import com.personal.sleepalarm.service.audio.AlarmVibrator
 import com.personal.sleepalarm.service.audio.CueSoundPlayer
@@ -67,6 +77,8 @@ class SleepForegroundService : Service() {
     private lateinit var alarmVibrator: AlarmVibrator
 
     private val audioMutex = Mutex()
+    /** Serializes detection correction with a user-requested false-positive rollback. */
+    private val onsetMutationMutex = Mutex()
 
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -74,11 +86,13 @@ class SleepForegroundService : Service() {
     private var sessionJob: Job? = null
     private var profileJob: Job? = null
     private var alarmStartJob: Job? = null
+    private var sensorExpiryJob: Job? = null
 
     private var alarmTriggeredForCurrentSession = false
 
     // === ДОБАВЛЕНО: F9 — автоопределение засыпания ===
     private var sensorTracker: SleepSensorTracker? = null
+    private var sensorTrackerGeneration = 0L
 
     /** Уже зафиксировали засыпание в этой сессии (или оно уже есть в БД). */
     private var detectedOnsetHandled = false
@@ -152,6 +166,98 @@ class SleepForegroundService : Service() {
                 return START_NOT_STICKY
             }
 
+            ACTION_REARM_ONSET -> {
+                val sessionId = intent.getIntExtra(IntentExtras.EXTRA_SESSION_ID, -1)
+                if (sessionId < 0) {
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+
+                // A reset can be requested after Android recreated the app process while
+                // Room still contains an active session. In that case this action is the
+                // first service start and must satisfy the foreground-service deadline.
+                val bootstrappingRuntime = activeSessionId == null
+                if (bootstrappingRuntime) {
+                    startForegroundCompat(notificationBuilder.buildPlaceholderNotification())
+                }
+
+                serviceScope.launch {
+                    onsetMutationMutex.withLock {
+                        val requested = withContext(Dispatchers.IO) {
+                            sessionRepository.getSession(sessionId)
+                        }
+                        val fresh = if (requested?.isActive == true) {
+                            requested
+                        } else if (bootstrappingRuntime) {
+                            // A redelivered reset intent may belong to a session that was
+                            // replaced before process death. Recover the actual active one.
+                            withContext(Dispatchers.IO) { sessionRepository.getActiveSession() }
+                        } else {
+                            null
+                        }
+                        if (fresh?.isActive != true) {
+                            // A redelivered/stale reset for an old session must never stop
+                            // detection for the currently running one.
+                            if (bootstrappingRuntime && activeSessionId == null) cleanupAndStop()
+                            return@withLock
+                        }
+
+                        val previousSessionId = activeSessionId
+                        if (previousSessionId != null && previousSessionId != sessionId) {
+                            sessionJob?.cancel()
+                            profileJob?.cancel()
+                            alarmStartJob?.cancel()
+                            stopSensorTracker()
+                            alarmSoundPlayer.stop()
+                            alarmVibrator.cancel()
+                            alarmTriggeredForCurrentSession = false
+                        }
+                        activeSessionId = fresh.id
+                        acquireWakeLockIfNeeded()
+
+                        val isRequestedSession = fresh.id == sessionId
+                        if (isRequestedSession && fresh.detectedSleepOnsetTime == null) {
+                            detectedOnsetHandled = false
+                            wakeCorrected = false
+                            stopSensorTracker()
+
+                            val profile = withContext(Dispatchers.IO) {
+                                profileRepository.getProfile()
+                            }
+                            // This final reschedule wins over any correction coroutine that
+                            // started just before the user rejected the detection.
+                            alarmScheduler.rescheduleAllForSession(fresh)
+                            manageSensorTracker(
+                                sessionId = sessionId,
+                                autoDetectEnabled = profile.autoDetectOnsetEnabled,
+                                autoCorrectEnabled = profile.autoCorrectWakeEnabled,
+                                autoCorrectMinConfidence = profile.autoCorrectMinConfidencePercent,
+                                autoCorrectMaxShiftMinutes = profile.autoCorrectMaxShiftMinutes,
+                                hardWakeHour = profile.preferredWakeHour,
+                                hardWakeMinute = profile.preferredWakeMinute
+                            )
+                        } else if (bootstrappingRuntime) {
+                            // ACTION_REARM_ONSET can be redelivered after a later successful
+                            // detection (or for an older session). Restore the real active
+                            // session runtime, but do not erase its current state.
+                            detectedOnsetHandled = fresh.detectedSleepOnsetTime != null
+                            wakeCorrected = fresh.detectedSleepOnsetTime != null
+                            stopSensorTracker()
+                            alarmScheduler.rescheduleAllForSession(fresh)
+                        }
+
+                        if (sessionJob?.isActive != true || previousSessionId != fresh.id) {
+                            alarmTriggeredForCurrentSession = false
+                            startSessionLoop(fresh.id)
+                        }
+                        if (profileJob?.isActive != true || previousSessionId != fresh.id) {
+                            observeProfileChanges(fresh.id)
+                        }
+                    }
+                }
+                return START_REDELIVER_INTENT
+            }
+
             ACTION_PULSE_ALARM_VIBRATION -> {
                 alarmVibrator.start(VibrationPattern.REPEAT_BURST)
                 return START_NOT_STICKY
@@ -203,8 +309,10 @@ class SleepForegroundService : Service() {
             ?.takeIf { it > 0 }
         val firstCueTimeFromIntent = intent?.getLongExtra(EXTRA_FIRST_CUE_TIME, -1L)
             ?.takeIf { it > 0 }
+        val showStartConfirmation = intent?.getBooleanExtra(EXTRA_SHOW_START_CONFIRMATION, true)
+            ?: true
 
-        val initialNotification = if (wakeTimeFromIntent != null) {
+        val initialNotification = if (wakeTimeFromIntent != null && showStartConfirmation) {
             notificationBuilder.buildStartConfirmationNotification(
                 wakeTime = wakeTimeFromIntent,
                 firstCueTime = firstCueTimeFromIntent
@@ -216,7 +324,7 @@ class SleepForegroundService : Service() {
         startForegroundCompat(initialNotification)
 
         // Всплывающее heads-up подтверждение установки будильника.
-        if (wakeTimeFromIntent != null) {
+        if (wakeTimeFromIntent != null && showStartConfirmation) {
             val setConfirmation = notificationBuilder.buildAlarmSetNotification(
                 wakeTime = wakeTimeFromIntent,
                 firstCueTime = firstCueTimeFromIntent
@@ -263,6 +371,12 @@ class SleepForegroundService : Service() {
 
                 if (session == null || !session.isActive) {
                     Log.i(TAG, "Session is null or inactive, stopping service")
+                    cleanupAndStop()
+                    break
+                }
+
+                if (session.isAutomationPausedForFocus() && !alarmTriggeredForCurrentSession) {
+                    Log.i(TAG, "Automatic detection is paused by focus; stopping sensor runtime")
                     cleanupAndStop()
                     break
                 }
@@ -556,6 +670,10 @@ class SleepForegroundService : Service() {
             return
         }
 
+        // Пока автоматизация лишь ожидает засыпания, cues принципиально
+        // выключены. Они будут построены от фактического onset.
+        if (session.isAutomationArmed() || session.isAutomationPausedForFocus()) return
+
         if (session.cuesEnabled == cuesEnabled) {
             return
         }
@@ -630,11 +748,14 @@ class SleepForegroundService : Service() {
         }
 
         val now = System.currentTimeMillis()
-        val withinWindow = (now - session.bedTimePlanned) < MAX_DETECT_WINDOW_MS
+        val withinWindow = session.isAutomationArmed() ||
+                (now - session.bedTimePlanned) < MAX_DETECT_WINDOW_MS
 
         val shouldRun = autoDetectEnabled &&
                 session.isActive &&
                 !detectedOnsetHandled &&
+                session.detectedOnsetSource != AUTOMATION_WINDOW_EXPIRED_SOURCE &&
+                !session.isAutomationPausedForFocus() &&
                 withinWindow
 
         if (shouldRun && sensorTracker == null) {
@@ -659,41 +780,70 @@ class SleepForegroundService : Service() {
         hardWakeHour: Int,
         hardWakeMinute: Int
     ) {
+        val automationArmed = session.isAutomationArmed()
+        if (automationArmed && !scheduleAutomationExpiry(session)) return
         val tracker = SleepSensorTracker(applicationContext)
+        val trackerGeneration = ++sensorTrackerGeneration
         sensorTracker = tracker
 
         val expectedLatency = withContext(Dispatchers.IO) {
             sessionRepository.getTypicalConfirmedOnsetLatencyMinutes()
         }
-        tracker.start(session.bedTimePlanned, expectedLatency) { onsetMs, latencyMin, confidencePercent ->
+        tracker.start(session.bedTimePlanned, expectedLatency) onDetected@{ onsetMs, latencyMin, confidencePercent ->
+            if (trackerGeneration != sensorTrackerGeneration || sensorTracker !== tracker) {
+                return@onDetected
+            }
             // onDetected приходит на main-потоке (слушатель без Handler).
             // Переключаемся на IO для записи в БД.
             serviceScope.launch(Dispatchers.IO) {
-                runCatching {
+                val persisted = runCatching {
                     sessionRepository.updateDetectedOnset(
                         sessionId = session.id,
                         onsetTime = onsetMs,
                         latencyMinutes = latencyMin,
                         confidencePercent = confidencePercent,
-                        source = "PHONE_CONTEXT_HEURISTIC",
+                        source = if (automationArmed) {
+                            AUTOMATION_DETECTED_SOURCE
+                        } else {
+                            "PHONE_CONTEXT_HEURISTIC"
+                        },
                         uncertaintyMinutes = ((100 - confidencePercent) / 3).coerceIn(5, 20)
                     )
                 }.onFailure {
                     Log.e(TAG, "Failed to persist detected onset", it)
-                }
+                }.getOrDefault(false)
 
-                detectedOnsetHandled = true
-                stopSensorTracker()
+                if (!persisted) return@launch
+                val stillCurrent = withContext(Dispatchers.Main.immediate) {
+                    if (trackerGeneration != sensorTrackerGeneration || sensorTracker !== tracker) {
+                        false
+                    } else {
+                        detectedOnsetHandled = true
+                        stopSensorTracker()
+                        true
+                    }
+                }
+                if (!stillCurrent) return@launch
 
                 // Опциональная автокоррекция будильника — только с явного согласия
                 // и только один раз за сессию.
-                if (autoCorrectEnabled && !wakeCorrected && confidencePercent >= autoCorrectMinConfidence) {
+                if (automationArmed && !wakeCorrected) {
                     correctWakeByDetectedOnset(
                         session.id,
                         onsetMs,
                         autoCorrectMaxShiftMinutes,
                         hardWakeHour,
-                        hardWakeMinute
+                        hardWakeMinute,
+                        shiftWake = confidencePercent >= autoCorrectMinConfidence
+                    )
+                } else if (autoCorrectEnabled && !wakeCorrected && confidencePercent >= autoCorrectMinConfidence) {
+                    correctWakeByDetectedOnset(
+                        session.id,
+                        onsetMs,
+                        autoCorrectMaxShiftMinutes,
+                        hardWakeHour,
+                        hardWakeMinute,
+                        shiftWake = true
                     )
                 } else if (autoCorrectEnabled && confidencePercent < autoCorrectMinConfidence) {
                     Log.i(TAG, "Auto-correct skipped: confidence=$confidencePercent < $autoCorrectMinConfidence")
@@ -716,8 +866,9 @@ class SleepForegroundService : Service() {
         onsetMs: Long,
         maxShiftMinutes: Int,
         hardWakeHour: Int,
-        hardWakeMinute: Int
-    ) {
+        hardWakeMinute: Int,
+        shiftWake: Boolean
+    ): Unit = onsetMutationMutex.withLock {
         val fresh = sessionRepository.getSession(sessionId) ?: return
         if (!fresh.isActive) return
 
@@ -735,7 +886,13 @@ class SleepForegroundService : Service() {
             LocalTime.of(hardWakeHour.coerceIn(0, 23), hardWakeMinute.coerceIn(0, 59))
         ).atZone(zone)
         if (hardWake.toInstant().toEpochMilli() <= fresh.bedTimePlanned) hardWake = hardWake.plusDays(1)
-        val newWake = minOf(boundedByShift, hardWake.toInstant().toEpochMilli())
+        val safetyWake = if (fresh.isAutomaticSleepSession()) {
+            fresh.automationSafetyWakeTime ?: hardWake.toInstant().toEpochMilli()
+        } else {
+            hardWake.toInstant().toEpochMilli()
+        }
+        val correctedWake = minOf(boundedByShift, safetyWake)
+        val newWake = if (shiftWake) correctedWake else fresh.estimatedWakeTime
 
         // Не двигаем будильник в прошлое.
         if (newWake <= System.currentTimeMillis()) {
@@ -743,12 +900,44 @@ class SleepForegroundService : Service() {
             return
         }
 
+        val profile = profileRepository.getProfile()
+        val onset = Instant.ofEpochMilli(onsetMs).atZone(zone)
+        val wake = Instant.ofEpochMilli(newWake).atZone(zone)
+        val cueSchedule = if (profile.cuesEnabled) {
+            CueScheduleCalculator.buildCueSchedule(
+                window = SleepWindow(onset, wake),
+                cueScheduleMode = profile.cueScheduleMode,
+                cycleLengthMinutes = fresh.cycleLengthMinutes,
+                cycles = fresh.cyclesPlanned,
+                firstCueDelayMinutes = profile.firstCueDelayMinutes,
+                cueIntervalMinutes = profile.cueIntervalMinutes,
+                remCueOffsetPercent = profile.remCueOffsetPercent,
+                stopCuesOneCycleBeforeWake = true
+            )
+        } else null
+        val cueEntities = cueSchedule?.cues.orEmpty().map { cue ->
+            CueEventEntity(
+                sessionId = fresh.id,
+                cueIndex = cue.index,
+                scheduledTime = cue.time.toInstant().toEpochMilli()
+            )
+        }
         val updated = fresh.copy(
             estimatedSleepStartTime = onsetMs,
-            estimatedWakeTime = newWake
+            estimatedWakeTime = newWake,
+            cuesEnabled = profile.cuesEnabled,
+            cuesScheduledCount = cueEntities.size
         )
 
-        sessionRepository.updateSession(updated)
+        val applied = sessionRepository.replaceCuesIfDetectedOnsetMatches(
+            session = updated,
+            cues = cueEntities,
+            expectedOnsetMillis = onsetMs
+        )
+        if (!applied) {
+            Log.i(TAG, "Auto-correct discarded: onset was rejected for sessionId=$sessionId")
+            return
+        }
         alarmScheduler.rescheduleAllForSession(updated)
         wakeCorrected = true
 
@@ -756,8 +945,49 @@ class SleepForegroundService : Service() {
     }
 
     private fun stopSensorTracker() {
+        sensorTrackerGeneration += 1L
+        sensorExpiryJob?.cancel()
+        sensorExpiryJob = null
         sensorTracker?.stop()
         sensorTracker = null
+    }
+
+    /** Ограничивает пассивное наблюдение выбранным пользователем окном. */
+    private suspend fun scheduleAutomationExpiry(session: SleepSessionEntity): Boolean {
+        val settings = SleepAutomationPreference(applicationContext).get()
+        val bedTime = Instant.ofEpochMilli(session.bedTimePlanned)
+            .atZone(ZoneId.systemDefault())
+        val window = SleepAutomationWindow.containing(
+            bedTime,
+            settings.windowStartMinutes,
+            settings.windowEndMinutes
+        ) ?: return expireAutomationWaiting(session)
+        val remaining = window.endExclusive.toInstant().toEpochMilli() - System.currentTimeMillis()
+        if (remaining <= 0L) return expireAutomationWaiting(session)
+
+        sensorExpiryJob?.cancel()
+        sensorExpiryJob = serviceScope.launch {
+            delay(remaining)
+            withContext(Dispatchers.IO) {
+                val fresh = sessionRepository.getSession(session.id)
+                if (fresh?.isAutomationArmed() == true) {
+                    sessionRepository.updateSession(
+                        fresh.copy(detectedOnsetSource = AUTOMATION_WINDOW_EXPIRED_SOURCE)
+                    )
+                }
+            }
+            detectedOnsetHandled = true
+            stopSensorTracker()
+        }
+        return true
+    }
+
+    private suspend fun expireAutomationWaiting(session: SleepSessionEntity): Boolean {
+        sessionRepository.updateSession(
+            session.copy(detectedOnsetSource = AUTOMATION_WINDOW_EXPIRED_SOURCE)
+        )
+        detectedOnsetHandled = true
+        return false
     }
 
     // =================================================================
@@ -782,12 +1012,11 @@ class SleepForegroundService : Service() {
                 )
                 if (!claimed) return@withLock false
 
-                val volumeFraction = session.cueVolumePercent / 100f
                 val cueRingtone = session.cueRingtoneUri
                 val played = cueRingtone != null && CueSoundPlayer.play(
                     context = applicationContext,
                     uriString = cueRingtone,
-                    volumeFraction = volumeFraction,
+                    volumePercent = session.cueVolumePercent,
                     maxPlayMs = MAX_CUE_PLAY_MS
                 )
                 sessionRepository.completeCuePlayback(
@@ -835,6 +1064,8 @@ class SleepForegroundService : Service() {
         }
 
         SleepNotificationBuilder.cancelSleepNotification(applicationContext)
+        SleepNotificationBuilder.cancelAlarmNotification(applicationContext)
+        SleepNotificationBuilder.cancelTransientNotifications(applicationContext)
 
         stopSelf()
     }
@@ -912,6 +1143,7 @@ class SleepForegroundService : Service() {
         const val ACTION_STOP_ONLY = "com.personal.sleepalarm.action.STOP_ONLY"
         const val ACTION_TRIGGER_ALARM = "com.personal.sleepalarm.action.TRIGGER_ALARM"
         const val ACTION_SET_ALARM_VOLUME = "com.personal.sleepalarm.action.SET_ALARM_VOLUME"
+        const val ACTION_REARM_ONSET = "com.personal.sleepalarm.action.REARM_ONSET"
         const val ACTION_PULSE_ALARM_VIBRATION =
             "com.personal.sleepalarm.action.PULSE_ALARM_VIBRATION"
         const val ACTION_STOP_ALARM_VIBRATION =
@@ -938,18 +1170,21 @@ class SleepForegroundService : Service() {
         // ДОБАВЛЕНО: ключи для передачи данных сессии прямо в сервис.
         const val EXTRA_WAKE_TIME = "extra_wake_time"
         const val EXTRA_FIRST_CUE_TIME = "extra_first_cue_time"
+        const val EXTRA_SHOW_START_CONFIRMATION = "extra_show_start_confirmation"
         private const val EXTRA_ALARM_VOLUME = "extra_alarm_volume"
 
         fun start(
             context: Context,
             sessionId: Int,
             wakeTime: Long,
-            firstCueTime: Long?
+            firstCueTime: Long?,
+            showStartConfirmation: Boolean = true
         ) {
             val intent = Intent(context, SleepForegroundService::class.java).apply {
                 action = ACTION_START
                 putExtra(IntentExtras.EXTRA_SESSION_ID, sessionId)
                 putExtra(EXTRA_WAKE_TIME, wakeTime)
+                putExtra(EXTRA_SHOW_START_CONFIRMATION, showStartConfirmation)
                 firstCueTime?.let { putExtra(EXTRA_FIRST_CUE_TIME, it) }
             }
 
@@ -977,6 +1212,15 @@ class SleepForegroundService : Service() {
                 putExtra(IntentExtras.EXTRA_SESSION_ID, sessionId)
             }
             context.startForegroundService(intent)
+        }
+
+        fun rearmOnset(context: Context, sessionId: Int) {
+            context.startForegroundService(
+                Intent(context, SleepForegroundService::class.java).apply {
+                    action = ACTION_REARM_ONSET
+                    putExtra(IntentExtras.EXTRA_SESSION_ID, sessionId)
+                }
+            )
         }
 
         fun setAlarmVolume(context: Context, fraction: Float) {

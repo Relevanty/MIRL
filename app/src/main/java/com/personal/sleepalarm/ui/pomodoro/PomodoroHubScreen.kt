@@ -1,5 +1,9 @@
 package com.personal.sleepalarm.ui.pomodoro
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -62,35 +66,65 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.OtherActivityEntity
+import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.SubjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.FocusProtocolPhase
+import com.personal.sleepalarm.domain.model.focusActivityType
+import com.personal.sleepalarm.domain.model.focusItemTaskId
+import com.personal.sleepalarm.domain.model.taskFocusItemId
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.model.nextFocusDurationMinutes
+import com.personal.sleepalarm.domain.model.remainingWorkMinutesOrNull
+import com.personal.sleepalarm.domain.calculator.DailyTaskFocusCalculator
+import com.personal.sleepalarm.domain.calculator.DailyTaskFocusProgress
+import com.personal.sleepalarm.domain.calculator.liveTaskFocusIntervals
+import com.personal.sleepalarm.domain.focusaudio.FocusSoundCatalog
+import com.personal.sleepalarm.domain.focusaudio.FocusSoundKind
+import com.personal.sleepalarm.domain.focusaudio.FocusSoundSelection
+import com.personal.sleepalarm.domain.focusaudio.FocusSoundscapeSelection
+import com.personal.sleepalarm.service.audio.FocusSoundPlaybackStatus
+import com.personal.sleepalarm.service.audio.soundscapeSelection
 import com.personal.sleepalarm.ui.focusprotocol.EnergyPatternCard
 import com.personal.sleepalarm.ui.focusprotocol.CompletedFocusBlocksCard
 import com.personal.sleepalarm.ui.focusprotocol.FocusProtocolActiveScreen
 import com.personal.sleepalarm.ui.focusprotocol.FocusProtocolSetupSheet
 import com.personal.sleepalarm.ui.focusprotocol.FocusProtocolTarget
 import com.personal.sleepalarm.ui.focusprotocol.FocusProtocolViewModel
+import com.personal.sleepalarm.ui.focusprotocol.FocusSoundDraft
 import com.personal.sleepalarm.ui.focusprotocol.formatCompactDuration
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import com.personal.sleepalarm.ui.activity.ManualActivitySheet
+import com.personal.sleepalarm.ui.components.DailyFocusProgressCard
+import com.personal.sleepalarm.ui.focusaudio.FocusSoundLayer as FocusSoundUiLayer
+import com.personal.sleepalarm.ui.focusaudio.FocusSoundscapePickerSheet
+import com.personal.sleepalarm.ui.focusaudio.FocusSoundscapeUiState
+import com.personal.sleepalarm.ui.focusaudio.rememberDefaultFocusSoundCategories
+import com.personal.sleepalarm.ui.focusaudio.toUiItems
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private data class HubActivityItem(
     val id: Int,
     val name: String,
-    val color: Int
+    /** Persisted compatibility token; resolve through pomodoroColorForToken before drawing. */
+    val color: Int,
+    /** Canonical task id. Null means a standalone focus category item. */
+    val taskId: Int? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PomodoroScreen(
     modifier: Modifier = Modifier,
-    viewModel: PomodoroViewModel = viewModel()
+    viewModel: PomodoroViewModel = viewModel(),
+    onOpenTask: (Int) -> Unit = {},
+    onCreateTask: (FocusActivityType) -> Unit = {}
 ) {
     val protocolViewModel: FocusProtocolViewModel = viewModel()
     val activeProtocol by protocolViewModel.activeSession.collectAsStateWithLifecycle()
@@ -101,53 +135,421 @@ fun PomodoroScreen(
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
     val workTasks by viewModel.workTasks.collectAsStateWithLifecycle()
     val otherActivities by viewModel.otherActivities.collectAsStateWithLifecycle()
+    val activityRecords by viewModel.activityRecords.collectAsStateWithLifecycle()
+    val progressNowMillis by viewModel.progressNowMillis.collectAsStateWithLifecycle()
     val currentDaySessions by viewModel.currentDayFocusSessions.collectAsStateWithLifecycle()
     val currentDayRange by viewModel.currentDayRange.collectAsStateWithLifecycle()
     val activityType by viewModel.activityType.collectAsStateWithLifecycle()
     val selectedId by viewModel.selectedItemId.collectAsStateWithLifecycle()
     val fallbackFocusDuration by viewModel.focusDuration.collectAsStateWithLifecycle()
     val fallbackBreakDuration by viewModel.breakDuration.collectAsStateWithLifecycle()
-    val notificationSoundUri by viewModel.notificationSoundUri.collectAsStateWithLifecycle()
+    val focusSoundSettings by protocolViewModel.focusSoundSettings.collectAsStateWithLifecycle()
+    val focusSoundPlayback by protocolViewModel.soundscapePlayback.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val soundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+    var focusSoundDraft by remember { mutableStateOf(FocusSoundDraft()) }
+    var showFocusSoundPicker by remember { mutableStateOf(false) }
+    var focusSoundCategory by remember { mutableStateOf(FocusSoundscapeUiState.CATEGORY_ALL) }
+    var focusSoundEditingLayer by remember { mutableStateOf(FocusSoundUiLayer.PRIMARY) }
+    var focusSoundMixEnabled by remember { mutableStateOf(false) }
+    var focusSoundTaskId by remember { mutableStateOf<Int?>(null) }
+    var focusSoundDraftLoading by remember { mutableStateOf(false) }
+    var loadedSoundSessionId by remember { mutableStateOf<Int?>(null) }
+    var customSoundNotice by remember { mutableStateOf<String?>(null) }
+    var customSoundImporting by remember { mutableStateOf(false) }
+    val languageTag = Locale.getDefault().toLanguageTag()
+    val focusSoundCategories = rememberDefaultFocusSoundCategories()
+    val focusSoundItems = remember(
+        focusSoundSettings,
+        focusSoundDraft.selection,
+        languageTag,
+        focusSoundEditingLayer
+    ) {
+        focusSoundSettings.toUiItems(focusSoundDraft.selection, languageTag).map { item ->
+            if (focusSoundEditingLayer == FocusSoundUiLayer.SECONDARY) {
+                item.copy(isAvailable = item.categoryId == "noise")
+            } else {
+                item
+            }
         }
-        viewModel.setNotificationSound(uri)
+    }
+    val focusSoundUiState = FocusSoundscapeUiState(
+        items = focusSoundItems,
+        categories = focusSoundCategories,
+        selectedCategoryId = focusSoundCategory,
+        recentItemIds = focusSoundSettings.recentSelections.map { it.historyKey() },
+        primaryItemId = focusSoundDraft.selection.primary.historyKey(),
+        primaryVolume = focusSoundDraft.primaryVolumePercent / 100f,
+        mixEnabled = focusSoundMixEnabled,
+        secondaryItemId = focusSoundDraft.selection.secondaryLayerId,
+        secondaryVolume = focusSoundDraft.selection.secondaryVolumePercent / 100f,
+        editingLayer = focusSoundEditingLayer,
+        canMix = focusSoundDraft.selection.primary.entry().kind in setOf(
+            FocusSoundKind.AMBIENCE,
+            FocusSoundKind.MELODY,
+            FocusSoundKind.CUSTOM_FILE
+        ),
+        isPlaying = focusSoundPlayback.status == FocusSoundPlaybackStatus.PLAYING ||
+            focusSoundPlayback.status == FocusSoundPlaybackStatus.LOADING,
+        isImportingCustomSounds = customSoundImporting,
+        noticeMessage = customSoundNotice,
+        playbackErrorMessage = focusSoundPlayback.errorMessage
+    )
+
+    val applyFocusSoundDraft: (FocusSoundDraft, Boolean) -> Unit = { next, preview ->
+        val safe = next.copy(selection = next.selection.normalized())
+        focusSoundDraft = safe
+        activeProtocol?.let { session ->
+            protocolViewModel.updateActiveSoundscape(
+                sessionId = session.id,
+                selection = safe.selection,
+                primaryVolumePercent = safe.primaryVolumePercent,
+                taskId = activeTaskId(session),
+                rememberForTask = safe.rememberForTask,
+                previewIfInactive = preview
+            )
+        } ?: if (preview) {
+            protocolViewModel.previewSoundscape(
+                safe.selection,
+                safe.primaryVolumePercent
+            )
+        } else Unit
     }
 
-    val studyItems = remember(subjects) {
-        subjects.map { HubActivityItem(it.id, it.name, it.color) }
+    val customSoundLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            customSoundNotice = null
+            customSoundImporting = true
+            val documents = uris.distinctBy(Uri::toString).map { uri ->
+                val persistablePermissionTaken = runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                    true
+                }.getOrDefault(false)
+                uri to persistablePermissionTaken
+            }
+            protocolViewModel.importCustomSounds(documents) { imported, failedCount ->
+                customSoundImporting = false
+                customSoundNotice = context.getString(
+                    R.string.focus_sound_import_result,
+                    imported.size,
+                    failedCount
+                )
+                focusSoundCategory = "custom"
+                if (imported.size == 1) {
+                    applyFocusSoundDraft(
+                        focusSoundDraft.copy(
+                            selection = focusSoundDraft.selection.copy(primary = imported.first())
+                        ),
+                        true
+                    )
+                }
+            }
+        }
     }
-    val workItems = remember(workTasks) {
-        workTasks.filterNot { it.isDone }.map {
-            HubActivityItem(
-                it.id,
-                it.title.ifBlank { it.description.ifBlank { it.nextAction.ifBlank { "Задача #${it.id}" } } },
-                0xFF5C6BC0.toInt()
+
+    LaunchedEffect(
+        activeProtocol?.id,
+        activeProtocol?.activityType,
+        activeProtocol?.itemId
+    ) {
+        activeProtocol?.let { session ->
+            val taskId = activeTaskId(session)
+            val sessionSelection = session.soundscapeSelection()
+            val preserveSetupChoice = loadedSoundSessionId != session.id &&
+                taskId != null && focusSoundTaskId == taskId
+            val setupRememberForTask = focusSoundDraft.rememberForTask
+            loadedSoundSessionId = session.id
+            focusSoundTaskId = taskId
+            protocolViewModel.loadSoundDraft(
+                taskId = taskId,
+                fallbackSelection = sessionSelection,
+                fallbackVolumePercent = session.soundscapeVolume
+            ) { loaded ->
+                val current = activeProtocol
+                if (
+                    current?.id == session.id &&
+                    current.activityType == session.activityType &&
+                    current.itemId == session.itemId
+                ) {
+                    val effective = if (preserveSetupChoice) {
+                        FocusSoundDraft(
+                            selection = sessionSelection,
+                            primaryVolumePercent = session.soundscapeVolume,
+                            rememberForTask = setupRememberForTask
+                        )
+                    } else {
+                        loaded
+                    }
+                    focusSoundDraft = effective
+                    focusSoundMixEnabled = effective.selection.secondaryLayerId != null
+                    if (
+                        !preserveSetupChoice &&
+                        effective.rememberForTask &&
+                        effective.selection != sessionSelection
+                    ) {
+                        protocolViewModel.updateActiveSoundscape(
+                            sessionId = session.id,
+                            selection = effective.selection,
+                            primaryVolumePercent = effective.primaryVolumePercent,
+                            taskId = taskId,
+                            rememberForTask = true
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val selectFocusSound: (String, FocusSoundUiLayer) -> Unit = { soundId, layer ->
+        val item = focusSoundItems.firstOrNull { it.id == soundId }
+        val entry = item?.catalogId?.let(FocusSoundCatalog::find)
+        when {
+            item == null || entry == null || !item.isAvailable -> Unit
+            layer == FocusSoundUiLayer.PRIMARY -> {
+                val primarySelection = if (
+                    entry.kind == FocusSoundKind.CUSTOM_FILE && item.customFile != null
+                ) {
+                    FocusSoundSelection.custom(item.customFile)
+                } else {
+                    FocusSoundSelection(entry.id)
+                }
+                val nextSelection = focusSoundDraft.selection.copy(
+                    primary = primarySelection
+                ).normalized()
+                focusSoundMixEnabled = nextSelection.secondaryLayerId != null
+                applyFocusSoundDraft(
+                    focusSoundDraft.copy(selection = nextSelection),
+                    true
+                )
+            }
+            entry.kind == FocusSoundKind.GENERATED_NOISE -> {
+                val nextSelection = focusSoundDraft.selection.copy(
+                    secondaryLayerId = entry.id
+                ).normalized()
+                focusSoundMixEnabled = nextSelection.secondaryLayerId != null
+                applyFocusSoundDraft(
+                    focusSoundDraft.copy(selection = nextSelection),
+                    true
+                )
+            }
+        }
+    }
+
+    val toggleFocusSoundPlayback: () -> Unit = {
+        val session = activeProtocol
+        if (session != null) {
+            protocolViewModel.toggleSoundscapePlayback(session)
+        } else if (
+            focusSoundPlayback.status == FocusSoundPlaybackStatus.PLAYING ||
+            focusSoundPlayback.status == FocusSoundPlaybackStatus.LOADING
+        ) {
+            protocolViewModel.stopSoundscapePreview()
+        } else {
+            protocolViewModel.previewSoundscape(
+                focusSoundDraft.selection,
+                focusSoundDraft.primaryVolumePercent
             )
         }
     }
-    val otherItems = remember(otherActivities) {
-        otherActivities.map { HubActivityItem(it.id, it.name, it.color) }
+
+    val soundPickerContent: @Composable () -> Unit = {
+        if (showFocusSoundPicker) {
+            FocusSoundscapePickerSheet(
+                state = focusSoundUiState,
+                onDismiss = {
+                    protocolViewModel.stopSoundscapePreview()
+                    activeProtocol?.let { session ->
+                        protocolViewModel.updateActiveSoundscape(
+                            sessionId = session.id,
+                            selection = focusSoundDraft.selection,
+                            primaryVolumePercent = focusSoundDraft.primaryVolumePercent,
+                            taskId = activeTaskId(session),
+                            rememberForTask = focusSoundDraft.rememberForTask
+                        )
+                    } ?: protocolViewModel.stopSoundscapePreview()
+                    showFocusSoundPicker = false
+                },
+                onCategorySelected = { focusSoundCategory = it },
+                onSoundSelected = selectFocusSound,
+                onToggleFavorite = protocolViewModel::toggleSoundFavorite,
+                onTogglePlayback = toggleFocusSoundPlayback,
+                onPrimaryVolumeChange = { fraction ->
+                    val percent = (fraction * 100f).toInt().coerceIn(0, 100)
+                    focusSoundDraft = focusSoundDraft.copy(primaryVolumePercent = percent)
+                    protocolViewModel.adjustSoundscapeVolumes(
+                        focusSoundDraft.selection,
+                        percent,
+                        focusSoundDraft.selection.secondaryVolumePercent
+                    )
+                },
+                onSecondaryVolumeChange = { fraction ->
+                    val percent = (fraction * 100f).toInt().coerceIn(0, 100)
+                    focusSoundDraft = focusSoundDraft.copy(
+                        selection = focusSoundDraft.selection.copy(
+                            secondaryVolumePercent = percent
+                        )
+                    )
+                    protocolViewModel.adjustSoundscapeVolumes(
+                        focusSoundDraft.selection,
+                        focusSoundDraft.primaryVolumePercent,
+                        percent
+                    )
+                },
+                onMixEnabledChange = { enabled ->
+                    if (!enabled || focusSoundUiState.canMix) {
+                        focusSoundMixEnabled = enabled
+                        if (enabled) {
+                            focusSoundEditingLayer = FocusSoundUiLayer.SECONDARY
+                            focusSoundCategory = "noise"
+                        } else {
+                            focusSoundEditingLayer = FocusSoundUiLayer.PRIMARY
+                            applyFocusSoundDraft(
+                                focusSoundDraft.copy(
+                                    selection = focusSoundDraft.selection.copy(
+                                        secondaryLayerId = null
+                                    )
+                                ),
+                                true
+                            )
+                        }
+                    }
+                },
+                onEditingLayerChange = { layer ->
+                    focusSoundEditingLayer = layer
+                    if (layer == FocusSoundUiLayer.SECONDARY) focusSoundCategory = "noise"
+                },
+                onAddCustomSound = {
+                    if (focusSoundEditingLayer == FocusSoundUiLayer.PRIMARY) {
+                        customSoundLauncher.launch(arrayOf("audio/*"))
+                    }
+                },
+                onRemoveCustomSound = { file ->
+                    protocolViewModel.removeCustomSound(file)
+                    customSoundNotice = context.getString(R.string.focus_sound_removed_from_library)
+                    if (focusSoundDraft.selection.primary.customFile?.uriString == file.uriString) {
+                        applyFocusSoundDraft(
+                            focusSoundDraft.copy(
+                                selection = focusSoundDraft.selection.copy(
+                                    primary = FocusSoundSelection.silence()
+                                )
+                            ),
+                            true
+                        )
+                    }
+                },
+                rememberForTask = focusSoundDraft.rememberForTask,
+                onRememberForTaskChange = {
+                    focusSoundDraft = focusSoundDraft.copy(rememberForTask = it)
+                },
+                showRememberForTask = focusSoundTaskId != null,
+                playDuringRecovery = focusSoundDraft.selection.playDuringRecovery,
+                onPlayDuringRecoveryChange = { enabled ->
+                    applyFocusSoundDraft(
+                        focusSoundDraft.copy(
+                            selection = focusSoundDraft.selection.copy(
+                                playDuringRecovery = enabled
+                            )
+                        ),
+                        false
+                    )
+                }
+            )
+        }
+    }
+    val liveFocusIntervals = remember(activeProtocol, progressNowMillis) {
+        activeProtocol?.liveTaskFocusIntervals(progressNowMillis).orEmpty()
+    }
+    val dailyProgressByTask = remember(
+        workTasks,
+        activityRecords,
+        progressNowMillis,
+        liveFocusIntervals
+    ) {
+        DailyTaskFocusCalculator.calculateForTasks(
+            tasks = workTasks,
+            records = activityRecords,
+            nowMillis = progressNowMillis,
+            zoneId = ZoneId.systemDefault(),
+            liveIntervals = liveFocusIntervals
+        )
+    }
+
+    val studyItems = remember(subjects, workTasks) {
+        subjects.map { HubActivityItem(it.id, it.name, it.color) } +
+            workTasks.filterNot { it.isDone }
+                .filter { it.focusActivityType() == FocusActivityType.STUDY }
+                .map {
+                    HubActivityItem(
+                        taskFocusItemId(it.id),
+                        it.primaryLabel(),
+                        STUDY_TASK_COLOR_TOKEN,
+                        taskId = it.id
+                    )
+                }
+    }
+    val workItems = remember(workTasks) {
+        workTasks.filterNot { it.isDone }
+            .filter { it.focusActivityType() == FocusActivityType.WORK }
+            .map {
+            HubActivityItem(
+                taskFocusItemId(it.id),
+                it.primaryLabel(),
+                WORK_TASK_COLOR_TOKEN,
+                taskId = it.id
+            )
+        }
+    }
+    val otherItems = remember(otherActivities, workTasks) {
+        otherActivities.map { HubActivityItem(it.id, it.name, it.color) } +
+            workTasks.filterNot { it.isDone }
+                .filter { it.focusActivityType() == FocusActivityType.OTHER }
+                .map {
+                    HubActivityItem(
+                        taskFocusItemId(it.id),
+                        it.primaryLabel(),
+                        OTHER_TASK_COLOR_TOKEN,
+                        taskId = it.id
+                    )
+                }
     }
     fun itemsFor(type: FocusActivityType): List<HubActivityItem> = when (type) {
         FocusActivityType.STUDY -> studyItems
         FocusActivityType.WORK -> workItems
         FocusActivityType.OTHER -> otherItems
     }
+    fun protocolTarget(item: HubActivityItem): FocusProtocolTarget {
+        val maximumFocusMinutes = item.taskId?.let { taskId ->
+            workTasks.firstOrNull { it.id == taskId }?.remainingWorkMinutesOrNull()
+        }
+        val task = item.taskId?.let { taskId -> workTasks.firstOrNull { it.id == taskId } }
+        val daily = item.taskId?.let(dailyProgressByTask::get)
+        return FocusProtocolTarget(
+            id = item.id,
+            name = item.name,
+            color = item.color,
+            maximumFocusMinutes = maximumFocusMinutes,
+            dailyProgress = daily,
+            boutMinutes = task?.estimatedMinutes,
+            isDailyRequired = task?.isDailyRequired == true
+        )
+    }
 
     activeProtocol?.let { session ->
-        val targets = itemsFor(session.activityType).map {
-            FocusProtocolTarget(it.id, it.name, it.color)
-        }
+        val targets = itemsFor(session.activityType)
+            .map(::protocolTarget)
+            .filter { it.maximumFocusMinutes != 0 }
         FocusProtocolActiveScreen(
             session = session,
             remainingMillis = protocolRemaining,
+            dailyProgress = activeTaskId(session)?.let(dailyProgressByTask::get),
+            boutElapsedMillis = currentBoutElapsedMillis(session, protocolRemaining),
+            dailyRequired = activeTaskId(session)?.let { id ->
+                workTasks.firstOrNull { it.id == id }?.isDailyRequired
+            } == true,
             availableTargets = targets,
             onSkipReset = { protocolViewModel.skipReset(session.id) },
             onStartFocus = { protocolViewModel.startFocus(session.id) },
@@ -169,21 +571,32 @@ fun PomodoroScreen(
             onFinishBlock = { protocolViewModel.finishBlock(session.id) },
             onCancel = { protocolViewModel.cancel(session.id, it) },
             onCompleteReview = { protocolViewModel.completeReview(session.id, it) },
+            soundscapeState = focusSoundUiState,
+            onOpenSoundscape = { showFocusSoundPicker = true },
+            onToggleSoundscape = toggleFocusSoundPlayback,
             modifier = modifier
         )
+        soundPickerContent()
         return
     }
 
     val activityItems = itemsFor(activityType)
     val selectedItem = activityItems.firstOrNull { it.id == selectedId }
+    val selectedTask = selectedItem?.taskId?.let { taskId -> workTasks.firstOrNull { it.id == taskId } }
+    val previousForSelected = latestProtocol?.takeIf {
+        it.activityType == activityType && it.itemId == selectedItem?.id
+    }
+    val suggestedFocusMinutes = selectedTask?.nextFocusDurationMinutes()
+        ?: previousForSelected?.focusDurationMinutes
+        ?: (fallbackFocusDuration / 60_000L).toInt()
     val (dayStart, dayEnd) = currentDayRange
     val totalsByItem = remember(currentDaySessions, activityType, currentDayRange) {
         currentDaySessions.asSequence()
             .filter { it.activityType == activityType }
             .mapNotNull { session ->
-                val itemId = when (activityType) {
+                val itemId = session.taskId?.let(::taskFocusItemId) ?: when (activityType) {
                     FocusActivityType.STUDY -> session.subjectId
-                    FocusActivityType.WORK -> session.taskId
+                    FocusActivityType.WORK -> null
                     FocusActivityType.OTHER -> session.otherActivityId
                 } ?: return@mapNotNull null
                 val actualEnd = session.startedAt + session.actualDurationMillis
@@ -198,6 +611,14 @@ fun PomodoroScreen(
     val cyclesToday = currentDaySessions.count {
         it.activityType == activityType && !it.isBreak && it.actualDurationMillis > 0L && it.recordSource == "TIMER"
     }
+    val selectedDailyProgress = selectedTask?.id?.let(dailyProgressByTask::get)
+    val displayTotalsByItem = remember(activityItems, totalsByItem, dailyProgressByTask) {
+        activityItems.associate { item ->
+            item.id to (item.taskId?.let { dailyProgressByTask[it]?.spentMillis }
+                ?: totalsByItem[item.id]
+                ?: 0L)
+        }
+    }
 
     LaunchedEffect(activityType, activityItems, selectedId) {
         if (activityItems.isNotEmpty() && activityItems.none { it.id == selectedId }) {
@@ -210,6 +631,8 @@ fun PomodoroScreen(
     var showManualEntry by remember { mutableStateOf(false) }
     var showEditor by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<HubActivityItem?>(null) }
+    var focusStartInProgress by remember { mutableStateOf(false) }
+    var focusStartRejected by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -248,17 +671,10 @@ fun PomodoroScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             HubQuickAction(
-                title = "Звук",
-                subtitle = if (notificationSoundUri == null) "системный" else "выбран",
-                onClick = { soundPicker.launch(arrayOf("audio/*")) },
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                modifier = Modifier.weight(1f)
-            )
-            HubQuickAction(
                 title = "Добавить",
                 subtitle = "время",
                 onClick = { showManualEntry = true },
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                containerColor = MaterialTheme.appAccents.other.container,
                 modifier = Modifier.weight(1f)
             )
             HubQuickAction(
@@ -290,51 +706,83 @@ fun PomodoroScreen(
         ActivityCarousel(
             items = activityItems,
             selectedId = selectedId,
-            totals = totalsByItem,
+            totals = displayTotalsByItem,
             onSelect = { viewModel.selectItem(it.id) },
             onEdit = {
                 editing = it
                 showEditor = true
             },
             onAdd = {
-                editing = null
-                showEditor = true
+                onCreateTask(activityType)
             }
         )
 
         FocusLaunchCard(
             modifier = Modifier.weight(1f),
             item = selectedItem,
-            outcome = latestProtocol
-                ?.takeIf { it.activityType == activityType && it.itemId == selectedItem?.id }
-                ?.outcome
-                .orEmpty(),
-            focusMinutes = latestProtocol?.focusDurationMinutes
-                ?: (fallbackFocusDuration / 60_000L).toInt(),
-            recoveryMinutes = latestProtocol?.recoveryDurationMinutes
+            outcome = previousForSelected?.outcome.orEmpty(),
+            focusMinutes = suggestedFocusMinutes,
+            recoveryMinutes = previousForSelected?.recoveryDurationMinutes
                 ?: (fallbackBreakDuration / 60_000L).toInt(),
             cyclesToday = cyclesToday,
             totalToday = totalToday,
-            onStart = { showSetup = true }
+            dailyProgress = selectedDailyProgress,
+            boutMinutes = selectedTask?.estimatedMinutes ?: suggestedFocusMinutes,
+            dailyRequired = selectedTask?.isDailyRequired == true,
+            onStart = {
+                focusSoundTaskId = selectedItem?.taskId
+                focusSoundDraft = FocusSoundDraft(
+                    selection = focusSoundSettings.defaultSelection,
+                    primaryVolumePercent = focusSoundSettings.volumePercent,
+                    rememberForTask = false
+                )
+                focusSoundMixEnabled = focusSoundSettings.defaultSelection.secondaryLayerId != null
+                focusSoundDraftLoading = true
+                protocolViewModel.loadSoundDraft(selectedItem?.taskId) { loaded ->
+                    focusSoundDraft = loaded
+                    focusSoundMixEnabled = loaded.selection.secondaryLayerId != null
+                    focusSoundDraftLoading = false
+                }
+                showSetup = true
+            },
+            onOpenTask = selectedItem?.taskId?.let { taskId -> { onOpenTask(taskId) } }
         )
     }
 
     if (showSetup) {
-        val previousForItem = latestProtocol?.takeIf {
-            it.activityType == activityType && it.itemId == selectedItem?.id
-        }
         FocusProtocolSetupSheet(
             activityType = activityType,
-            targets = activityItems.map { FocusProtocolTarget(it.id, it.name, it.color) },
+            targets = activityItems.map(::protocolTarget),
             selectedTargetId = selectedItem?.id,
-            initialOutcome = previousForItem?.outcome.orEmpty(),
-            initialResetMinutes = latestProtocol?.resetDurationMinutes ?: 5,
-            initialFocusMinutes = latestProtocol?.focusDurationMinutes
-                ?: (fallbackFocusDuration / 60_000L).toInt(),
-            initialRecoveryMinutes = latestProtocol?.recoveryDurationMinutes
+            initialOutcome = previousForSelected?.outcome.orEmpty(),
+            initialResetMinutes = previousForSelected?.resetDurationMinutes ?: 5,
+            initialFocusMinutes = suggestedFocusMinutes,
+            initialRecoveryMinutes = previousForSelected?.recoveryDurationMinutes
                 ?: (fallbackBreakDuration / 60_000L).toInt(),
             bedtimeRisk = protocolViewModel::isBedtimeRisk,
+            startInProgress = focusStartInProgress,
+            soundscapeLoading = focusSoundDraftLoading,
+            startError = if (focusStartRejected) {
+                stringResource(R.string.focus_block_start_failed)
+            } else {
+                null
+            },
+            soundscapeState = focusSoundUiState,
+            onOpenSoundscape = { showFocusSoundPicker = true },
+            onToggleSoundscape = toggleFocusSoundPlayback,
+            onTargetSelected = { target ->
+                val taskId = activityItems.firstOrNull { it.id == target.id }?.taskId
+                focusSoundTaskId = taskId
+                focusSoundDraftLoading = true
+                protocolViewModel.loadSoundDraft(taskId) { loaded ->
+                    focusSoundDraft = loaded
+                    focusSoundMixEnabled = loaded.selection.secondaryLayerId != null
+                    focusSoundDraftLoading = false
+                }
+            },
             onStart = { target, outcome, reset, focus, recovery, energy ->
+                focusStartInProgress = true
+                focusStartRejected = false
                 protocolViewModel.start(
                     activityType = activityType,
                     itemId = target.id,
@@ -343,13 +791,34 @@ fun PomodoroScreen(
                     resetMinutes = reset,
                     focusMinutes = focus,
                     recoveryMinutes = recovery,
-                    energyBefore = energy
+                    energyBefore = energy,
+                    soundscape = focusSoundDraft.selection,
+                    soundscapeVolumePercent = focusSoundDraft.primaryVolumePercent,
+                    rememberSoundscapeForTask = focusSoundDraft.rememberForTask,
+                    persistedTaskId = focusSoundTaskId,
+                    onResult = { started ->
+                        focusStartInProgress = false
+                        if (started) {
+                            showSetup = false
+                        } else {
+                            focusStartRejected = true
+                        }
+                    }
                 )
-                showSetup = false
             },
-            onDismiss = { showSetup = false }
+            onDismiss = {
+                if (!focusStartInProgress) {
+                    protocolViewModel.cancelSoundDraftLoad()
+                    protocolViewModel.stopSoundscapePreview()
+                    focusSoundDraftLoading = false
+                    focusStartRejected = false
+                    showSetup = false
+                }
+            }
         )
     }
+
+    soundPickerContent()
 
     if (showInsights) {
         ThemedModalBottomSheet(onDismissRequest = { showInsights = false }) {
@@ -378,10 +847,14 @@ fun PomodoroScreen(
     if (showManualEntry) {
         ManualActivitySheet(
             onDismiss = { showManualEntry = false },
-            initialTaskId = selectedItem?.id.takeIf { activityType == FocusActivityType.WORK },
+            initialTaskId = focusItemTaskId(selectedItem?.id),
             initialActivityType = activityType,
-            initialSubjectId = selectedItem?.id.takeIf { activityType == FocusActivityType.STUDY },
-            initialOtherActivityId = selectedItem?.id.takeIf { activityType == FocusActivityType.OTHER },
+            initialSubjectId = selectedItem?.id.takeIf {
+                focusItemTaskId(it) == null && activityType == FocusActivityType.STUDY
+            },
+            initialOtherActivityId = selectedItem?.id.takeIf {
+                focusItemTaskId(it) == null && activityType == FocusActivityType.OTHER
+            },
             initialTitle = selectedItem?.name.orEmpty()
         )
     }
@@ -390,9 +863,20 @@ fun PomodoroScreen(
         ActivityEditorDialog(
             initial = editing,
             activityType = activityType,
+            onOpenTask = editing?.taskId?.let { taskId ->
+                {
+                    showEditor = false
+                    onOpenTask(taskId)
+                }
+            },
             onSave = { name, color ->
                 val current = editing
-                when (activityType) {
+                val taskId = current?.taskId
+                if (taskId != null) {
+                    workTasks.firstOrNull { it.id == taskId }?.let { source ->
+                        viewModel.updateWorkTask(source.copy(title = name.trim()))
+                    }
+                } else when (activityType) {
                     FocusActivityType.STUDY -> if (current == null) {
                         viewModel.addSubject(name, color)
                     } else {
@@ -418,7 +902,7 @@ fun PomodoroScreen(
                 }
                 showEditor = false
             },
-            onDelete = editing?.let { item ->
+            onDelete = editing?.takeIf { it.taskId == null }?.let { item ->
                 {
                     when (activityType) {
                         FocusActivityType.STUDY -> viewModel.deleteSubject(item.id)
@@ -569,9 +1053,10 @@ private fun ActivityCarousel(
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(items, key = { it.id }) { item ->
             val selected = item.id == selectedId
+            val itemColor = pomodoroColorForToken(item.color)
             val width by animateDpAsState(if (selected) 148.dp else 132.dp, label = "subjectWidth")
             val background by animateColorAsState(
-                if (selected) Color(item.color).copy(alpha = 0.24f)
+                if (selected) itemColor.copy(alpha = 0.24f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
                 label = "subjectColor"
             )
@@ -584,7 +1069,7 @@ private fun ActivityCarousel(
                     .then(
                         if (selected) Modifier.border(
                             1.5.dp,
-                            Color(item.color),
+                            itemColor,
                             RoundedCornerShape(22.dp)
                         ) else Modifier
                     )
@@ -604,12 +1089,14 @@ private fun ActivityCarousel(
                         modifier = Modifier
                             .size(11.dp)
                             .clip(CircleShape)
-                            .background(Color(item.color))
+                            .background(itemColor)
                     )
                     Text(
-                        text = if (selected) "ฅ" else "·",
-                        color = Color(item.color),
-                        fontWeight = FontWeight.Bold
+                        text = if (item.taskId != null) stringResource(R.string.focus_hub_task_badge)
+                        else if (selected) "ฅ" else "·",
+                        color = itemColor,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelSmall
                     )
                 }
                 Text(
@@ -644,7 +1131,7 @@ private fun ActivityCarousel(
                     text = "+\nฅ",
                     textAlign = TextAlign.Center,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.appAccents.focus.color,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -661,19 +1148,19 @@ private fun FocusLaunchCard(
     recoveryMinutes: Int,
     cyclesToday: Int,
     totalToday: Long,
-    onStart: () -> Unit
+    dailyProgress: DailyTaskFocusProgress?,
+    boutMinutes: Int,
+    dailyRequired: Boolean,
+    onStart: () -> Unit,
+    onOpenTask: (() -> Unit)? = null
 ) {
-    var catMood by remember { mutableIntStateOf(0) }
-    val catLine = when (catMood % 3) {
-        1 -> stringResource(R.string.focus_cat_hub_pet)
-        2 -> stringResource(R.string.focus_cat_hub_ready)
-        else -> stringResource(R.string.focus_cat_hub_hint)
-    }
+    val readyHint = stringResource(R.string.focus_hub_ready_hint)
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
+            containerColor = MaterialTheme.appAccents.focus.container,
+            contentColor = MaterialTheme.appAccents.focus.onContainer
         )
     ) {
         Column(
@@ -695,7 +1182,7 @@ private fun FocusLaunchCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = if (outcome.isBlank()) catLine else outcome,
+                        text = if (outcome.isBlank()) readyHint else outcome,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -704,25 +1191,36 @@ private fun FocusLaunchCard(
                 }
             }
 
-            AnimatedFocusCat(
-                mood = FocusCatMood.IDLE,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                onInteract = { catMood++ }
-            )
+            // The animated companion belongs to an active focus protocol. The
+            // decorative idle copy used to be squeezed underneath these controls.
+            Spacer(modifier = Modifier.weight(1f))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoPill(stringResource(R.string.focus_block_focus_pill, focusMinutes))
                 InfoPill(stringResource(R.string.focus_block_rest_pill, recoveryMinutes))
             }
 
+            dailyProgress?.let { progress ->
+                DailyFocusProgressCard(
+                    progress = progress,
+                    boutElapsedMillis = 0L,
+                    boutMinutes = boutMinutes,
+                    requiredToday = dailyRequired
+                )
+            }
+
             Button(
                 onClick = onStart,
-                enabled = item != null,
+                enabled = item != null && focusMinutes > 0,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.focus_block_begin))
+            }
+
+            onOpenTask?.let { openTask ->
+                TextButton(onClick = openTask, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.focus_hub_open_task))
+                }
             }
 
             Text(
@@ -737,6 +1235,25 @@ private fun FocusLaunchCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+private fun activeTaskId(session: FocusProtocolSessionEntity): Int? =
+    focusItemTaskId(session.itemId)
+        ?: session.itemId.takeIf { session.activityType == FocusActivityType.WORK && it > 0 }
+
+private fun currentBoutElapsedMillis(
+    session: FocusProtocolSessionEntity,
+    remainingMillis: Long
+): Long {
+    val duration = session.focusDurationMinutes.coerceAtLeast(0) * 60_000L
+    return when (session.phase) {
+        FocusProtocolPhase.FOCUS,
+        FocusProtocolPhase.FOCUS_PAUSED -> (duration - remainingMillis).coerceIn(0L, duration)
+        FocusProtocolPhase.RECOVERY,
+        FocusProtocolPhase.CYCLE_READY,
+        FocusProtocolPhase.REVIEW -> session.focusElapsedMillis.coerceIn(0L, duration)
+        else -> 0L
     }
 }
 
@@ -757,7 +1274,8 @@ private fun DailySummaryCard(cycles: Int, total: Long) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            containerColor = MaterialTheme.appAccents.success.container,
+            contentColor = MaterialTheme.appAccents.success.onContainer
         )
     ) {
         Row(
@@ -786,6 +1304,7 @@ private fun DailySummaryCard(cycles: Int, total: Long) {
 private fun ActivityEditorDialog(
     initial: HubActivityItem?,
     activityType: FocusActivityType,
+    onOpenTask: (() -> Unit)?,
     onSave: (String, Int) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit
@@ -804,22 +1323,26 @@ private fun ActivityEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (activityType != FocusActivityType.WORK) {
+                if (
+                    activityType != FocusActivityType.WORK &&
+                    (initial == null || initial.taskId == null)
+                ) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        items(SUBJECT_COLORS) { itemColor ->
+                        items(SUBJECT_COLORS) { colorToken ->
+                            val displayColor = pomodoroColorForToken(colorToken)
                             Box(
                                 modifier = Modifier
-                                    .size(if (itemColor == color) 34.dp else 30.dp)
+                                    .size(if (colorToken == color) 34.dp else 30.dp)
                                     .clip(CircleShape)
-                                    .background(Color(itemColor))
+                                    .background(displayColor)
                                     .then(
-                                        if (itemColor == color) Modifier.border(
+                                        if (colorToken == color) Modifier.border(
                                             2.dp,
                                             MaterialTheme.colorScheme.onSurface,
                                             CircleShape
                                         ) else Modifier
                                     )
-                                    .clickable { color = itemColor }
+                                    .clickable { color = colorToken }
                             )
                         }
                     }
@@ -833,11 +1356,16 @@ private fun ActivityEditorDialog(
         },
         dismissButton = {
             Row {
+                onOpenTask?.let {
+                    TextButton(onClick = it) {
+                        Text(stringResource(R.string.focus_hub_open_task))
+                    }
+                }
                 onDelete?.let {
                     TextButton(onClick = it) {
                         Text(
                             stringResource(R.string.library_delete),
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.appAccents.urgent.color
                         )
                     }
                 }
@@ -850,9 +1378,9 @@ private fun ActivityEditorDialog(
 @Composable
 private fun categoryTitle(type: FocusActivityType): String = stringResource(
     when (type) {
-        FocusActivityType.STUDY -> R.string.pomodoro_subjects
+        FocusActivityType.STUDY -> R.string.pomodoro_study_targets
         FocusActivityType.WORK -> R.string.pomodoro_tasks
-        FocusActivityType.OTHER -> R.string.pomodoro_other_items
+        FocusActivityType.OTHER -> R.string.pomodoro_other_targets
     }
 )
 

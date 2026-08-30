@@ -7,6 +7,9 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
+import com.personal.sleepalarm.domain.calculator.CalendarOccurrence
+import com.personal.sleepalarm.domain.calculator.CalendarRecurrenceCalculator
+import java.time.ZoneId
 
 /**
  * Планировщик напоминаний для событий календаря.
@@ -19,6 +22,13 @@ class EventAlarmScheduler(
         private const val TAG = "EventScheduler"
         const val ACTION_FIRE = "com.personal.sleepalarm.event.FIRE"
         const val EXTRA_EVENT_ID = "extra_event_id"
+        const val EXTRA_OCCURRENCE_START = "extra_occurrence_start"
+        const val EXTRA_OCCURRENCE_END = "extra_occurrence_end"
+        const val EXTRA_OCCURRENCE_TRIGGER = "extra_occurrence_trigger"
+        const val EXTRA_MASTER_START = "extra_event_master_start"
+        const val EXTRA_MASTER_END = "extra_event_master_end"
+        const val EXTRA_MASTER_REMINDER = "extra_event_master_reminder"
+        const val EXTRA_MASTER_REPEAT = "extra_event_master_repeat"
     }
 
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -27,8 +37,12 @@ class EventAlarmScheduler(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) alarmManager.canScheduleExactAlarms()
         else true
 
-    /** Ставит alarm для события, если reminderMinutes задан. */
-    fun schedule(event: CalendarEventEntity) {
+    /** Ставит alarm для ближайшего будущего occurrence, не изменяя master в БД. */
+    fun schedule(
+        event: CalendarEventEntity,
+        nowMillis: Long = System.currentTimeMillis(),
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ) {
         val reminder = event.reminderMinutes
         if (reminder == null) {
             Log.d(TAG, "id=${event.id}: reminderMinutes=null, skip")
@@ -36,27 +50,29 @@ class EventAlarmScheduler(
             return
         }
 
-        val triggerAt = event.startMillis - reminder * 60_000L
-        val now = System.currentTimeMillis()
-
-        if (triggerAt <= now) {
-            Log.d(TAG, "id=${event.id}: triggerAt в прошлом (${triggerAt - now}ms), skip")
+        val occurrence = CalendarRecurrenceCalculator.nextOccurrence(
+            startMillis = event.startMillis,
+            endMillis = event.endMillis,
+            repeatRule = event.repeatRule,
+            reminderMinutes = reminder,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+        if (occurrence == null) {
+            Log.d(TAG, "id=${event.id}: future occurrence not found, skip")
             cancel(event.id)
             return
         }
+        val triggerAt = occurrence.triggerAtMillis
 
         if (!canScheduleExact()) {
             Log.w(TAG, "canScheduleExact=false, fallback to inexact")
-            setInexact(triggerAt, event.id)
+            setInexact(event, occurrence)
             return
         }
 
-        val intent = Intent(context, EventAlarmReceiver::class.java).apply {
-            action = ACTION_FIRE
-            putExtra(EXTRA_EVENT_ID, event.id)
-        }
         val pending = PendingIntent.getBroadcast(
-            context, event.id, intent,
+            context, event.id, fireIntent(event, occurrence),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -66,24 +82,37 @@ class EventAlarmScheduler(
             } else {
                 alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)
             }
-            Log.d(TAG, "OK id=${event.id} at $triggerAt (+${triggerAt - now}ms)")
+            Log.d(TAG, "OK id=${event.id} occurrence=${occurrence.startMillis} at $triggerAt (+${triggerAt - nowMillis}ms)")
         } catch (se: SecurityException) {
             Log.e(TAG, "SecurityException, fallback", se)
-            setInexact(triggerAt, event.id)
+            setInexact(event, occurrence)
         }
     }
 
-    private fun setInexact(time: Long, eventId: Int) {
-        val intent = Intent(context, EventAlarmReceiver::class.java).apply {
-            action = ACTION_FIRE
-            putExtra(EXTRA_EVENT_ID, eventId)
-        }
+    private fun setInexact(event: CalendarEventEntity, occurrence: CalendarOccurrence) {
         val pending = PendingIntent.getBroadcast(
-            context, eventId, intent,
+            context, event.id, fireIntent(event, occurrence),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pending)
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP,
+            occurrence.triggerAtMillis,
+            pending
+        )
     }
+
+    private fun fireIntent(event: CalendarEventEntity, occurrence: CalendarOccurrence) =
+        Intent(context, EventAlarmReceiver::class.java).apply {
+            action = ACTION_FIRE
+            putExtra(EXTRA_EVENT_ID, event.id)
+            putExtra(EXTRA_OCCURRENCE_START, occurrence.startMillis)
+            putExtra(EXTRA_OCCURRENCE_END, occurrence.endMillis)
+            putExtra(EXTRA_OCCURRENCE_TRIGGER, occurrence.triggerAtMillis)
+            putExtra(EXTRA_MASTER_START, event.startMillis)
+            putExtra(EXTRA_MASTER_END, event.endMillis)
+            putExtra(EXTRA_MASTER_REMINDER, event.reminderMinutes ?: Int.MIN_VALUE)
+            putExtra(EXTRA_MASTER_REPEAT, event.repeatRule)
+        }
 
     fun cancel(eventId: Int) {
         val intent = Intent(context, EventAlarmReceiver::class.java).apply { action = ACTION_FIRE }

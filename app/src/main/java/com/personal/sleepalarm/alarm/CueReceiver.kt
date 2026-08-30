@@ -105,13 +105,11 @@ class CueReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                val volumeFraction = session.cueVolumePercent / 100f
-
                 val played = session.cueRingtoneUri?.let { uri ->
                     CueSoundPlayer.play(
                         context = context.applicationContext,
                         uriString = uri,
-                        volumeFraction = volumeFraction,
+                        volumePercent = session.cueVolumePercent,
                         maxPlayMs = MAX_RECEIVER_CUE_PLAY_MS
                     )
                 } ?: false

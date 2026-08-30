@@ -32,7 +32,7 @@ import org.json.JSONObject
 object ProfileJsonCodec {
 
     /** Версия формата JSON. Задел на будущие миграции формата. */
-    const val SCHEMA_VERSION = 3
+    const val SCHEMA_VERSION = 4
 
     private const val KEY_SCHEMA = "schema_version"
 
@@ -52,6 +52,7 @@ object ProfileJsonCodec {
     private const val K_CUE_VOLUME = "cueVolumePercent"
     private const val K_NOTIFICATION_VOLUME = "notificationVolumePercent"
     private const val K_MATH = "mathDifficulty"
+    private const val K_MATH_COUNT = "mathChallengeCount"
     private const val K_QUIET = "quietAlarmEnabled"
     private const val K_UPDATED_AT = "updatedAt"
     private const val K_VIBRATION = "vibrationEnabled"
@@ -92,6 +93,7 @@ object ProfileJsonCodec {
         json.put(K_CUE_VOLUME, profile.cueVolumePercent)
         json.put(K_NOTIFICATION_VOLUME, profile.notificationVolumePercent)
         json.put(K_MATH, profile.mathDifficulty.name)
+        json.put(K_MATH_COUNT, profile.mathChallengeCount)
         json.put(K_QUIET, profile.quietAlarmEnabled)
         json.put(K_UPDATED_AT, profile.updatedAt)
         json.put(K_VIBRATION, profile.vibrationEnabled)
@@ -155,6 +157,10 @@ object ProfileJsonCodec {
                     obj.optString(K_MATH, defaults.mathDifficulty.name),
                     MathDifficulty.values(),
                     defaults.mathDifficulty
+                ),
+                mathChallengeCount = obj.optInt(
+                    K_MATH_COUNT,
+                    defaults.mathChallengeCount
                 ),
                 quietAlarmEnabled = obj.optBoolean(K_QUIET, defaults.quietAlarmEnabled),
                 // updatedAt НЕ читаем из JSON — импорт = новое изменение
@@ -230,6 +236,7 @@ object ProfileJsonCodec {
                 profile.cueVolumePercent
             ),
             notificationVolumePercent = profile.notificationVolumePercent.coerceIn(0, 100),
+            mathChallengeCount = profile.mathChallengeCount.coerceIn(1, 10),
             autoCorrectMinConfidencePercent = profile.autoCorrectMinConfidencePercent.coerceIn(50, 95),
             autoCorrectMaxShiftMinutes = profile.autoCorrectMaxShiftMinutes.coerceIn(0, 120),
             remCueOffsetPercent = profile.remCueOffsetPercent.coerceIn(10, 90),

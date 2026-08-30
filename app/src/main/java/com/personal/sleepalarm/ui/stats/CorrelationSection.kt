@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.stats
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -99,7 +101,7 @@ private fun CorrRow(label: String, r: Double?) {
             Text(
                 text = "%.2f · %s".format(r, strengthText(r)),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.focus.color
             )
         }
     }
@@ -187,10 +189,10 @@ private fun LegendDot(color: Color, text: String) {
 // =====================================================================
 
 @Composable
-private fun sleepColor(): Color = MaterialTheme.colorScheme.primary
+private fun sleepColor(): Color = MaterialTheme.appAccents.sleep.color
 
 @Composable
-private fun tasksColor(): Color = MaterialTheme.colorScheme.secondary
+private fun tasksColor(): Color = MaterialTheme.appAccents.work.color
 
 /** Настроение = смесь primary и secondary, чтобы отличаться от обеих серий. */
 @Composable

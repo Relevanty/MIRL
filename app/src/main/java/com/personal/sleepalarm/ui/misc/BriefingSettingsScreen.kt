@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.misc
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,6 +46,7 @@ import com.personal.sleepalarm.R
 @Composable
 fun BriefingSettingsScreen(
     onBack: () -> Unit,
+    onOpenDailyPlanAssistant: () -> Unit = {},
     viewModel: BriefingSettingsViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
@@ -176,6 +179,20 @@ fun BriefingSettingsScreen(
         VoiceToggle("Ассистент", voiceSettings.assistantEnabled, viewModel::setAssistant)
         VoiceToggle("Произносить названия задач и событий", voiceSettings.personalDataEnabled, viewModel::setPersonalData)
         VoiceToggle("Только в наушниках", voiceSettings.headphonesOnly, viewModel::setHeadphonesOnly)
+
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onOpenDailyPlanAssistant,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(R.string.briefing_daily_plan_voice_action))
+        }
+        Text(
+            text = stringResource(R.string.briefing_daily_plan_voice_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
         OutlinedButton(onClick = viewModel::preview, modifier = Modifier.fillMaxWidth()) {
             Text("Прослушать пример")
         }
@@ -213,7 +230,7 @@ private fun VoiceSlider(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text("$value%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text("$value%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.appAccents.calm.color)
         }
         Slider(
             value = value.toFloat(),

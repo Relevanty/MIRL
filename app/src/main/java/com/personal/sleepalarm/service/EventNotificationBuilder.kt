@@ -9,8 +9,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
+import com.personal.sleepalarm.data.preferences.AppSignalPreferences
+import com.personal.sleepalarm.data.preferences.AppSignalType
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
-import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
 import com.personal.sleepalarm.ui.MainActivity
 import android.app.PendingIntent
 import android.content.Intent
@@ -27,12 +28,13 @@ class EventNotificationBuilder(
 ) {
     companion object {
         private const val TAG = "EventNotify"
-        const val CHANNEL_ID = "calendar_event_channel_app_volume_v2"
+        const val CHANNEL_ID = AppNotificationChannelIds.CALENDAR_EVENT
         const val NOTIFICATION_ID_BASE = 100_000
     }
 
     private val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private val signalPreferences = AppSignalPreferences(context)
 
     init {
         createChannel()
@@ -48,6 +50,7 @@ class EventNotificationBuilder(
                 description = context.getString(R.string.calendar_notification_channel_description)
                 enableVibration(true)
                 setSound(null, null)
+                setBypassDnd(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -64,6 +67,8 @@ class EventNotificationBuilder(
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 putExtra(MainActivity.EXTRA_DESTINATION, MainActivity.DESTINATION_CALENDAR)
+                putExtra(MainActivity.EXTRA_EVENT_ID, event.id)
+                putExtra(MainActivity.EXTRA_EVENT_START, event.startMillis)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -74,8 +79,14 @@ class EventNotificationBuilder(
             .setContentIntent(openIntent)
             .setWhen(System.currentTimeMillis())
             .setAutoCancel(true)
+            .setTimeoutAfter(
+                (event.endMillis - System.currentTimeMillis() + 2L * 60L * 60L * 1000L)
+                    .coerceIn(60L * 60L * 1000L, 24L * 60L * 60L * 1000L)
+            )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
             .build()
     }
 
@@ -86,7 +97,11 @@ class EventNotificationBuilder(
         }
         try {
             notificationManager.notify(NOTIFICATION_ID_BASE + event.id, build(event))
-            AppNotificationSoundPlayer.play(context, PomodoroSoundPreference(context).getUri())
+            AppNotificationSoundPlayer.play(
+                context = context,
+                settings = signalPreferences.get(AppSignalType.CALENDAR),
+                dedupeKey = "calendar-${event.id}-${event.startMillis}"
+            )
             Log.d(TAG, "shown id=${event.id} title=${event.title}")
         } catch (se: SecurityException) {
             Log.e(TAG, "SecurityException (POST_NOTIFICATIONS)", se)

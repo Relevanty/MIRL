@@ -68,7 +68,11 @@ class MathChallengeGeneratorExtraTest {
     fun `every generated answer matches independent evaluation`() {
         val random = Random(42)
 
-        for (difficulty in MathDifficulty.values()) {
+        for (difficulty in listOf(
+            MathDifficulty.EASY,
+            MathDifficulty.MEDIUM,
+            MathDifficulty.HARD
+        )) {
             repeat(300) {
                 val challenge = MathChallengeGenerator.generate(difficulty, random)
                 val expected = evaluate(challenge.question)

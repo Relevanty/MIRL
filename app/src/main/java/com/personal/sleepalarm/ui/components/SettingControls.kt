@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.components
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -90,7 +92,7 @@ fun LabeledSlider(
             Text(
                 text = valueText,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.appAccents.focus.color
             )
         }
 

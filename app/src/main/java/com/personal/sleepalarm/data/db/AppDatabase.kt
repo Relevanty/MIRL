@@ -17,6 +17,7 @@ import com.personal.sleepalarm.data.db.dao.AlarmProfileDao
 import com.personal.sleepalarm.data.db.dao.CueEventDao
 import com.personal.sleepalarm.data.db.dao.DDayDao
 import com.personal.sleepalarm.data.db.dao.EnergySampleDao
+import com.personal.sleepalarm.data.db.dao.EnglishStudyDao
 import com.personal.sleepalarm.data.db.dao.FocusProtocolDao
 import com.personal.sleepalarm.data.db.dao.LibraryDao
 import com.personal.sleepalarm.data.db.dao.MoodEntryDao
@@ -35,6 +36,14 @@ import com.personal.sleepalarm.data.db.entity.AlarmProfileEntity
 import com.personal.sleepalarm.data.db.entity.CueEventEntity
 import com.personal.sleepalarm.data.db.entity.DDayEntity
 import com.personal.sleepalarm.data.db.entity.EnergySampleEntity
+import com.personal.sleepalarm.data.db.entity.EnglishWordEntity
+import com.personal.sleepalarm.data.db.entity.EnglishWordProgressEntity
+import com.personal.sleepalarm.data.db.entity.EnglishDictionaryMetadataEntity
+import com.personal.sleepalarm.data.db.entity.EnglishCardProgressEntity
+import com.personal.sleepalarm.data.db.entity.EnglishStudyCardEntity
+import com.personal.sleepalarm.data.db.entity.EnglishStudySetEntity
+import com.personal.sleepalarm.data.db.entity.EnglishWordDirectionalProgressEntity
+import com.personal.sleepalarm.data.db.entity.EnglishWordSenseEntity
 import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemEntity
 import com.personal.sleepalarm.data.db.entity.LibraryItemTagCrossRef
@@ -54,6 +63,8 @@ import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskAttachmentEntity
 import com.personal.sleepalarm.data.db.entity.TaskLibraryLinkEntity
 import com.personal.sleepalarm.data.db.entity.TaskSubtaskEntity
+
+internal const val APP_DATABASE_VERSION = 27
 
 /**
  * Главная база приложения.
@@ -104,10 +115,22 @@ import com.personal.sleepalarm.data.db.entity.TaskSubtaskEntity
         TaskSubtaskEntity::class,
         TaskAttachmentEntity::class,
         TaskLibraryLinkEntity::class,
-        ActivityRecordEntity::class
+        ActivityRecordEntity::class,
+
+        // Offline English vocabulary and spaced-repetition progress (v25).
+        EnglishWordEntity::class,
+        EnglishWordProgressEntity::class,
+        EnglishDictionaryMetadataEntity::class,
+
+        // User study sets, structured articles and per-direction progress (v26).
+        EnglishWordSenseEntity::class,
+        EnglishWordDirectionalProgressEntity::class,
+        EnglishStudySetEntity::class,
+        EnglishStudyCardEntity::class,
+        EnglishCardProgressEntity::class
 
     ],
-    version = 21,
+    version = APP_DATABASE_VERSION,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -142,6 +165,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun calendarEventDao(): CalendarEventDao
 
     abstract fun diaryDao(): DiaryDao
+    abstract fun englishStudyDao(): EnglishStudyDao
 
     companion object {
         private const val DATABASE_NAME = "sleep-alarm.db"
@@ -183,7 +207,13 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
-                    MIGRATION_20_21
+                    MIGRATION_20_21,
+                    MIGRATION_21_22,
+                    MIGRATION_22_23,
+                    MIGRATION_23_24,
+                    MIGRATION_24_25,
+                    MIGRATION_25_26,
+                    MIGRATION_26_27
                 )
                 .build()
         }
@@ -746,6 +776,233 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarm_profiles ADD COLUMN autoCorrectMinConfidencePercent INTEGER NOT NULL DEFAULT 75")
                 db.execSQL("ALTER TABLE alarm_profiles ADD COLUMN autoCorrectMaxShiftMinutes INTEGER NOT NULL DEFAULT 30")
+            }
+        }
+
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sleep_sessions ADD COLUMN automationSafetyWakeTime INTEGER")
+            }
+        }
+
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarm_profiles ADD COLUMN mathChallengeCount INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tasks ADD COLUMN isDailyRequired INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `english_words` (
+                        `id` INTEGER NOT NULL,
+                        `word` TEXT NOT NULL,
+                        `translation` TEXT NOT NULL,
+                        `hint` TEXT NOT NULL,
+                        `pronunciation` TEXT NOT NULL,
+                        `partOfSpeech` TEXT NOT NULL,
+                        `level` TEXT NOT NULL,
+                        `frequencyRank` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_english_words_word` ON `english_words` (`word`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_words_frequencyRank` ON `english_words` (`frequencyRank`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_words_level` ON `english_words` (`level`)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `english_word_progress` (
+                        `wordId` INTEGER NOT NULL,
+                        `dueAtMillis` INTEGER NOT NULL,
+                        `intervalMinutes` INTEGER NOT NULL,
+                        `easePermille` INTEGER NOT NULL,
+                        `repetitions` INTEGER NOT NULL,
+                        `lapses` INTEGER NOT NULL,
+                        `reviewCount` INTEGER NOT NULL,
+                        `correctCount` INTEGER NOT NULL,
+                        `cardReviews` INTEGER NOT NULL,
+                        `writingReviews` INTEGER NOT NULL,
+                        `pronunciationReviews` INTEGER NOT NULL,
+                        `listeningReviews` INTEGER NOT NULL,
+                        `lastGrade` TEXT NOT NULL,
+                        `lastMode` TEXT NOT NULL,
+                        `lastReviewedAtMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`wordId`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_word_progress_dueAtMillis` ON `english_word_progress` (`dueAtMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_word_progress_lastReviewedAtMillis` ON `english_word_progress` (`lastReviewedAtMillis`)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `english_dictionary_metadata` (
+                        `id` INTEGER NOT NULL,
+                        `datasetVersion` TEXT NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `english_word_senses` (
+                        `wordId` INTEGER NOT NULL,
+                        `senseOrder` INTEGER NOT NULL,
+                        `definition` TEXT NOT NULL,
+                        `translations` TEXT NOT NULL,
+                        `example` TEXT NOT NULL,
+                        `exampleTranslation` TEXT NOT NULL,
+                        `synonyms` TEXT NOT NULL,
+                        `usageLabels` TEXT NOT NULL,
+                        PRIMARY KEY(`wordId`, `senseOrder`),
+                        FOREIGN KEY(`wordId`) REFERENCES `english_words`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_word_senses_wordId` ON `english_word_senses` (`wordId`)")
+                db.execSQL(
+                    """
+                    INSERT OR REPLACE INTO `english_word_senses` (
+                        wordId, senseOrder, definition, translations, example,
+                        exampleTranslation, synonyms, usageLabels
+                    )
+                    SELECT id, 0, hint, translation, '', '', '', partOfSpeech
+                    FROM english_words
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `english_word_directional_progress` (
+                        `wordId` INTEGER NOT NULL,
+                        `direction` TEXT NOT NULL,
+                        `dueAtMillis` INTEGER NOT NULL,
+                        `intervalMinutes` INTEGER NOT NULL,
+                        `easePermille` INTEGER NOT NULL,
+                        `repetitions` INTEGER NOT NULL,
+                        `lapses` INTEGER NOT NULL,
+                        `reviewCount` INTEGER NOT NULL,
+                        `correctCount` INTEGER NOT NULL,
+                        `cardReviews` INTEGER NOT NULL,
+                        `writingReviews` INTEGER NOT NULL,
+                        `pronunciationReviews` INTEGER NOT NULL,
+                        `listeningReviews` INTEGER NOT NULL,
+                        `lastGrade` TEXT NOT NULL,
+                        `lastMode` TEXT NOT NULL,
+                        `lastReviewedAtMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`wordId`, `direction`),
+                        FOREIGN KEY(`wordId`) REFERENCES `english_words`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_word_directional_progress_dueAtMillis` ON `english_word_directional_progress` (`dueAtMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_word_directional_progress_lastReviewedAtMillis` ON `english_word_directional_progress` (`lastReviewedAtMillis`)")
+                listOf("EN_TO_RU", "RU_TO_EN").forEach { direction ->
+                    db.execSQL(
+                        """
+                        INSERT OR REPLACE INTO `english_word_directional_progress` (
+                            wordId, direction, dueAtMillis, intervalMinutes, easePermille,
+                            repetitions, lapses, reviewCount, correctCount, cardReviews,
+                            writingReviews, pronunciationReviews, listeningReviews,
+                            lastGrade, lastMode, lastReviewedAtMillis
+                        )
+                        SELECT wordId, '$direction', dueAtMillis, intervalMinutes, easePermille,
+                            repetitions, lapses, reviewCount, correctCount, cardReviews,
+                            writingReviews, pronunciationReviews, listeningReviews,
+                            lastGrade, lastMode, lastReviewedAtMillis
+                        FROM english_word_progress
+                        """.trimIndent()
+                    )
+                }
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `english_study_sets` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `colorSeed` INTEGER NOT NULL,
+                        `defaultDirection` TEXT NOT NULL,
+                        `createdAtMillis` INTEGER NOT NULL,
+                        `updatedAtMillis` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_study_sets_updatedAtMillis` ON `english_study_sets` (`updatedAtMillis`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `english_study_cards` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `setId` INTEGER NOT NULL,
+                        `dictionaryWordId` INTEGER,
+                        `term` TEXT NOT NULL,
+                        `translation` TEXT NOT NULL,
+                        `definition` TEXT NOT NULL,
+                        `example` TEXT NOT NULL,
+                        `exampleTranslation` TEXT NOT NULL,
+                        `notes` TEXT NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        `createdAtMillis` INTEGER NOT NULL,
+                        `updatedAtMillis` INTEGER NOT NULL,
+                        FOREIGN KEY(`setId`) REFERENCES `english_study_sets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_study_cards_setId` ON `english_study_cards` (`setId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_study_cards_dictionaryWordId` ON `english_study_cards` (`dictionaryWordId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_study_cards_setId_position` ON `english_study_cards` (`setId`, `position`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `english_card_progress` (
+                        `cardId` INTEGER NOT NULL,
+                        `direction` TEXT NOT NULL,
+                        `dueAtMillis` INTEGER NOT NULL,
+                        `intervalMinutes` INTEGER NOT NULL,
+                        `easePermille` INTEGER NOT NULL,
+                        `repetitions` INTEGER NOT NULL,
+                        `lapses` INTEGER NOT NULL,
+                        `reviewCount` INTEGER NOT NULL,
+                        `correctCount` INTEGER NOT NULL,
+                        `cardReviews` INTEGER NOT NULL,
+                        `writingReviews` INTEGER NOT NULL,
+                        `pronunciationReviews` INTEGER NOT NULL,
+                        `listeningReviews` INTEGER NOT NULL,
+                        `lastGrade` TEXT NOT NULL,
+                        `lastMode` TEXT NOT NULL,
+                        `lastReviewedAtMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`cardId`, `direction`),
+                        FOREIGN KEY(`cardId`) REFERENCES `english_study_cards`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_card_progress_dueAtMillis` ON `english_card_progress` (`dueAtMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_english_card_progress_lastReviewedAtMillis` ON `english_card_progress` (`lastReviewedAtMillis`)")
+            }
+        }
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeId TEXT NOT NULL DEFAULT 'silence'")
+                db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeCustomUri TEXT")
+                db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeCustomName TEXT")
+                db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeVolume INTEGER NOT NULL DEFAULT 35")
+                db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeSecondaryId TEXT")
+                db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeSecondaryVolume INTEGER NOT NULL DEFAULT 20")
+                db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapePlayDuringRecovery INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

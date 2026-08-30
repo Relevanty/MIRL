@@ -13,8 +13,11 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.AppDatabase
-import com.personal.sleepalarm.data.preferences.PomodoroSoundPreference
+import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.data.preferences.AppSignalPreferences
+import com.personal.sleepalarm.data.preferences.AppSignalType
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
+import com.personal.sleepalarm.service.AppNotificationChannelIds
 import com.personal.sleepalarm.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,23 +35,30 @@ class TaskDeadlineReceiver : BroadcastReceiver() {
                 val appContext = context.applicationContext
                 val task = AppDatabase.getInstance(appContext).taskDao().getById(taskId)
                 if (task == null || task.isDone) return@launch
+                val expectedDueAt = intent.getLongExtra(
+                    TaskDeadlineScheduler.EXTRA_EXPECTED_DUE_AT,
+                    Long.MIN_VALUE
+                )
+                if (expectedDueAt != Long.MIN_VALUE && task.dueAtMillis != expectedDueAt) {
+                    // A broadcast already queued by Android can arrive after
+                    // the task deadline was edited. Its durable task id still
+                    // exists, but this particular occurrence is stale.
+                    return@launch
+                }
                 ensureChannel(appContext)
                 val openIntent = TaskDeadlinePendingIntentFactory.openTasks(appContext, taskId)
                 val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_notification)
                     .setContentTitle(appContext.getString(R.string.task_deadline_notification_title))
-                    .setContentText(
-                        task.title.ifBlank {
-                            task.description.ifBlank {
-                                task.nextAction.ifBlank { appContext.getString(R.string.task_untitled) }
-                            }
-                        }
-                    )
+                    .setContentText(task.primaryLabel())
                     .setSubText(appContext.getString(R.string.task_deadline_notification_subtitle))
                     .setContentIntent(openIntent)
                     .setAutoCancel(true)
+                    .setTimeoutAfter(24L * 60L * 60L * 1000L)
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                    .setSilent(true)
+                    .setOnlyAlertOnce(true)
                     .build()
                 val canNotify = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                     ContextCompat.checkSelfPermission(
@@ -60,7 +70,8 @@ class TaskDeadlineReceiver : BroadcastReceiver() {
                     .notify(NOTIFICATION_BASE + taskId, notification)
                 AppNotificationSoundPlayer.play(
                     context = appContext,
-                    soundUri = PomodoroSoundPreference(appContext).getUri()
+                    settings = AppSignalPreferences(appContext).get(AppSignalType.REMINDER),
+                    dedupeKey = "task-deadline-$taskId-${task.dueAtMillis}"
                 )
             } finally {
                 pendingResult.finish()
@@ -78,13 +89,19 @@ class TaskDeadlineReceiver : BroadcastReceiver() {
             ).apply {
                 setSound(null, null)
                 enableVibration(true)
+                setBypassDnd(true)
             }
         )
     }
 
     companion object {
-        private const val CHANNEL_ID = "task_deadline_channel_v1"
+        private const val CHANNEL_ID = AppNotificationChannelIds.TASK_DEADLINE
         private const val NOTIFICATION_BASE = 115_000
+
+        fun cancelNotification(context: Context, taskId: Int) {
+            context.getSystemService(NotificationManager::class.java)
+                .cancel(NOTIFICATION_BASE + taskId)
+        }
     }
 }
 

@@ -1,7 +1,6 @@
 package com.personal.sleepalarm.service.audio
 
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Log
@@ -15,25 +14,25 @@ object CueSoundPlayer {
     fun play(
         context: Context,
         uriString: String,
-        volumeFraction: Float,
+        volumePercent: Int,
         maxPlayMs: Long
     ): Boolean {
         val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return false
+        val playerGain = AppVolumeScale.gainForPercent(volumePercent)
+        val streamVolumeLease = if (playerGain > 0f) {
+            AlarmStreamVolumeController.acquire(context)
+        } else {
+            null
+        }
         var player: MediaPlayer? = null
         val failed = AtomicBoolean(false)
         val finished = CountDownLatch(1)
 
         return try {
             player = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
+                setAudioAttributes(AppAudioAttributes.sonification)
                 setDataSource(context.applicationContext, uri)
-                val safeVolume = volumeFraction.coerceIn(0f, 1f)
-                setVolume(safeVolume, safeVolume)
+                setVolume(playerGain, playerGain)
                 setOnCompletionListener { finished.countDown() }
                 setOnErrorListener { _, what, extra ->
                     failed.set(true)
@@ -56,6 +55,7 @@ object CueSoundPlayer {
                 runCatching { mediaPlayer.reset() }
                 runCatching { mediaPlayer.release() }
             }
+            streamVolumeLease?.close()
         }
     }
 

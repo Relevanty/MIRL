@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="channel_daily_plan">Дневной план</string>
+    <string name="channel_daily_plan_description">Локальные напоминания о дневной норме обязательных задач</string>
+    <string name="daily_plan_notification_title">Дневной план</string>
+    <string name="daily_plan_morning_title">План на сегодня</string>
+    <string name="daily_plan_morning_body">Ещё не начаты: %1$s</string>
+    <string name="daily_plan_urgency_body">До %1$s осталось %2$d мин работы. Запас — %3$d мин.</string>
+    <string name="daily_plan_overload_body">До %1$s осталось %2$d мин работы. Не хватает %3$d мин.</string>
+    <string name="daily_plan_action_start">Начать</string>
+    <string name="daily_plan_action_open_plan">Открыть план</string>
+    <string name="daily_plan_action_adjust_plan">Скорректировать</string>
+    <string name="daily_plan_action_snooze">Отложить</string>
+
+    <string name="app_signal_daily_plan">Дневной план</string>
+    <string name="app_signal_daily_plan_description">Утренняя сводка и срочные напоминания о дневной норме</string>
+    <string name="daily_plan_settings_title">Напоминания о дневном плане</string>
+    <string name="daily_plan_settings_hint">MIRL считает только обязательные задачи и сравнивает их остаток со временем до отбоя.</string>
+    <string name="daily_plan_enabled">Напоминать о дневной норме</string>
+    <string name="daily_plan_morning_enabled">Показывать утром не начатые задачи</string>
+    <string name="daily_plan_buffer">Запас до срочности</string>
+    <string name="daily_plan_repeat_enabled">Повторять, пока план срочный</string>
+    <string name="daily_plan_repeat_interval">Интервал повторов</string>
+    <string name="daily_plan_cutoff">Обычный срок дневного плана</string>
+    <string name="daily_plan_effective_cutoff_automation">Сегодня срок возьмётся из начала окна автоматизации сна: %1$s.</string>
+    <string name="daily_plan_effective_cutoff_fallback">Если автоматизация сна не действует, используется указанное время.</string>
+    <string name="daily_plan_minutes_format">%1$d мин</string>
+</resources>

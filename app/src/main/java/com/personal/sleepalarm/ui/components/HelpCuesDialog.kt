@@ -1,5 +1,7 @@
 package com.personal.sleepalarm.ui.components
 
+import com.personal.sleepalarm.ui.theme.appAccents
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,13 +16,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -29,13 +31,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.domain.calculator.RemCueScheduleCalculator
-
-private val DialogSurface = Color(0xFF161E38)
-private val RowSurface = Color(0xFF1D2645)
-private val BorderColor = Color(0xFF2A3558)
-private val TextPrimary = Color(0xFFE9EDF9)
-private val TextMuted = Color(0xFF8A93B2)
-private val Accent = Color(0xFFFFB86B)
 
 /**
  * Справка по lucid-подсказкам, привязанным к REM-фазам (F7).
@@ -60,7 +55,7 @@ fun HelpCuesDialog(
                 .fillMaxWidth()
                 .heightIn(max = 600.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(DialogSurface)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -70,7 +65,7 @@ fun HelpCuesDialog(
                 style = TextStyle(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = TextPrimary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             )
 
@@ -86,7 +81,7 @@ fun HelpCuesDialog(
                 style = TextStyle(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Accent
+                    color = MaterialTheme.appAccents.focus.color
                 )
             )
 
@@ -94,7 +89,10 @@ fun HelpCuesDialog(
 
             Text(
                 text = stringResource(R.string.help_cues_table_note),
-                style = TextStyle(fontSize = 12.sp, color = TextMuted)
+                style = TextStyle(
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
 
             // 3. Рекомендации по таймингу.
@@ -109,7 +107,7 @@ fun HelpCuesDialog(
                 style = TextStyle(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Accent
+                    color = MaterialTheme.appAccents.study.color
                 )
             )
 
@@ -118,14 +116,14 @@ fun HelpCuesDialog(
             SourceLine(stringResource(R.string.help_cues_source_3))
             SourceLine(stringResource(R.string.help_cues_source_4))
 
-            HorizontalDivider(color = BorderColor)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             // 5. Дисклеймер.
             Text(
                 text = stringResource(R.string.help_cues_disclaimer),
                 style = TextStyle(
                     fontSize = 12.sp,
-                    color = TextMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 17.sp
                 )
             )
@@ -151,14 +149,14 @@ private fun HelpBlock(title: String, body: String) {
             style = TextStyle(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = Accent
+                color = MaterialTheme.appAccents.calm.color
             )
         )
         Text(
             text = body,
             style = TextStyle(
                 fontSize = 13.sp,
-                color = TextPrimary,
+                color = MaterialTheme.colorScheme.onSurface,
                 lineHeight = 19.sp
             )
         )
@@ -177,7 +175,7 @@ private fun RemFractionTable() {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(RowSurface)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -194,7 +192,7 @@ private fun RemFractionTable() {
                     style = TextStyle(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
+                        color = MaterialTheme.colorScheme.onSurface
                     ),
                     modifier = Modifier.weight(1f)
                 )
@@ -206,7 +204,7 @@ private fun RemFractionTable() {
                     style = TextStyle(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Accent
+                        color = MaterialTheme.appAccents.focus.color
                     )
                 )
             }
@@ -222,13 +220,13 @@ private fun SourceLine(text: String) {
     Row(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = "• ",
-            style = TextStyle(fontSize = 12.sp, color = Accent)
+            style = TextStyle(fontSize = 12.sp, color = MaterialTheme.appAccents.calm.color)
         )
         Text(
             text = text,
             style = TextStyle(
                 fontSize = 12.sp,
-                color = TextMuted,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 17.sp
             ),
             modifier = Modifier.weight(1f)

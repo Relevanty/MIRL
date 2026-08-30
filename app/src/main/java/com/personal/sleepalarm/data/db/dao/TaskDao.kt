@@ -44,7 +44,7 @@ interface TaskDao {
     suspend fun insert(task: TaskEntity): Long
 
     @Update
-    suspend fun update(task: TaskEntity)
+    suspend fun update(task: TaskEntity): Int
 
     @Delete
     suspend fun delete(task: TaskEntity)
@@ -89,6 +89,9 @@ interface TaskDao {
      */
     @Query("UPDATE tasks SET reminderId = NULL WHERE reminderId = :reminderId")
     suspend fun clearReminderLink(reminderId: Int)
+
+    @Query("UPDATE tasks SET reminderId = NULL WHERE reminderId IS NOT NULL")
+    suspend fun clearLegacyReminderLinks()
 
     /** Количество выполненных сегодня задач (для аналитики). */
     @Query(
@@ -141,9 +144,33 @@ interface TaskDao {
     @Query("UPDATE tasks SET sortOrder = :sortOrder, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateSortOrder(id: Int, sortOrder: Int, updatedAt: Long = System.currentTimeMillis())
 
+    /** Field-specific writes prevent a stale UI snapshot from overwriting progress or links. */
+    @Query("UPDATE tasks SET title = :title, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateTitle(id: Int, title: String, updatedAt: Long = System.currentTimeMillis()): Int
+
+    @Query(
+        "UPDATE tasks SET matrixQuadrant = :quadrant, sortOrder = :sortOrder, " +
+            "updatedAt = :updatedAt WHERE id = :id AND isDone = 0"
+    )
+    suspend fun updateMatrixPosition(
+        id: Int,
+        quadrant: Int,
+        sortOrder: Int,
+        updatedAt: Long = System.currentTimeMillis()
+    ): Int
+
     @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM tasks WHERE matrixQuadrant = :quadrant AND isMorningRoutine = 0 AND isDone = 0")
     suspend fun maxActiveSortOrder(quadrant: Int): Int
 
     @Query("SELECT * FROM tasks WHERE matrixQuadrant = :quadrant AND isMorningRoutine = 0 AND isDone = 0 ORDER BY sortOrder ASC, createdAt DESC")
     suspend fun getActiveInQuadrant(quadrant: Int): List<TaskEntity>
+
+    @Query(
+        """
+        UPDATE tasks SET projectId = NULL
+        WHERE projectId IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM projects WHERE projects.id = tasks.projectId)
+        """
+    )
+    suspend fun clearMissingProjects()
 }
