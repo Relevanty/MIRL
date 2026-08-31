@@ -22,8 +22,11 @@ import com.personal.sleepalarm.data.preferences.AppSoundMode
 import com.personal.sleepalarm.data.preferences.AppSoundSelection
 import com.personal.sleepalarm.data.preferences.DailyPlanNudgePreferences
 import com.personal.sleepalarm.data.preferences.DailyPlanNudgeSettings
+import com.personal.sleepalarm.data.preferences.ExternalContextPreferences
 import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
 import com.personal.sleepalarm.data.preferences.SleepAutomationSettings
+import com.personal.sleepalarm.data.externalcontext.DefaultExternalContextProvider
+import com.personal.sleepalarm.data.externalcontext.OpenMeteoWeatherClient
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
 import com.personal.sleepalarm.data.repository.TaskEcosystemRepository
@@ -37,6 +40,11 @@ import com.personal.sleepalarm.domain.model.DismissType
 import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.domain.model.SleepPlan
 import com.personal.sleepalarm.domain.model.SleepPlanWarning
+import com.personal.sleepalarm.domain.externalcontext.CoarseLocation
+import com.personal.sleepalarm.domain.externalcontext.ExternalContextResult
+import com.personal.sleepalarm.domain.externalcontext.ExternalContextSettings
+import com.personal.sleepalarm.domain.externalcontext.WeatherContextOrigin
+import com.personal.sleepalarm.domain.externalcontext.WeatherContextState
 import com.personal.sleepalarm.service.SleepForegroundService
 import com.personal.sleepalarm.service.SleepNotificationBuilder
 import com.personal.sleepalarm.service.EventNotificationBuilder
@@ -52,6 +60,7 @@ import com.personal.sleepalarm.util.ManagedSoundImport
 import com.personal.sleepalarm.util.LatestSoundOperationPolicy
 import com.personal.sleepalarm.util.RingtonePickerHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -77,7 +86,8 @@ data class SettingsUiState(
     val plan: SleepPlan? = null,
     val cueSchedule: CueSchedule = CueSchedule(emptyList(), emptySet()),
     val planWarnings: Set<SleepPlanWarning> = emptySet(),
-    val sleepAutomation: SleepAutomationSettings = SleepAutomationSettings()
+    val sleepAutomation: SleepAutomationSettings = SleepAutomationSettings(),
+    val externalContext: ExternalContextSettings = ExternalContextSettings()
 )
 
 /**
@@ -117,6 +127,12 @@ class SettingsViewModel(
     )
     private val sleepAutomationPreference = SleepAutomationPreference(context)
     private val sleepAutomationScheduler = SleepAutomationScheduler(context, sleepAutomationPreference)
+    private val externalContextPreferences = ExternalContextPreferences(context)
+    private val externalContextProvider = DefaultExternalContextProvider(
+        settingsStore = externalContextPreferences,
+        weatherCache = externalContextPreferences,
+        weatherClient = OpenMeteoWeatherClient()
+    )
 
     private val profileRepository = SleepProfileRepository(
         profileDao = database.alarmProfileDao()
@@ -169,8 +185,14 @@ class SettingsViewModel(
 
     val uiState: StateFlow<SettingsUiState> = combine(
         profileRepository.observeProfile(),
-        sleepAutomationPreference.observe()
-    ) { profile, automation -> buildPreview(profile).copy(sleepAutomation = automation) }
+        sleepAutomationPreference.observe(),
+        externalContextPreferences.observeSettings()
+    ) { profile, automation, externalContext ->
+        buildPreview(profile).copy(
+            sleepAutomation = automation,
+            externalContext = externalContext
+        )
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
@@ -239,6 +261,117 @@ class SettingsViewModel(
 
     fun reportSoundPermissionError() {
         _message.value = context.getString(R.string.sound_permission_error)
+    }
+
+    // =================================================================
+    // Контекст дня: только явный opt-in и введённый пользователем город
+    // =================================================================
+
+    fun saveExternalContextLocation(city: String, latitude: String, longitude: String) {
+        if (city.isBlank()) {
+            _message.value = context.getString(R.string.external_context_city_required)
+            return
+        }
+        val latitudeValue = latitude.trim().replace(',', '.').toDoubleOrNull()
+        val longitudeValue = longitude.trim().replace(',', '.').toDoubleOrNull()
+        if (latitudeValue == null || longitudeValue == null) {
+            _message.value = context.getString(R.string.external_context_location_invalid)
+            return
+        }
+        viewModelScope.launch {
+            val saved = externalContextPreferences.setLocation(
+                CoarseLocation(
+                    cityLabel = city,
+                    latitude = latitudeValue,
+                    longitude = longitudeValue,
+                    zoneId = ZoneId.systemDefault().id
+                )
+            )
+            _message.value = context.getString(
+                if (saved) R.string.external_context_location_saved
+                else R.string.external_context_location_invalid
+            )
+        }
+    }
+
+    fun setExternalContextEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled && externalContextPreferences.getSettings().location == null) {
+                _message.value = context.getString(R.string.external_context_location_required)
+                return@launch
+            }
+            externalContextPreferences.setEnabled(enabled)
+            if (!enabled) externalContextPreferences.setWeatherEnabled(false)
+        }
+    }
+
+    fun setExternalWeatherEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            val settings = externalContextPreferences.getSettings()
+            if (enabled && (!settings.enabled || settings.location == null)) {
+                _message.value = context.getString(R.string.external_context_enable_first)
+                return@launch
+            }
+            externalContextPreferences.setWeatherEnabled(enabled)
+        }
+    }
+
+    fun clearExternalContext() {
+        viewModelScope.launch {
+            externalContextPreferences.clearAll()
+            _message.value = context.getString(R.string.external_context_cleared)
+        }
+    }
+
+    fun testExternalContext() {
+        viewModelScope.launch {
+            _message.value = context.getString(R.string.external_context_test_running)
+            _message.value = try {
+                formatExternalContextTestResult(externalContextProvider.getContext())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                context.getString(R.string.external_context_test_weather_unavailable_without_daylight)
+            }
+        }
+    }
+
+    private fun formatExternalContextTestResult(result: ExternalContextResult): String {
+        return when (result) {
+                ExternalContextResult.Disabled ->
+                    context.getString(R.string.external_context_test_disabled)
+                ExternalContextResult.NotConfigured ->
+                    context.getString(R.string.external_context_test_not_configured)
+                is ExternalContextResult.Available -> {
+                    val daylightMinutes = result.snapshot.daylight.daylightMinutes
+                    when (val weather = result.snapshot.weather) {
+                        WeatherContextState.Disabled -> context.getString(
+                            R.string.external_context_test_daylight_only,
+                            daylightMinutes
+                        )
+                        is WeatherContextState.Unavailable -> context.getString(
+                            R.string.external_context_test_weather_unavailable,
+                            daylightMinutes
+                        )
+                        is WeatherContextState.Available -> {
+                            val source = when (weather.value.origin) {
+                                WeatherContextOrigin.NETWORK ->
+                                    context.getString(R.string.external_context_source_network)
+                                WeatherContextOrigin.FRESH_CACHE ->
+                                    context.getString(R.string.external_context_source_cache)
+                                WeatherContextOrigin.STALE_CACHE ->
+                                    context.getString(R.string.external_context_source_stale_cache)
+                            }
+                            context.getString(
+                                R.string.external_context_test_success,
+                                daylightMinutes,
+                                weather.value.temperatureCelsius,
+                                source
+                            )
+                        }
+                    }
+                }
+            }
     }
 
     // =================================================================

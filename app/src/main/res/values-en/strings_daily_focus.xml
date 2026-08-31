@@ -19,5 +19,7 @@
     <string name="daily_focus_home_budget_exhausted">The task’s total budget is exhausted</string>
     <string name="daily_focus_home_remaining_bout">%1$s remaining · %2$d min bout</string>
     <string name="daily_focus_home_bout">%1$d min bout</string>
+    <string name="daily_focus_home_today_progress">Today %1$d/%2$d min · %3$d min left</string>
+    <string name="daily_focus_home_today_complete">Today %1$d/%2$d min · target complete</string>
     <string name="daily_focus_stats_unlimited">No total limit · actual %1$s · %2$d focus sessions · %3$d manual · quadrant %4$d</string>
 </resources>

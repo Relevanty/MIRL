@@ -19,5 +19,7 @@
     <string name="daily_focus_home_budget_exhausted">Общий бюджет задачи исчерпан</string>
     <string name="daily_focus_home_remaining_bout">Осталось %1$s · заход %2$d мин</string>
     <string name="daily_focus_home_bout">Заход %1$d мин</string>
+    <string name="daily_focus_home_today_progress">Сегодня %1$d/%2$d мин · осталось %3$d мин</string>
+    <string name="daily_focus_home_today_complete">Сегодня %1$d/%2$d мин · норма выполнена</string>
     <string name="daily_focus_stats_unlimited">Общий лимит не задан · факт %1$s · %2$d фокусов · %3$d вручную · квадрат %4$d</string>
 </resources>

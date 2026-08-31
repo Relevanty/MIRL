@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Checklist
@@ -111,6 +112,7 @@ import kotlinx.coroutines.launch
 fun CalendarScreen(
     viewModel: CalendarViewModel = viewModel(),
     onBack: (() -> Unit)? = null,
+    onOpenReminders: () -> Unit = {},
     onOpenTask: (Int) -> Unit = {},
     onStartFocus: (Int) -> Unit = {},
     openEventId: Int? = null,
@@ -197,9 +199,18 @@ fun CalendarScreen(
             }
             Text(
                 text = month.month.getDisplayName(TextStyle.FULL, Locale.getDefault()) + " " + month.year,
+                modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center
             )
+            IconButton(onClick = onOpenReminders) {
+                Icon(
+                    Icons.Default.Notifications,
+                    contentDescription = stringResource(R.string.reminders_title),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             IconButton(onClick = { month = month.plusMonths(1) }) {
                 Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.appAccents.focus.color)
             }

@@ -437,9 +437,7 @@ fun FocusProtocolActiveScreen(
 ) {
     var showCancelDialog by remember { mutableStateOf(false) }
     var showTargetPicker by remember { mutableStateOf(false) }
-    var energyAfter by rememberSaveable(session.id) {
-        mutableIntStateOf(session.energyBefore.coerceIn(1, 10))
-    }
+    var energyAfter by rememberSaveable(session.id) { mutableStateOf<Int?>(null) }
     BackHandler(enabled = session.phase != FocusProtocolPhase.REVIEW) {
         if (session.phase == FocusProtocolPhase.CYCLE_READY) onFinishBlock()
         else showCancelDialog = true
@@ -566,18 +564,53 @@ fun FocusProtocolActiveScreen(
             FocusProtocolPhase.REVIEW -> {
                 BlockSummary(session)
                 Text(
-                    text = stringResource(R.string.focus_protocol_energy_after, energyAfter),
+                    text = energyAfter?.let {
+                        stringResource(R.string.focus_protocol_energy_after, it)
+                    } ?: stringResource(R.string.focus_protocol_energy_after_prompt),
                     style = MaterialTheme.typography.titleMedium
                 )
-                Slider(
-                    value = energyAfter.toFloat(),
-                    onValueChange = { energyAfter = it.roundToInt().coerceIn(1, 10) },
-                    valueRange = 1f..10f,
-                    steps = 8,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                listOf(1..5, 6..10).forEach { range ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        range.forEach { value ->
+                            FilterChip(
+                                selected = energyAfter == value,
+                                onClick = { energyAfter = value },
+                                label = {
+                                    Text(
+                                        text = value.toString(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        textAlign = TextAlign.Center
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+                energyAfter?.let { after ->
+                    val delta = after - session.energyBefore
+                    Text(
+                        text = stringResource(
+                            R.string.focus_protocol_energy_change,
+                            session.energyBefore,
+                            after,
+                            formatSignedEnergyDelta(delta)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f))
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
+                }
                 Button(
-                    onClick = { onCompleteReview(energyAfter) },
+                    onClick = { energyAfter?.let(onCompleteReview) },
+                    enabled = energyAfter != null,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(stringResource(R.string.focus_protocol_complete))
@@ -1002,6 +1035,18 @@ fun CompletedFocusBlocksCard(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.appAccents.focus.color
                         )
+                        block.energyAfter?.let { after ->
+                            Text(
+                                text = stringResource(
+                                    R.string.focus_history_energy,
+                                    block.energyBefore,
+                                    after,
+                                    formatSignedEnergyDelta(after - block.energyBefore)
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -1045,23 +1090,29 @@ fun EnergyPatternCard(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     repeat(24) { hour ->
-                        val value = values[hour]?.average ?: 0f
+                        val point = values[hour]
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight(),
                             contentAlignment = Alignment.BottomCenter
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height((value / 10f * 64f).coerceAtLeast(2f).dp)
-                                    .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
-                                    .background(
-                                        if (value > 0f) MaterialTheme.appAccents.focus.color
-                                        else Color.Transparent
-                                    )
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                EnergyPatternBar(
+                                    value = point?.averageBefore,
+                                    color = MaterialTheme.appAccents.focus.color,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                EnergyPatternBar(
+                                    value = point?.averageAfter,
+                                    color = MaterialTheme.appAccents.success.color,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
@@ -1074,6 +1125,11 @@ fun EnergyPatternCard(
                     }
                 }
                 Text(
+                    text = stringResource(R.string.focus_protocol_energy_chart_legend),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
                     text = stringResource(
                         R.string.focus_protocol_energy_samples,
                         points.sumOf { it.sampleCount }
@@ -1084,6 +1140,26 @@ fun EnergyPatternCard(
             }
         }
     }
+}
+
+@Composable
+private fun EnergyPatternBar(
+    value: Float?,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val safeValue = value?.coerceIn(0f, 10f) ?: 0f
+    Box(
+        modifier = modifier
+            .height((safeValue / 10f * 64f).coerceAtLeast(if (value == null) 0f else 2f).dp)
+            .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+            .background(if (value != null) color else Color.Transparent)
+    )
+}
+
+private fun formatSignedEnergyDelta(delta: Int): String = when {
+    delta > 0 -> "+$delta"
+    else -> delta.toString()
 }
 
 @Composable

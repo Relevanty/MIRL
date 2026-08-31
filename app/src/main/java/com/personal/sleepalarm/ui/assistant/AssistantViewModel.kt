@@ -19,7 +19,7 @@ import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.model.ordinaryTasks
 import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.domain.model.effectiveSleepStartMillis
-import com.personal.sleepalarm.domain.model.NextActionRanker
+import com.personal.sleepalarm.data.repository.AdaptiveRecommendationRepository
 import com.personal.sleepalarm.domain.model.nextFocusDurationMinutes
 import com.personal.sleepalarm.domain.assistant.DailyPlanCommand
 import com.personal.sleepalarm.domain.assistant.DailyPlanCommandError
@@ -97,6 +97,7 @@ class AssistantViewModel(
 
     private val predictor = SleepPredictor()
     private val assistant = PersonalAssistant(context, database, predictor)
+    private val adaptiveRecommendations = AdaptiveRecommendationRepository(database)
     private val voice = (application as App).serviceLocator.briefingCoordinator
     private val taskLifecycle = TaskLifecycleCoordinator(context, database)
     private val dailyPlanPreferences = DailyPlanNudgePreferences(context)
@@ -225,7 +226,11 @@ class AssistantViewModel(
             val lower = text.lowercase()
             if (lower.contains("что лучше") || lower.contains("что сделать") || lower.contains("следующую задачу")) {
                 val now = System.currentTimeMillis()
-                val task = NextActionRanker.rank(database.taskDao().getAll(), now)
+                val recommendation = adaptiveRecommendations.rank(
+                    tasks = database.taskDao().getAll(),
+                    nowMillis = now
+                )
+                val task = recommendation.orderedTasks
                     .firstOrNull { it.nextFocusDurationMinutes() > 0 }
                 if (task != null) {
                     _proposedAction.value = task.toAssistantProposedAction()
@@ -233,8 +238,11 @@ class AssistantViewModel(
                         fromUser = false,
                         text = if ((task.dueAtMillis ?: Long.MAX_VALUE) < now) {
                             "Эта задача просрочена и сейчас важнее остальных. Я подготовил действие — проверьте его ниже."
+                        } else if (recommendation.ranking.isAdaptive) {
+                            val energy = recommendation.personalState.estimatedEnergy.toInt().coerceIn(1, 10)
+                            "Сейчас ваша оценочная энергия около $energy из 10, и эта задача лучше других совпадает с доступной нагрузкой. Дедлайны и обязательные шаги сохранены."
                         } else {
-                            "С учётом квадранта и срока это лучший следующий шаг. Я ничего не запущу без подтверждения."
+                            "Данных об энергии пока мало, поэтому я сохранил обычный порядок по квадранту и сроку. Я ничего не запущу без подтверждения."
                         }
                     )
                     return@launch

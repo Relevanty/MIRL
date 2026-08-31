@@ -42,9 +42,30 @@ import kotlinx.coroutines.Job
 
 data class EnergyHourPoint(
     val hour: Int,
-    val average: Float,
+    val averageBefore: Float,
+    val averageAfter: Float?,
     val sampleCount: Int
 )
+
+internal fun buildCompletedEnergyPattern(
+    completedBlocks: List<FocusProtocolSessionEntity>,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): List<EnergyHourPoint> = completedBlocks
+    .filter { it.phase == FocusProtocolPhase.COMPLETE && it.completedAt != null }
+    .groupBy { block ->
+        Instant.ofEpochMilli(block.createdAt).atZone(zoneId).hour
+    }
+    .map { (hour, blocks) ->
+        EnergyHourPoint(
+            hour = hour,
+            averageBefore = blocks.map { it.energyBefore }.average().toFloat(),
+            averageAfter = blocks.mapNotNull { it.energyAfter }.let { values ->
+                values.takeIf { it.isNotEmpty() }?.average()?.toFloat()
+            },
+            sampleCount = blocks.size
+        )
+    }
+    .sortedBy(EnergyHourPoint::hour)
 
 data class FocusSoundDraft(
     val selection: FocusSoundscapeSelection = FocusSoundscapeSelection(),
@@ -82,20 +103,8 @@ class FocusProtocolViewModel(application: Application) : AndroidViewModel(applic
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val energyPattern: StateFlow<List<EnergyHourPoint>> = repository
-        .observeEnergyFrom(System.currentTimeMillis() - ENERGY_HISTORY_DAYS * DAY_MS)
-        .map { samples ->
-            samples.filter { it.context == "BEFORE_FOCUS" }.groupBy { sample ->
-                Instant.ofEpochMilli(sample.timestamp)
-                    .atZone(ZoneId.systemDefault())
-                    .hour
-            }.map { (hour, values) ->
-                EnergyHourPoint(
-                    hour = hour,
-                    average = values.map { it.energy }.average().toFloat(),
-                    sampleCount = values.size
-                )
-            }.sortedBy { it.hour }
-        }
+        .observeCompletedFrom(System.currentTimeMillis() - ENERGY_HISTORY_DAYS * DAY_MS)
+        .map(::buildCompletedEnergyPattern)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val profile: StateFlow<AlarmProfileEntity?> = locator.database.alarmProfileDao()

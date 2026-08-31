@@ -2,6 +2,7 @@ package com.personal.sleepalarm.ui.home
 
 import android.app.Application
 import android.content.Intent
+import android.os.SystemClock
 import android.provider.AlarmClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -13,12 +14,25 @@ import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.AlarmProfileEntity
 import com.personal.sleepalarm.data.db.entity.CueEventEntity
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
+import com.personal.sleepalarm.data.db.entity.DailyCheckInEntity
+import com.personal.sleepalarm.data.db.entity.EnergyObservationEntity
+import com.personal.sleepalarm.data.db.entity.TaskDemandProfileEntity
+import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.data.db.entity.TaskDependencyEntity
+import com.personal.sleepalarm.data.db.entity.RecommendationDecisionEntity
+import com.personal.sleepalarm.data.db.entity.CalendarEventEntity
+import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.preferences.QuickNotesPreference
 import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
 import com.personal.sleepalarm.data.preferences.SleepAutomationSettings
+import com.personal.sleepalarm.data.preferences.ExternalContextPreferences
+import com.personal.sleepalarm.data.externalcontext.DefaultExternalContextProvider
+import com.personal.sleepalarm.data.externalcontext.OpenMeteoWeatherClient
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
 import com.personal.sleepalarm.domain.calculator.CueScheduleCalculator
+import com.personal.sleepalarm.domain.calculator.DailyTaskFocusCalculator
+import com.personal.sleepalarm.domain.calculator.DailyTaskFocusProgress
 import com.personal.sleepalarm.domain.calculator.SleepCalculator
 import com.personal.sleepalarm.domain.automation.SleepAutomationWindow
 import com.personal.sleepalarm.domain.automation.isAutomationArmed
@@ -29,24 +43,51 @@ import com.personal.sleepalarm.domain.model.CueSchedule
 import com.personal.sleepalarm.domain.model.SleepPlan
 import com.personal.sleepalarm.domain.model.SleepPlanWarning
 import com.personal.sleepalarm.domain.model.SleepWindow
+import com.personal.sleepalarm.domain.calculator.liveTaskFocusIntervals
+import com.personal.sleepalarm.domain.adaptive.AdaptiveRanking
+import com.personal.sleepalarm.domain.adaptive.AdaptivePlanningBridge
+import com.personal.sleepalarm.domain.adaptive.AdaptivePlanningInput
+import com.personal.sleepalarm.domain.adaptive.PersonalState
+import com.personal.sleepalarm.domain.adaptive.PersonalStateObservation
+import com.personal.sleepalarm.domain.adaptive.PlanningContext
+import com.personal.sleepalarm.domain.adaptive.RankingMode
+import com.personal.sleepalarm.domain.adaptive.ScoreFactor
+import com.personal.sleepalarm.domain.adaptive.StateEstimator
+import com.personal.sleepalarm.domain.adaptive.TaskDemand
+import com.personal.sleepalarm.domain.adaptive.TaskEntityAdaptiveRanker
+import com.personal.sleepalarm.domain.adaptive.TimeWindow
+import com.personal.sleepalarm.domain.externalcontext.ExternalContextResult
+import com.personal.sleepalarm.domain.externalcontext.WeatherContextState
+import com.personal.sleepalarm.domain.externalcontext.WeatherContextOrigin
 import com.personal.sleepalarm.service.SleepForegroundService
+import com.personal.sleepalarm.ui.mood.MorningCheckInInput
 import com.personal.sleepalarm.util.PermissionChecker
 import com.personal.sleepalarm.util.PermissionState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.LocalDate
+import kotlin.math.roundToInt
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Состояние главного экрана.
@@ -64,6 +105,50 @@ data class HomeUiState(
     val permissions: PermissionState = PermissionState(),
     val sleepAutomation: SleepAutomationSettings = SleepAutomationSettings(),
     val now: Long = System.currentTimeMillis()
+)
+
+enum class AdaptivePlanReason {
+    DEADLINE,
+    REQUIRED,
+    ENERGY_MATCH,
+    CAPACITY_MATCH,
+    DEFAULT_ORDER
+}
+
+data class AdaptiveHomePlan(
+    val orderedTasks: List<TaskEntity> = emptyList(),
+    val personalState: PersonalState? = null,
+    val rankingMode: RankingMode = RankingMode.FALLBACK_NO_STATE,
+    val topReason: AdaptivePlanReason = AdaptivePlanReason.DEFAULT_ORDER,
+    val reasonByTaskId: Map<Int, AdaptivePlanReason> = emptyMap(),
+    val shouldOfferMorningCheckIn: Boolean = false,
+    val shouldOfferRecoveryCheckIn: Boolean = false,
+    val recoveryTaskId: Int? = null,
+    val recoveryFocusSessionId: Int? = null,
+    val daylightMinutes: Int? = null,
+    val sunriseMillis: Long? = null,
+    val sunsetMillis: Long? = null,
+    val daylightZoneId: String? = null,
+    val temperatureCelsius: Double? = null,
+    val apparentTemperatureCelsius: Double? = null,
+    val relativeHumidityPercent: Int? = null,
+    val precipitationMillimeters: Double? = null,
+    val weatherCode: Int? = null,
+    val windSpeedKilometersPerHour: Double? = null,
+    val outdoorFeasible: Boolean? = null
+) {
+    val isAdaptive: Boolean get() = rankingMode == RankingMode.ADAPTIVE
+}
+
+private data class AdaptiveHomeInputs(
+    val tasks: List<TaskEntity>,
+    val latestCheckIn: DailyCheckInEntity?,
+    val profiles: List<TaskDemandProfileEntity>,
+    val dependencies: List<TaskDependencyEntity> = emptyList(),
+    val latestSleep: SleepSessionEntity?,
+    val activities: List<ActivityRecordEntity>,
+    val energyObservations: List<EnergyObservationEntity> = emptyList(),
+    val latestEnergyObservation: EnergyObservationEntity? = null
 )
 
 /**
@@ -96,6 +181,19 @@ class HomeViewModel(
     }
 
     private val database = AppDatabase.getInstance(context)
+    private val serviceLocator = (application as com.personal.sleepalarm.app.App).serviceLocator
+    private val dailyCheckInRepository = serviceLocator.dailyCheckInRepository
+    private val energyObservationRepository = serviceLocator.energyObservationRepository
+    private val demandProfileRepository = serviceLocator.taskDemandProfileRepository
+    private val recommendationRepository = serviceLocator.recommendationRepository
+    private val externalContextPreferences = ExternalContextPreferences(context)
+    private val externalContextProvider = DefaultExternalContextProvider(
+        settingsStore = externalContextPreferences,
+        weatherCache = externalContextPreferences,
+        weatherClient = OpenMeteoWeatherClient()
+    )
+    private val externalContext = MutableStateFlow<ExternalContextResult>(ExternalContextResult.Disabled)
+    private val externalContextRefreshVersion = MutableStateFlow(0L)
 
     private val profileRepository = SleepProfileRepository(
         profileDao = database.alarmProfileDao()
@@ -144,10 +242,186 @@ class HomeViewModel(
         initialValue = HomeUiState()
     )
 
+    private val adaptiveBaseInputs = combine(
+        database.taskDao().observeAll(),
+        dailyCheckInRepository.observeLatest(),
+        demandProfileRepository.observeAll(),
+        database.sleepSessionDao().observeLatestCompleted(),
+        database.activityRecordDao().observeAll()
+    ) { tasks, checkIn, profiles, sleep, activities ->
+        AdaptiveHomeInputs(
+            tasks = tasks,
+            latestCheckIn = checkIn,
+            profiles = profiles,
+            latestSleep = sleep,
+            activities = activities
+        )
+    }
+
+    private val adaptiveCoreInputs = combine(
+        adaptiveBaseInputs,
+        demandProfileRepository.observeAllDependencies()
+    ) { inputs, dependencies ->
+        inputs.copy(dependencies = dependencies)
+    }
+
+    private val adaptiveInputs = combine(
+        adaptiveCoreInputs,
+        energyObservationRepository.observeFrom(
+            System.currentTimeMillis() - 90L * 24L * 60L * 60_000L
+        )
+    ) { inputs, observations ->
+        inputs.copy(
+            energyObservations = observations,
+            latestEnergyObservation = observations.maxByOrNull(EnergyObservationEntity::timestamp)
+        )
+    }
+
+    val adaptivePlan: StateFlow<AdaptiveHomePlan> = combine(
+        adaptiveInputs,
+        database.calendarEventDao().observeAll(),
+        externalContext,
+        merge(refreshTrigger, tickerFlow)
+    ) { inputs, events, external, nowMillis ->
+        buildAdaptivePlan(inputs, events, external, nowMillis)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = AdaptiveHomePlan()
+    )
+
+    val dailyTaskProgress: StateFlow<Map<Int, DailyTaskFocusProgress>> = combine(
+        adaptiveBaseInputs,
+        database.focusProtocolDao().observeActive(),
+        merge(refreshTrigger, tickerFlow)
+    ) { inputs, activeFocus, nowMillis ->
+        DailyTaskFocusCalculator.calculateForTasks(
+            tasks = inputs.tasks,
+            records = inputs.activities,
+            nowMillis = nowMillis,
+            zoneId = ZoneId.systemDefault(),
+            liveIntervals = activeFocus?.liveTaskFocusIntervals(nowMillis).orEmpty()
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyMap()
+    )
+
     init {
         viewModelScope.launch {
             profileRepository.ensureProfileExists()
         }
+        viewModelScope.launch {
+            observeExternalContext()
+        }
+    }
+
+    /**
+     * Keeps daylight and weather current while preserving the opt-in boundary. A settings change
+     * cancels the active request immediately; when the feature is disabled no provider call is
+     * made. DataStore failures are retried instead of permanently stopping updates.
+     */
+    private suspend fun observeExternalContext() {
+        while (true) {
+            try {
+                externalContextPreferences.observeSettings()
+                    .distinctUntilChanged()
+                    .collectLatest { settings ->
+                        if (!settings.enabled) {
+                            externalContext.value = ExternalContextResult.Disabled
+                            return@collectLatest
+                        }
+                        runExternalContextRefreshLoop()
+                    }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "External context settings stream failed", error)
+                // Fail closed: if the opt-in state cannot be read, do not retain or fetch context.
+                externalContext.value = ExternalContextResult.Disabled
+            }
+            delay(EXTERNAL_CONTEXT_SETTINGS_RETRY_MS)
+        }
+    }
+
+    /**
+     * Refreshes on a fixed TTL and sooner after transient failures. Manual refreshes wake this
+     * loop immediately, while a short monotonic cooldown coalesces repeated resume events.
+     */
+    private suspend fun runExternalContextRefreshLoop() {
+        var retryDelayMillis = EXTERNAL_CONTEXT_INITIAL_RETRY_MS
+        var lastAttemptElapsedMillis = Long.MIN_VALUE
+
+        while (true) {
+            val nowElapsedMillis = SystemClock.elapsedRealtime()
+            val earliestNextAttempt = if (lastAttemptElapsedMillis == Long.MIN_VALUE) {
+                nowElapsedMillis
+            } else {
+                lastAttemptElapsedMillis + EXTERNAL_CONTEXT_MIN_ATTEMPT_INTERVAL_MS
+            }
+            val cooldownMillis = (earliestNextAttempt - nowElapsedMillis).coerceAtLeast(0L)
+            if (cooldownMillis > 0L) delay(cooldownMillis)
+
+            lastAttemptElapsedMillis = SystemClock.elapsedRealtime()
+            val outcome = refreshExternalContextSafely()
+            val handledRefreshVersion = externalContextRefreshVersion.value
+            val waitMillis = when (outcome) {
+                ExternalContextRefreshOutcome.CURRENT -> {
+                    retryDelayMillis = EXTERNAL_CONTEXT_INITIAL_RETRY_MS
+                    EXTERNAL_CONTEXT_REFRESH_TTL_MS
+                }
+                ExternalContextRefreshOutcome.RETRYABLE_FAILURE -> {
+                    val currentDelay = retryDelayMillis
+                    retryDelayMillis = (retryDelayMillis * 2L)
+                        .coerceAtMost(EXTERNAL_CONTEXT_MAX_RETRY_MS)
+                    currentDelay
+                }
+            }
+
+            // A StateFlow version retains a refresh that arrives during the wait and coalesces
+            // several rapid ON_RESUME calls into one subsequent attempt.
+            withTimeoutOrNull(waitMillis) {
+                externalContextRefreshVersion.first { it != handledRefreshVersion }
+            }
+        }
+    }
+
+    private suspend fun refreshExternalContextSafely(): ExternalContextRefreshOutcome {
+        val refreshed = try {
+            withTimeoutOrNull(EXTERNAL_CONTEXT_TIMEOUT_MS) {
+                externalContextProvider.getContext()
+            } ?: return ExternalContextRefreshOutcome.RETRYABLE_FAILURE
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w(TAG, "External context refresh failed", error)
+            return ExternalContextRefreshOutcome.RETRYABLE_FAILURE
+        }
+
+        externalContext.value = refreshed
+        return if (refreshed.needsExternalContextRetry()) {
+            ExternalContextRefreshOutcome.RETRYABLE_FAILURE
+        } else {
+            ExternalContextRefreshOutcome.CURRENT
+        }
+    }
+
+    private fun ExternalContextResult.needsExternalContextRetry(): Boolean =
+        when (this) {
+            ExternalContextResult.Disabled,
+            ExternalContextResult.NotConfigured -> false
+            is ExternalContextResult.Available -> when (val weatherState = snapshot.weather) {
+                WeatherContextState.Disabled -> false
+                is WeatherContextState.Unavailable -> true
+                is WeatherContextState.Available ->
+                    weatherState.value.origin == WeatherContextOrigin.STALE_CACHE
+            }
+        }
+
+    private enum class ExternalContextRefreshOutcome {
+        CURRENT,
+        RETRYABLE_FAILURE
     }
 
     // =================================================================
@@ -222,9 +496,177 @@ class HomeViewModel(
         }
     }
 
+    private fun buildAdaptivePlan(
+        inputs: AdaptiveHomeInputs,
+        events: List<CalendarEventEntity>,
+        external: ExternalContextResult,
+        nowMillis: Long
+    ): AdaptiveHomePlan {
+        val externalSnapshot = (external as? ExternalContextResult.Available)?.snapshot
+        val weather = externalSnapshot?.weather as? WeatherContextState.Available
+        val outdoorFeasible = weather?.value?.let { current ->
+            val code = current.weatherCode ?: 0
+            val severePrecipitation = code in 65..82 || code in 95..99
+            !severePrecipitation &&
+                (current.precipitationMillimeters ?: 0.0) < 1.5 &&
+                (current.windSpeedKilometersPerHour ?: 0.0) < 40.0
+        }
+        val adaptive = AdaptivePlanningBridge.build(
+            AdaptivePlanningInput(
+                nowMillis = nowMillis,
+                tasks = inputs.tasks,
+                profiles = inputs.profiles,
+                dependencies = inputs.dependencies,
+                latestCheckIn = inputs.latestCheckIn,
+                latestSleep = inputs.latestSleep,
+                activities = inputs.activities,
+                energyObservations = inputs.energyObservations,
+                calendarEvents = events,
+                photoperiodMinutes = externalSnapshot?.daylight?.daylightMinutes,
+                outdoorFeasible = outdoorFeasible
+            )
+        )
+        val wakeTime = inputs.latestSleep?.actualWakeTime
+            ?.takeIf { it <= nowMillis && nowMillis - it <= 36L * 60L * 60_000L }
+        val reasonByTaskId = adaptive.ranking.tasks.associate { rankedTask ->
+            rankedTask.demand.id to primaryReason(rankedTask)
+        }
+        val topReason = adaptive.ranking.tasks.firstOrNull()?.let(::primaryReason)
+            ?: AdaptivePlanReason.DEFAULT_ORDER
+        val zone = ZoneId.systemDefault()
+        val latestIsToday = inputs.latestCheckIn?.localDate == LocalDate.now(zone).toString()
+        val morningWindow = wakeTime != null && nowMillis - wakeTime <= 6L * 60L * 60_000L
+        val alarmRatingNeedsRecheck = inputs.latestCheckIn?.let { checkIn ->
+            latestIsToday && checkIn.source == "ALARM" &&
+                nowMillis - checkIn.timestamp >= 45L * 60_000L
+        } == true
+        val pendingRecovery = inputs.latestEnergyObservation?.takeIf { observation ->
+            observation.context == "AFTER_TASK" &&
+                nowMillis >= observation.timestamp + 20L * 60_000L &&
+                nowMillis <= observation.timestamp + 3L * 60L * 60_000L
+        }
+        return AdaptiveHomePlan(
+            orderedTasks = adaptive.orderedTasks,
+            personalState = adaptive.personalState,
+            rankingMode = adaptive.ranking.mode,
+            topReason = topReason,
+            reasonByTaskId = reasonByTaskId,
+            shouldOfferMorningCheckIn = morningWindow && (!latestIsToday || alarmRatingNeedsRecheck),
+            shouldOfferRecoveryCheckIn = pendingRecovery != null,
+            recoveryTaskId = pendingRecovery?.taskId,
+            recoveryFocusSessionId = pendingRecovery?.focusProtocolSessionId,
+            daylightMinutes = externalSnapshot?.daylight?.daylightMinutes,
+            sunriseMillis = externalSnapshot?.daylight?.sunrise?.toEpochMilli(),
+            sunsetMillis = externalSnapshot?.daylight?.sunset?.toEpochMilli(),
+            daylightZoneId = externalSnapshot?.daylight?.zoneId,
+            temperatureCelsius = weather?.value?.temperatureCelsius,
+            apparentTemperatureCelsius = weather?.value?.apparentTemperatureCelsius,
+            relativeHumidityPercent = weather?.value?.relativeHumidityPercent,
+            precipitationMillimeters = weather?.value?.precipitationMillimeters,
+            weatherCode = weather?.value?.weatherCode,
+            windSpeedKilometersPerHour = weather?.value?.windSpeedKilometersPerHour,
+            outdoorFeasible = outdoorFeasible
+        )
+    }
+
+    private fun primaryReason(task: com.personal.sleepalarm.domain.adaptive.RankedTask<Int>): AdaptivePlanReason {
+        val positive = task.explanations.filter { it.contribution > 0.0 }
+            .maxByOrNull { it.contribution }
+            ?.factor
+        return when (positive) {
+            ScoreFactor.DEADLINE_URGENCY -> AdaptivePlanReason.DEADLINE
+            ScoreFactor.MANDATORY_TASK -> AdaptivePlanReason.REQUIRED
+            ScoreFactor.ENERGY_FIT -> AdaptivePlanReason.ENERGY_MATCH
+            ScoreFactor.COGNITIVE_FIT -> AdaptivePlanReason.CAPACITY_MATCH
+            else -> AdaptivePlanReason.DEFAULT_ORDER
+        }
+    }
+
+    fun saveMorningRecheck(input: MorningCheckInInput) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val zone = ZoneId.systemDefault()
+            runCatching {
+                dailyCheckInRepository.save(
+                    DailyCheckInEntity(
+                        localDate = LocalDate.now(zone).toString(),
+                        timestamp = now,
+                        zoneId = zone.id,
+                        energy = input.energy,
+                        mood = input.mood,
+                        clarity = input.clarity?.minus(1),
+                        source = "MORNING_RECHECK"
+                    )
+                )
+            }
+            runCatching {
+                energyObservationRepository.record(
+                    EnergyObservationEntity(
+                        timestamp = now,
+                        absoluteEnergy = input.energy,
+                        context = "MORNING",
+                        source = "MORNING_RECHECK"
+                    )
+                )
+            }
+            refresh()
+        }
+    }
+
+    fun saveRecoveryEnergy(
+        energy: Int,
+        taskId: Int?,
+        focusProtocolSessionId: Int?
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                energyObservationRepository.record(
+                    EnergyObservationEntity(
+                        timestamp = System.currentTimeMillis(),
+                        absoluteEnergy = energy,
+                        context = "AFTER_RECOVERY",
+                        taskId = taskId,
+                        focusProtocolSessionId = focusProtocolSessionId,
+                        source = "RECOVERY_CHECK_IN"
+                    )
+                )
+            }
+            refresh()
+        }
+    }
+
+    fun recordRecommendationAccepted(task: TaskEntity) {
+        val plan = adaptivePlan.value
+        viewModelScope.launch {
+            val state = plan.personalState
+            runCatching {
+                recommendationRepository.record(
+                    RecommendationDecisionEntity(
+                        generatedAt = System.currentTimeMillis(),
+                        modelVersion = "adaptive-energy-v1",
+                        strategy = plan.rankingMode.name,
+                        stateSnapshotJson = JSONObject()
+                            .put("estimatedEnergy", state?.estimatedEnergy)
+                            .put("confidence", state?.confidence?.value)
+                            .put("minutesSinceWake", state?.minutesSinceWake)
+                            .toString(),
+                        selectedTaskId = task.id,
+                        candidateTaskIds = JSONArray(
+                            plan.orderedTasks.take(8).map(TaskEntity::id)
+                        ).toString(),
+                        reasonCodes = JSONArray(
+                            listOf((plan.reasonByTaskId[task.id] ?: plan.topReason).name)
+                        ).toString(),
+                        confidence = state?.confidence?.value?.toFloat() ?: 0f,
+                        accepted = true
+                    )
+                )
+            }
+        }
+    }
+
     // === Голосовой брифинг ===
-    private val briefingCoordinator =
-        (application as com.personal.sleepalarm.app.App).serviceLocator.briefingCoordinator
+    private val briefingCoordinator = serviceLocator.briefingCoordinator
     private val briefingTextBuilder = com.personal.sleepalarm.service.BriefingTextBuilder(
         calendarEventDao = database.calendarEventDao(),
         activityRecordDao = database.activityRecordDao(),
@@ -282,6 +724,7 @@ class HomeViewModel(
 
     fun refresh() {
         refreshTrigger.value = System.currentTimeMillis()
+        externalContextRefreshVersion.update { it + 1L }
     }
 
     fun clearError() {
@@ -664,5 +1107,11 @@ class HomeViewModel(
     companion object {
         private const val TAG = "HomeViewModel"
         private const val REFRESH_INTERVAL_MS = 60_000L
+        private const val EXTERNAL_CONTEXT_TIMEOUT_MS = 15_000L
+        private const val EXTERNAL_CONTEXT_REFRESH_TTL_MS = 30L * 60_000L
+        private const val EXTERNAL_CONTEXT_MIN_ATTEMPT_INTERVAL_MS = 15_000L
+        private const val EXTERNAL_CONTEXT_INITIAL_RETRY_MS = 60_000L
+        private const val EXTERNAL_CONTEXT_MAX_RETRY_MS = 15L * 60_000L
+        private const val EXTERNAL_CONTEXT_SETTINGS_RETRY_MS = 60_000L
     }
 }

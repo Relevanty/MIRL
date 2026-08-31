@@ -14,6 +14,7 @@ import com.personal.sleepalarm.alarm.AlarmScheduler
 import com.personal.sleepalarm.alarm.SleepAutomationScheduler
 import com.personal.sleepalarm.alarm.TaskLinkedReminderCoordinator
 import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.data.db.entity.EnergyObservationEntity
 import com.personal.sleepalarm.data.db.entity.EnergySampleEntity
 import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
@@ -97,6 +98,7 @@ class FocusProtocolManager(context: Context) {
     private val database = AppDatabase.getInstance(appContext)
     private val protocolDao = database.focusProtocolDao()
     private val energyDao = database.energySampleDao()
+    private val energyObservationDao = database.energyObservationDao()
     private val pomodoroDao = database.pomodoroDao()
     private val studyDao = database.studySessionDao()
     private val taskRepository = TaskRepository(database.taskDao())
@@ -214,12 +216,26 @@ class FocusProtocolManager(context: Context) {
                 soundscapePlayDuringRecovery = config.soundscapePlayDuringRecovery
             )
             val id = protocolDao.insert(session).toInt()
-            energyDao.insert(
+            val legacyEnergySampleId = energyDao.insert(
                 EnergySampleEntity(
                     timestamp = now,
                     energy = session.energyBefore,
                     context = ENERGY_BEFORE,
                     protocolSessionId = id
+                )
+            ).toInt()
+            energyObservationDao.insert(
+                EnergyObservationEntity(
+                    timestamp = now,
+                    absoluteEnergy = session.energyBefore,
+                    context = OBSERVATION_BEFORE,
+                    taskId = linkedTaskId(session.activityType, session.itemId),
+                    focusProtocolSessionId = id,
+                    source = OBSERVATION_SOURCE_FOCUS_PROTOCOL,
+                    quality = "EXACT",
+                    confidence = 1f,
+                    legacyEnergySampleId = legacyEnergySampleId,
+                    createdAt = now
                 )
             )
             FocusStartCommit(
@@ -601,12 +617,26 @@ class FocusProtocolManager(context: Context) {
             val session = protocolDao.getById(sessionId) ?: return@withTransaction false
             if (session.phase != FocusProtocolPhase.REVIEW) return@withTransaction false
             val now = System.currentTimeMillis()
-            energyDao.insert(
+            val legacyEnergySampleId = energyDao.insert(
                 EnergySampleEntity(
                     timestamp = now,
                     energy = safeEnergy,
                     context = ENERGY_AFTER,
                     protocolSessionId = session.id
+                )
+            ).toInt()
+            energyObservationDao.insert(
+                EnergyObservationEntity(
+                    timestamp = now,
+                    absoluteEnergy = safeEnergy,
+                    context = OBSERVATION_AFTER,
+                    taskId = linkedTaskId(session.activityType, session.itemId),
+                    focusProtocolSessionId = session.id,
+                    source = OBSERVATION_SOURCE_FOCUS_PROTOCOL,
+                    quality = "EXACT",
+                    confidence = 1f,
+                    legacyEnergySampleId = legacyEnergySampleId,
+                    createdAt = now
                 )
             )
             protocolDao.update(
@@ -735,6 +765,13 @@ class FocusProtocolManager(context: Context) {
         val legEnd = minOf(atMillis, session.phaseEndsAt ?: atMillis)
         return session.focusElapsedMillis +
             (legEnd - session.phaseStartedAt).coerceAtLeast(0L)
+    }
+
+    /** Resolves both current encoded task targets and legacy positive WORK ids. */
+    private suspend fun linkedTaskId(activityType: FocusActivityType, itemId: Int): Int? {
+        val candidate = focusItemTaskId(itemId)
+            ?: itemId.takeIf { activityType == FocusActivityType.WORK && it > 0 }
+        return candidate?.takeIf { database.taskDao().getById(it) != null }
     }
 
     private suspend fun canonicalTarget(
@@ -963,6 +1000,9 @@ class FocusProtocolManager(context: Context) {
         private const val NOTIFICATION_BASE = 680_000
         private const val ENERGY_BEFORE = "BEFORE_FOCUS"
         private const val ENERGY_AFTER = "AFTER_FOCUS"
+        private const val OBSERVATION_BEFORE = "BEFORE_TASK"
+        private const val OBSERVATION_AFTER = "AFTER_TASK"
+        private const val OBSERVATION_SOURCE_FOCUS_PROTOCOL = "FOCUS_PROTOCOL"
         private const val MINUTE_MS = 60_000L
         private const val MIN_RECORDED_FOCUS_MS = 1_000L
     }

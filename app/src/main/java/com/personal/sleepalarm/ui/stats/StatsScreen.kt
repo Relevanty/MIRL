@@ -3,6 +3,7 @@ package com.personal.sleepalarm.ui.stats
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -96,7 +97,10 @@ fun StatsScreen(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 FilterChip(
                     selected = statsMode == "sleep",
                     onClick = { statsMode = "sleep" },
@@ -118,10 +122,19 @@ fun StatsScreen(
                 FilterChip(
                     selected = statsMode == "productivity",
                     onClick = { statsMode = "productivity" },
-                    label = { Text("Задачи") },
+                    label = { Text(stringResource(R.string.stats_tab_tasks)) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = accents.work.container,
                         selectedLabelColor = accents.work.onContainer
+                    )
+                )
+                FilterChip(
+                    selected = statsMode == "energy",
+                    onClick = { statsMode = "energy" },
+                    label = { Text(stringResource(R.string.stats_tab_energy)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = accents.focus.container,
+                        selectedLabelColor = accents.focus.onContainer
                     )
                 )
             }
@@ -129,6 +142,7 @@ fun StatsScreen(
             when (statsMode) {
                 "activity" -> ActivityStatsContent(onAddActivity = { showManualActivity = true })
                 "productivity" -> ProductivityStatsContent()
+                "energy" -> EnergyStatsContent(state.energyAnalytics)
                 else -> SleepStatsContent(
                         state = state,
                         onExport = { exportCsvLauncher.launch("sleep_sessions.csv") },

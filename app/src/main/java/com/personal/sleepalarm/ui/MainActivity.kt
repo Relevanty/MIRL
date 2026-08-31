@@ -24,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
@@ -64,9 +63,6 @@ import com.personal.sleepalarm.ui.home.HomeScreen
 import com.personal.sleepalarm.ui.home.HomeViewModel
 import com.personal.sleepalarm.ui.library.LibraryScreen
 import com.personal.sleepalarm.ui.library.LibraryViewModel
-import com.personal.sleepalarm.ui.misc.BriefingSettingsScreen
-import com.personal.sleepalarm.ui.misc.MiscBottomSheet
-import com.personal.sleepalarm.ui.misc.MiscScreen
 import com.personal.sleepalarm.ui.mathpractice.MathPracticeScreen
 import com.personal.sleepalarm.ui.pomodoro.PomodoroScreen
 import com.personal.sleepalarm.ui.pomodoro.PomodoroViewModel
@@ -75,7 +71,6 @@ import com.personal.sleepalarm.ui.reminders.RemindersScreen
 import com.personal.sleepalarm.ui.settings.SettingsScreen
 import com.personal.sleepalarm.ui.settings.SettingsViewModel
 import com.personal.sleepalarm.ui.tasks.TasksScreen
-import com.personal.sleepalarm.domain.model.NextActionRanker
 import com.personal.sleepalarm.ui.tasks.TasksViewModel
 import com.personal.sleepalarm.ui.stats.StatsScreen
 import com.personal.sleepalarm.ui.stats.StatsViewModel
@@ -91,9 +86,9 @@ import androidx.compose.runtime.remember
 /**
  * Единственная Activity основного UI.
  *
- * ДОБАВЛЕНО (v5): 5 вкладок — Сон / Задачи / Помодоро / Разное / Настройки.
- * «Разное» открывает popup со списком модулей (Библиотека, Напоминания,
- * D-Day, Ассистент, Брифинг). Убраны вкладки «Расписание» и «Библиотека».
+ * Пять корневых вкладок: Сегодня / План / Фокус / Календарь / Настройки.
+ * Дополнительные модули открываются как дочерние экраны из своего контекста:
+ * библиотека из Плана, напоминания из Календаря, D-Day и ассистент из Сегодня.
  */
 class MainActivity : ComponentActivity() {
 
@@ -249,6 +244,13 @@ private const val TAB_POMODORO = 2
 private const val TAB_CALENDAR = 3
 private const val TAB_SETTINGS = 4
 
+private enum class SecondaryScreen {
+    LIBRARY,
+    REMINDERS,
+    D_DAY,
+    ASSISTANT
+}
+
 @Composable
 private fun SleepAlarmRoot(
     navigationDestination: String? = null,
@@ -268,8 +270,7 @@ private fun SleepAlarmRoot(
             }
         )
     }
-    var showMiscSheet by rememberSaveable { mutableStateOf(false) }
-    var miscScreen by remember { mutableStateOf<MiscScreen?>(null) }
+    var secondaryScreen by remember { mutableStateOf<SecondaryScreen?>(null) }
     var linkedTaskForReminder by rememberSaveable { mutableStateOf<Int?>(null) }
     var showDiary by rememberSaveable { mutableStateOf(false) }
     var showAnalytics by rememberSaveable { mutableStateOf(false) }
@@ -292,7 +293,10 @@ private fun SleepAlarmRoot(
                 selectedTab = TAB_TASKS
             }
             MainActivity.DESTINATION_CALENDAR -> selectedTab = TAB_CALENDAR
-            MainActivity.DESTINATION_REMINDERS -> miscScreen = MiscScreen.Reminders
+            MainActivity.DESTINATION_REMINDERS -> {
+                selectedTab = TAB_CALENDAR
+                secondaryScreen = SecondaryScreen.REMINDERS
+            }
         }
     }
 
@@ -373,37 +377,33 @@ private fun SleepAlarmRoot(
         return
     }
 
-    // === Экран из «Разное» (поверх вкладок) ===
-    if (miscScreen != null) {
-        BackHandler { miscScreen = null }
+    // === Профильный дочерний экран поверх корневой вкладки ===
+    if (secondaryScreen != null) {
+        BackHandler { secondaryScreen = null }
 
         Surface(
             color = MaterialTheme.colorScheme.background,
             modifier = Modifier.fillMaxSize()
         ) {
-            when (miscScreen) {
-                MiscScreen.Library -> LibraryScreen(
-                    onBack = { miscScreen = null },
+            when (secondaryScreen) {
+                SecondaryScreen.LIBRARY -> LibraryScreen(
+                    onBack = { secondaryScreen = null },
                     viewModel = libraryViewModel,
                     openItemId = requestedLibraryItemId,
                     onOpenItemConsumed = { requestedLibraryItemId = null }
                 )
-                MiscScreen.Reminders -> RemindersScreen(onBack = { miscScreen = null })
-                MiscScreen.DDay -> DDayScreen(onBack = { miscScreen = null })
-                MiscScreen.Assistant -> AssistantScreen(
-                    onBack = { miscScreen = null },
+                SecondaryScreen.REMINDERS -> RemindersScreen(onBack = { secondaryScreen = null })
+                SecondaryScreen.D_DAY -> DDayScreen(onBack = { secondaryScreen = null })
+                SecondaryScreen.ASSISTANT -> AssistantScreen(
+                    onBack = { secondaryScreen = null },
                     onStartTaskFocus = { taskId ->
                         tasksState.generalTasks.firstOrNull { it.id == taskId }?.let { task ->
                             if (pomodoroViewModel.prepareWorkTask(task)) {
-                                miscScreen = null
+                                secondaryScreen = null
                                 selectedTab = TAB_POMODORO
                             }
                         }
                     }
-                )
-                MiscScreen.Briefing -> BriefingSettingsScreen(
-                    onBack = { miscScreen = null },
-                    onOpenDailyPlanAssistant = { miscScreen = MiscScreen.Assistant }
                 )
                 null -> { /* недостижимо */ }
             }
@@ -485,14 +485,17 @@ private fun SleepAlarmRoot(
                     onOpenDiary = { showDiary = true },
                     onOpenTasks = { selectedTab = TAB_TASKS },
                     onOpenStats = { showAnalytics = true },
-                    onOpenMore = { showMiscSheet = true },
-                    onOpenAssistant = { miscScreen = MiscScreen.Assistant },
+                    onOpenDDay = { secondaryScreen = SecondaryScreen.D_DAY },
+                    onOpenAssistant = { secondaryScreen = SecondaryScreen.ASSISTANT },
                     onOpenMathPractice = { showMathPractice = true },
                     onOpenEnglishLearning = { showEnglishLearning = true },
                     openTaskCount = tasksState.activeMatrixTasks.size,
-                    upcomingTasks = NextActionRanker.rank(tasksState.activeMatrixTasks).take(3),
-                    onStartTaskFocus = { task ->
-                        if (pomodoroViewModel.prepareWorkTask(task)) selectedTab = TAB_POMODORO
+                    upcomingTasks = tasksState.activeMatrixTasks,
+                    onStartTaskFocus = { task, focusMinutes ->
+                        homeViewModel.recordRecommendationAccepted(task)
+                        if (pomodoroViewModel.prepareWorkTask(task, focusMinutes)) {
+                            selectedTab = TAB_POMODORO
+                        }
                     }
                 )
                 TAB_TASKS -> TasksScreen(
@@ -504,10 +507,10 @@ private fun SleepAlarmRoot(
                     createTaskCategory = requestedNewTaskCategory,
                     onCreateTaskRequestConsumed = { requestedNewTaskCategory = null },
                     onAddReminder = { linkedTaskForReminder = it },
-                    onOpenCalendar = { selectedTab = TAB_CALENDAR },
+                    onOpenLibrary = { secondaryScreen = SecondaryScreen.LIBRARY },
                     onOpenLibraryItem = { itemId ->
                         requestedLibraryItemId = itemId
-                        miscScreen = MiscScreen.Library
+                        secondaryScreen = SecondaryScreen.LIBRARY
                     },
                     onStartFocus = { task ->
                         if (pomodoroViewModel.prepareWorkTask(task)) selectedTab = TAB_POMODORO
@@ -528,6 +531,7 @@ private fun SleepAlarmRoot(
                     openEventId = navigationEventId,
                     openOccurrenceStart = navigationEventStart,
                     openRequestToken = navigationRequestToken,
+                    onOpenReminders = { secondaryScreen = SecondaryScreen.REMINDERS },
                     onOpenTask = { taskId ->
                         requestedTaskId = taskId
                         selectedTab = TAB_TASKS
@@ -544,30 +548,23 @@ private fun SleepAlarmRoot(
                     onOpenDiary = { showDiary = true },
                     onOpenTasks = { selectedTab = TAB_TASKS },
                     onOpenStats = { showAnalytics = true },
-                    onOpenMore = { showMiscSheet = true },
-                    onOpenAssistant = { miscScreen = MiscScreen.Assistant },
+                    onOpenDDay = { secondaryScreen = SecondaryScreen.D_DAY },
+                    onOpenAssistant = { secondaryScreen = SecondaryScreen.ASSISTANT },
                     onOpenMathPractice = { showMathPractice = true },
                     onOpenEnglishLearning = { showEnglishLearning = true },
                     openTaskCount = tasksState.activeMatrixTasks.size,
-                    upcomingTasks = NextActionRanker.rank(tasksState.activeMatrixTasks).take(3),
-                    onStartTaskFocus = { task ->
-                        if (pomodoroViewModel.prepareWorkTask(task)) selectedTab = TAB_POMODORO
+                    upcomingTasks = tasksState.activeMatrixTasks,
+                    onStartTaskFocus = { task, focusMinutes ->
+                        homeViewModel.recordRecommendationAccepted(task)
+                        if (pomodoroViewModel.prepareWorkTask(task, focusMinutes)) {
+                            selectedTab = TAB_POMODORO
+                        }
                     }
                 )
             }
         }
     }
 
-    // === Popup «Разное» ===
-    if (showMiscSheet) {
-        MiscBottomSheet(
-            onDismiss = { showMiscSheet = false },
-            onSelect = { screen ->
-                showMiscSheet = false
-                miscScreen = screen
-            }
-        )
-    }
 }
 
 @Composable

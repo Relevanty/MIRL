@@ -13,8 +13,8 @@ android {
         applicationId = "com.personal.sleepalarm"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.5.3"
+        versionCode = 14
+        versionName = "1.5.4"
 
         resourceConfigurations += listOf("ru", "en")
 
@@ -67,6 +67,10 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {

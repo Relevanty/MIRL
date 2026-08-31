@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.data.db.AppDatabase
 import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.data.db.entity.TaskDemandProfileEntity
+import com.personal.sleepalarm.data.db.entity.TaskDependencyEntity
 import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.db.entity.FocusProtocolSessionEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
@@ -65,6 +67,8 @@ class TasksViewModel(
     private val database = AppDatabase.getInstance(application.applicationContext)
     private val repository = TaskRepository(database.taskDao())
     private val taskLifecycle = TaskLifecycleCoordinator(application.applicationContext, database)
+    private val demandProfileRepository =
+        (application as com.personal.sleepalarm.app.App).serviceLocator.taskDemandProfileRepository
 
     private val _draftTitle = MutableStateFlow("")
     private val _draftIsMorning = MutableStateFlow(false)
@@ -98,6 +102,13 @@ class TasksViewModel(
 
     val libraryLinks: StateFlow<List<TaskLibraryLinkEntity>> = database.taskLibraryLinkDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val demandProfiles: StateFlow<List<TaskDemandProfileEntity>> = demandProfileRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val taskDependencies: StateFlow<List<TaskDependencyEntity>> =
+        demandProfileRepository.observeAllDependencies()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val uiState: StateFlow<TasksUiState> = combine(
         repository.observeMorningRoutine(),
@@ -166,7 +177,11 @@ class TasksViewModel(
     }
 
     /** Создаёт или обновляет полную карточку матрицы. */
-    fun saveTask(task: TaskEntity) {
+    fun saveTask(
+        task: TaskEntity,
+        demandProfile: TaskDemandProfileEntity? = null,
+        dependencyIds: Set<Int>? = null
+    ) {
         val normalized = task.copy(
             title = task.title.trim(),
             matrixQuadrant = task.matrixQuadrant.coerceIn(1, 4),
@@ -185,11 +200,60 @@ class TasksViewModel(
             } else {
                 normalized
             }
-            taskLifecycle.save(toSave) ?: return@launch
+            val saved = taskLifecycle.save(toSave)?.task ?: return@launch
+            demandProfile?.let { profile ->
+                demandProfileRepository.save(
+                    profile.copy(
+                        taskId = saved.id,
+                        domain = saved.category.ifBlank { "OTHER" },
+                        preferredBlockMinutes = saved.estimatedMinutes
+                    )
+                )
+            }
+            dependencyIds?.let { requested ->
+                val existingEdges = taskDependencies.value
+                val current = existingEdges.filter { it.taskId == saved.id }
+                    .map(TaskDependencyEntity::dependsOnTaskId)
+                    .toSet()
+                val safeRequested = requested
+                    .filter { prerequisiteId ->
+                        prerequisiteId != saved.id &&
+                            !wouldCreateDependencyCycle(saved.id, prerequisiteId, existingEdges)
+                    }
+                    .toSet()
+                (current - safeRequested).forEach { prerequisiteId ->
+                    demandProfileRepository.removeDependency(saved.id, prerequisiteId)
+                }
+                (safeRequested - current).forEach { prerequisiteId ->
+                    demandProfileRepository.addDependency(
+                        TaskDependencyEntity(
+                            taskId = saved.id,
+                            dependsOnTaskId = prerequisiteId
+                        )
+                    )
+                }
+            }
             if (previous?.imagePath != null && previous.imagePath != toSave.imagePath) {
                 withContext(Dispatchers.IO) { CoverHelper.deleteCover(previous.imagePath) }
             }
         }
+    }
+
+    private fun wouldCreateDependencyCycle(
+        taskId: Int,
+        prerequisiteId: Int,
+        edges: List<TaskDependencyEntity>
+    ): Boolean {
+        val graph = edges.groupBy(TaskDependencyEntity::taskId)
+        val pending = ArrayDeque<Int>().apply { add(prerequisiteId) }
+        val visited = mutableSetOf<Int>()
+        while (pending.isNotEmpty()) {
+            val current = pending.removeFirst()
+            if (current == taskId) return true
+            if (!visited.add(current)) continue
+            graph[current].orEmpty().forEach { pending.add(it.dependsOnTaskId) }
+        }
+        return false
     }
 
     fun moveTask(task: TaskEntity, quadrant: TaskQuadrant) {

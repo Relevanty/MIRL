@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
  *
  * Структура:
  * {
- *   "version": 13,
+ *   "version": 14,
  *   "exportedAt": "...",
  *   "alarmProfile": {...},
  *   "schedule": {...},
@@ -42,6 +42,14 @@ import kotlinx.coroutines.withContext
  *   "studySessions": [...],
  *   "calendarEvents": [...],
  *   "tasks": [...],
+ *   "dailyCheckIns": [...],
+ *   "energyObservations": [...],
+ *   "taskDemandProfiles": [...],
+ *   "taskDependencies": [...],
+ *   "workEpisodeAssessments": [...],
+ *   "externalContexts": [...],
+ *   "contextSnapshots": [...],
+ *   "recommendationDecisions": [...],
  *   "englishProgress": [...],
  *   "englishDirectionalProgress": [...],
  *   "englishStudySets": [...],
@@ -62,7 +70,7 @@ class BackupManager(private val context: Context) {
 
     companion object {
         private const val TAG = "BackupManager"
-        private const val BACKUP_VERSION = 13
+        private const val BACKUP_VERSION = 14
     }
 
     private data class EnglishBackupSnapshot(
@@ -80,20 +88,19 @@ class BackupManager(private val context: Context) {
     suspend fun exportToJson(): String {
         val sleepAutomation = SleepAutomationPreference(context).get()
         val dailyPlanNudges = DailyPlanNudgePreferences(context).get()
-        // Sets, cards and their progress form one FK graph. Read them under one
-        // database snapshot so a concurrent edit cannot produce orphaned backup rows.
-        val englishBackup = db.withTransaction {
-            EnglishBackupSnapshot(
+        // Every Room-backed section belongs to one snapshot. Background focus writes,
+        // task edits and recommendation updates must not produce an orphaned backup graph.
+        val root = db.withTransaction {
+            val englishBackup = EnglishBackupSnapshot(
                 legacyProgress = db.englishStudyDao().getAllProgressWithWords(),
                 directionalProgress = db.englishStudyDao().getAllDirectionalProgressWithWords(),
                 studySets = db.englishStudyDao().getAllStudySets(),
                 studyCards = db.englishStudyDao().getAllStudyCardsForBackup(),
                 cardProgress = db.englishStudyDao().getAllCardProgress()
             )
-        }
-        val root = JSONObject().apply {
-            put("version", BACKUP_VERSION)
-            put("exportedAt", System.currentTimeMillis())
+            JSONObject().apply {
+                put("version", BACKUP_VERSION)
+                put("exportedAt", System.currentTimeMillis())
 
             // Профиль (одна запись или пусто)
             db.alarmProfileDao().getProfile()?.let { put("alarmProfile", profileToJson(it)) }
@@ -159,6 +166,30 @@ class BackupManager(private val context: Context) {
             put("activityRecords", JSONArray().apply {
                 db.activityRecordDao().getAll().forEach { put(activityRecordToJson(it)) }
             })
+            put("dailyCheckIns", JSONArray().apply {
+                db.dailyCheckInDao().getAll().forEach { put(dailyCheckInToJson(it)) }
+            })
+            put("energyObservations", JSONArray().apply {
+                db.energyObservationDao().getAll().forEach { put(energyObservationToJson(it)) }
+            })
+            put("taskDemandProfiles", JSONArray().apply {
+                db.taskDemandProfileDao().getAll().forEach { put(taskDemandProfileToJson(it)) }
+            })
+            put("taskDependencies", JSONArray().apply {
+                db.taskDependencyDao().getAll().forEach { put(taskDependencyToJson(it)) }
+            })
+            put("workEpisodeAssessments", JSONArray().apply {
+                db.workEpisodeAssessmentDao().getAll().forEach { put(workEpisodeAssessmentToJson(it)) }
+            })
+            put("externalContexts", JSONArray().apply {
+                db.externalContextDao().getAll().forEach { put(externalContextToJson(it)) }
+            })
+            put("contextSnapshots", JSONArray().apply {
+                db.contextSnapshotDao().getAll().forEach { put(contextSnapshotToJson(it)) }
+            })
+            put("recommendationDecisions", JSONArray().apply {
+                db.recommendationDecisionDao().getAll().forEach { put(recommendationDecisionToJson(it)) }
+            })
             // The 10,000-word lexicon is bundled with the APK and is re-seeded locally.
             // Only personal spaced-repetition history belongs in a backup.
             put("englishProgress", JSONArray().apply {
@@ -202,17 +233,18 @@ class BackupManager(private val context: Context) {
             put("cueEvents", JSONArray().apply {
                 db.cueEventDao().getAll().forEach { put(cueEventToJson(it)) }
             })
-            put("library", JSONObject().apply {
-                put("items", JSONArray().apply {
-                    db.libraryDao().getAllItems().forEach { put(libraryItemToJson(it)) }
+                put("library", JSONObject().apply {
+                    put("items", JSONArray().apply {
+                        db.libraryDao().getAllItems().forEach { put(libraryItemToJson(it)) }
+                    })
+                    put("tags", JSONArray().apply {
+                        db.libraryDao().getAllTags().forEach { put(libraryTagToJson(it)) }
+                    })
+                    put("refs", JSONArray().apply {
+                        db.libraryDao().getAllCrossRefs().forEach { put(crossRefToJson(it)) }
+                    })
                 })
-                put("tags", JSONArray().apply {
-                    db.libraryDao().getAllTags().forEach { put(libraryTagToJson(it)) }
-                })
-                put("refs", JSONArray().apply {
-                    db.libraryDao().getAllCrossRefs().forEach { put(crossRefToJson(it)) }
-                })
-            })
+            }
         }
         return root.toString(2)
     }
@@ -244,6 +276,7 @@ class BackupManager(private val context: Context) {
                 "Версия резервной копии $version новее поддерживаемой версии $BACKUP_VERSION"
             )
         }
+        validateBackupStructureBeforeRestore(root, version)
 
         // Resolve saved progress against the current bundled headwords before
         // touching user data. If the asset is damaged, import remains atomic.
@@ -266,6 +299,14 @@ class BackupManager(private val context: Context) {
         db.withTransaction {
             // 1. Очищаем все таблицы (сначала связи, потом основные)
             db.cueEventDao().deleteAll()
+            db.recommendationDecisionDao().deleteAll()
+            db.workEpisodeAssessmentDao().deleteAll()
+            db.contextSnapshotDao().deleteAll()
+            db.taskDependencyDao().deleteAll()
+            db.taskDemandProfileDao().deleteAll()
+            db.energyObservationDao().deleteAll()
+            db.externalContextDao().deleteAll()
+            db.dailyCheckInDao().deleteAll()
             db.taskLibraryLinkDao().deleteAll()
             db.taskAttachmentDao().deleteAll()
             db.taskSubtaskDao().deleteAll()
@@ -389,6 +430,82 @@ class BackupManager(private val context: Context) {
             root.optJSONArray("activityRecords")?.let { arr ->
                 val list = (0 until arr.length()).mapNotNull { activityRecordFromJson(arr.getJSONObject(it)) }
                 if (list.isNotEmpty()) db.activityRecordDao().insertAll(list)
+            }
+
+            root.optJSONArray("dailyCheckIns")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    dailyCheckInFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.dailyCheckInDao().insertAll(list)
+            }
+            root.optJSONArray("externalContexts")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    externalContextFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.externalContextDao().insertAll(list)
+            }
+
+            if (root.has("energyObservations")) {
+                root.optJSONArray("energyObservations")?.let { arr ->
+                    val list = (0 until arr.length()).mapNotNull {
+                        energyObservationFromJson(arr.getJSONObject(it))
+                    }
+                    if (list.isNotEmpty()) db.energyObservationDao().insertAll(list)
+                }
+            } else {
+                // Backups through v13 only contain energy_samples. Recreate the v28
+                // compatibility projection after its optional session parents exist.
+                val validSessionIds = db.focusProtocolDao().getAll().mapTo(hashSetOf()) { it.id }
+                val observations = db.energySampleDao().getAll().map { sample ->
+                    EnergyObservationEntity(
+                        id = sample.id,
+                        timestamp = sample.timestamp,
+                        absoluteEnergy = sample.energy.coerceIn(1, 10),
+                        context = when (sample.context) {
+                            "BEFORE_FOCUS" -> "BEFORE_TASK"
+                            "AFTER_FOCUS" -> "AFTER_TASK"
+                            else -> sample.context
+                        },
+                        focusProtocolSessionId = sample.protocolSessionId?.takeIf(validSessionIds::contains),
+                        source = "LEGACY_ENERGY_SAMPLE",
+                        quality = "EXACT",
+                        confidence = 1f,
+                        legacyEnergySampleId = sample.id,
+                        createdAt = sample.timestamp
+                    )
+                }
+                if (observations.isNotEmpty()) db.energyObservationDao().insertAll(observations)
+            }
+
+            root.optJSONArray("taskDemandProfiles")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    taskDemandProfileFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.taskDemandProfileDao().insertAll(list)
+            }
+            root.optJSONArray("taskDependencies")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    taskDependencyFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.taskDependencyDao().insertAll(list)
+            }
+            root.optJSONArray("workEpisodeAssessments")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    workEpisodeAssessmentFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.workEpisodeAssessmentDao().insertAll(list)
+            }
+            root.optJSONArray("contextSnapshots")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    contextSnapshotFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.contextSnapshotDao().insertAll(list)
+            }
+            root.optJSONArray("recommendationDecisions")?.let { arr ->
+                val list = (0 until arr.length()).mapNotNull {
+                    recommendationDecisionFromJson(arr.getJSONObject(it))
+                }
+                if (list.isNotEmpty()) db.recommendationDecisionDao().insertAll(list)
             }
 
             val importedLegacyEnglishProgress = englishProgressJson?.let { arr ->
@@ -725,6 +842,159 @@ class BackupManager(private val context: Context) {
         put("source", a.source); put("result", a.result); put("material", a.material); put("note", a.note)
         put("pomodoroSessionId", a.pomodoroSessionId ?: JSONObject.NULL)
         put("countsTowardProgress", a.countsTowardProgress); put("createdAt", a.createdAt); put("updatedAt", a.updatedAt)
+    }
+
+    private fun dailyCheckInToJson(c: DailyCheckInEntity) = JSONObject().apply {
+        put("id", c.id)
+        put("localDate", c.localDate)
+        put("timestamp", c.timestamp)
+        put("zoneId", c.zoneId)
+        put("energy", c.energy ?: JSONObject.NULL)
+        put("mood", c.mood ?: JSONObject.NULL)
+        put("clarity", c.clarity ?: JSONObject.NULL)
+        put("focus", c.focus ?: JSONObject.NULL)
+        put("social", c.social ?: JSONObject.NULL)
+        put("physical", c.physical ?: JSONObject.NULL)
+        put("stress", c.stress ?: JSONObject.NULL)
+        put("source", c.source)
+        put("unusualDayFlags", c.unusualDayFlags)
+        put("unusualDayNote", c.unusualDayNote)
+        put("excludedFromLearning", c.excludedFromLearning)
+        put("createdAt", c.createdAt)
+        put("updatedAt", c.updatedAt)
+    }
+
+    private fun energyObservationToJson(e: EnergyObservationEntity) = JSONObject().apply {
+        put("id", e.id)
+        put("timestamp", e.timestamp)
+        put("absoluteEnergy", e.absoluteEnergy ?: JSONObject.NULL)
+        put("relativeDelta", e.relativeDelta ?: JSONObject.NULL)
+        put("context", e.context)
+        put("taskId", e.taskId ?: JSONObject.NULL)
+        put("activityRecordId", e.activityRecordId ?: JSONObject.NULL)
+        put("focusProtocolSessionId", e.focusProtocolSessionId ?: JSONObject.NULL)
+        put("source", e.source)
+        put("quality", e.quality)
+        put("confidence", e.confidence.toDouble())
+        put("excludedFromLearning", e.excludedFromLearning)
+        put("legacyEnergySampleId", e.legacyEnergySampleId ?: JSONObject.NULL)
+        put("createdAt", e.createdAt)
+    }
+
+    private fun taskDemandProfileToJson(p: TaskDemandProfileEntity) = JSONObject().apply {
+        put("taskId", p.taskId)
+        put("domain", p.domain)
+        put("workMode", p.workMode)
+        put("difficulty", p.difficulty)
+        put("concentrationDemand", p.concentrationDemand)
+        put("executiveDemand", p.executiveDemand)
+        put("memoryDemand", p.memoryDemand)
+        put("creativeDemand", p.creativeDemand)
+        put("socialDemand", p.socialDemand)
+        put("physicalDemand", p.physicalDemand)
+        put("emotionalDemand", p.emotionalDemand)
+        put("startFriction", p.startFriction)
+        put("minimumBlockMinutes", p.minimumBlockMinutes)
+        put("preferredBlockMinutes", p.preferredBlockMinutes)
+        put("interruptibility", p.interruptibility)
+        put("placeContext", p.placeContext)
+        put("toolContext", p.toolContext)
+        put("internetRequirement", p.internetRequirement)
+        put("peopleContext", p.peopleContext)
+        put("canDoPartially", p.canDoPartially)
+        put("fixedTime", p.fixedTime)
+        put("provenance", p.provenance)
+        put("confidence", p.confidence.toDouble())
+        put("userLockMask", p.userLockMask)
+        put("updatedAt", p.updatedAt)
+    }
+
+    private fun taskDependencyToJson(d: TaskDependencyEntity) = JSONObject().apply {
+        put("taskId", d.taskId)
+        put("dependsOnTaskId", d.dependsOnTaskId)
+        put("dependencyType", d.dependencyType)
+        put("createdAt", d.createdAt)
+    }
+
+    private fun workEpisodeAssessmentToJson(a: WorkEpisodeAssessmentEntity) = JSONObject().apply {
+        put("id", a.id)
+        put("activityRecordId", a.activityRecordId)
+        put("beforeObservationId", a.beforeObservationId ?: JSONObject.NULL)
+        put("afterObservationId", a.afterObservationId ?: JSONObject.NULL)
+        put("recoveryObservationId", a.recoveryObservationId ?: JSONObject.NULL)
+        put("goalOutcome", a.goalOutcome)
+        put("perceivedDifficulty", a.perceivedDifficulty ?: JSONObject.NULL)
+        put("interruptionReason", a.interruptionReason ?: JSONObject.NULL)
+        put("profileMismatchFlags", a.profileMismatchFlags)
+        put("modelEligible", a.modelEligible)
+        put("createdAt", a.createdAt)
+        put("updatedAt", a.updatedAt)
+    }
+
+    private fun externalContextToJson(c: ExternalContextEntity) = JSONObject().apply {
+        put("id", c.id)
+        put("localDate", c.localDate)
+        put("regionKey", c.regionKey)
+        put("source", c.source)
+        put("daylightMinutes", c.daylightMinutes ?: JSONObject.NULL)
+        put("daylightChangeMinutes", c.daylightChangeMinutes ?: JSONObject.NULL)
+        put("weatherCode", c.weatherCode ?: JSONObject.NULL)
+        put("temperatureCelsius", c.temperatureCelsius?.toDouble() ?: JSONObject.NULL)
+        put("cloudCoverPercent", c.cloudCoverPercent ?: JSONObject.NULL)
+        put("precipitationProbability", c.precipitationProbability ?: JSONObject.NULL)
+        put("outdoorSuitability", c.outdoorSuitability?.toDouble() ?: JSONObject.NULL)
+        put("publicBackgroundSummary", c.publicBackgroundSummary ?: JSONObject.NULL)
+        put("fetchedAt", c.fetchedAt)
+        put("expiresAt", c.expiresAt)
+        put("provenance", c.provenance)
+        put("rawPayloadHash", c.rawPayloadHash ?: JSONObject.NULL)
+        put("createdAt", c.createdAt)
+    }
+
+    private fun contextSnapshotToJson(s: ContextSnapshotEntity) = JSONObject().apply {
+        put("id", s.id)
+        put("timestamp", s.timestamp)
+        put("zoneId", s.zoneId)
+        put("localDate", s.localDate)
+        put("minutesSinceWake", s.minutesSinceWake ?: JSONObject.NULL)
+        put("hoursAwake", s.hoursAwake?.toDouble() ?: JSONObject.NULL)
+        put("sleepDurationMinutes", s.sleepDurationMinutes ?: JSONObject.NULL)
+        put("sleepDeviationMinutes", s.sleepDeviationMinutes ?: JSONObject.NULL)
+        put("sleepDebtMinutes", s.sleepDebtMinutes ?: JSONObject.NULL)
+        put("sleepRegularity", s.sleepRegularity?.toDouble() ?: JSONObject.NULL)
+        put("dayOfWeek", s.dayOfWeek)
+        put("isFreeDay", s.isFreeDay)
+        put("calendarWindowMinutes", s.calendarWindowMinutes ?: JSONObject.NULL)
+        put("recentFocusMinutes", s.recentFocusMinutes)
+        put("recentWorkModes", s.recentWorkModes)
+        put("recentBreakMinutes", s.recentBreakMinutes)
+        put("dailyCheckInId", s.dailyCheckInId ?: JSONObject.NULL)
+        put("lastObservationAgeMinutes", s.lastObservationAgeMinutes ?: JSONObject.NULL)
+        put("personalPeriodFlags", s.personalPeriodFlags)
+        put("externalContextId", s.externalContextId ?: JSONObject.NULL)
+        put("version", s.version)
+        put("createdAt", s.createdAt)
+    }
+
+    private fun recommendationDecisionToJson(d: RecommendationDecisionEntity) = JSONObject().apply {
+        put("id", d.id)
+        put("generatedAt", d.generatedAt)
+        put("modelVersion", d.modelVersion)
+        put("strategy", d.strategy)
+        put("contextSnapshotId", d.contextSnapshotId ?: JSONObject.NULL)
+        put("stateSnapshotJson", d.stateSnapshotJson)
+        put("selectedTaskId", d.selectedTaskId ?: JSONObject.NULL)
+        put("candidateTaskIds", d.candidateTaskIds)
+        put("componentScores", d.componentScores)
+        put("reasonCodes", d.reasonCodes)
+        put("confidence", d.confidence.toDouble())
+        put("accepted", d.accepted)
+        put("dismissed", d.dismissed)
+        put("reordered", d.reordered)
+        put("feedbackReason", d.feedbackReason ?: JSONObject.NULL)
+        put("resultingActivityRecordId", d.resultingActivityRecordId ?: JSONObject.NULL)
+        put("createdAt", d.createdAt)
+        put("updatedAt", d.updatedAt)
     }
 
     private fun englishProgressToJson(saved: EnglishProgressWithWordProjection) = JSONObject().apply {
@@ -1178,6 +1448,196 @@ class BackupManager(private val context: Context) {
         )
     } catch (e: Exception) { Log.e(TAG, "Ошибка парсинга активности", e); null }
 
+    private fun dailyCheckInFromJson(o: JSONObject): DailyCheckInEntity? = try {
+        DailyCheckInEntity(
+            id = o.optInt("id", 0),
+            localDate = o.optString("localDate", ""),
+            timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+            zoneId = o.optString("zoneId", "UTC"),
+            energy = o.optIntOrNull("energy")?.coerceIn(1, 10),
+            mood = o.optIntOrNull("mood")?.coerceIn(1, 5),
+            clarity = o.optIntOrNull("clarity")?.coerceIn(0, 4),
+            focus = o.optIntOrNull("focus")?.coerceIn(0, 4),
+            social = o.optIntOrNull("social")?.coerceIn(0, 4),
+            physical = o.optIntOrNull("physical")?.coerceIn(0, 4),
+            stress = o.optIntOrNull("stress")?.coerceIn(0, 4),
+            source = o.optString("source", "AD_HOC"),
+            unusualDayFlags = o.optString("unusualDayFlags", ""),
+            unusualDayNote = o.optString("unusualDayNote", ""),
+            excludedFromLearning = o.optBoolean("excludedFromLearning", false),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = o.optLong("updatedAt", o.optLong("createdAt", System.currentTimeMillis()))
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга дневной самооценки", e); null
+    }
+
+    private fun energyObservationFromJson(o: JSONObject): EnergyObservationEntity? = try {
+        EnergyObservationEntity(
+            id = o.optInt("id", 0),
+            timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+            absoluteEnergy = o.optIntOrNull("absoluteEnergy")?.coerceIn(1, 10),
+            relativeDelta = o.optIntOrNull("relativeDelta")?.coerceIn(-9, 9),
+            context = o.optString("context", "AD_HOC"),
+            taskId = o.optIntOrNull("taskId"),
+            activityRecordId = o.optIntOrNull("activityRecordId"),
+            focusProtocolSessionId = o.optIntOrNull("focusProtocolSessionId"),
+            source = o.optString("source", "USER"),
+            quality = o.optString("quality", "EXACT"),
+            confidence = o.optDouble("confidence", 1.0).toFloat().coerceIn(0f, 1f),
+            excludedFromLearning = o.optBoolean("excludedFromLearning", false),
+            legacyEnergySampleId = o.optIntOrNull("legacyEnergySampleId"),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis())
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга наблюдения энергии", e); null
+    }
+
+    private fun taskDemandProfileFromJson(o: JSONObject): TaskDemandProfileEntity? = try {
+        val minimum = o.optInt("minimumBlockMinutes", 5).coerceIn(1, 24 * 60)
+        TaskDemandProfileEntity(
+            taskId = o.optInt("taskId"),
+            domain = o.optString("domain", "OTHER"),
+            workMode = o.optString("workMode", "OTHER"),
+            difficulty = o.optInt("difficulty", 0).coerceIn(0, 4),
+            concentrationDemand = o.optInt("concentrationDemand", 0).coerceIn(0, 4),
+            executiveDemand = o.optInt("executiveDemand", 0).coerceIn(0, 4),
+            memoryDemand = o.optInt("memoryDemand", 0).coerceIn(0, 4),
+            creativeDemand = o.optInt("creativeDemand", 0).coerceIn(0, 4),
+            socialDemand = o.optInt("socialDemand", 0).coerceIn(0, 4),
+            physicalDemand = o.optInt("physicalDemand", 0).coerceIn(0, 4),
+            emotionalDemand = o.optInt("emotionalDemand", 0).coerceIn(0, 4),
+            startFriction = o.optInt("startFriction", 0).coerceIn(0, 4),
+            minimumBlockMinutes = minimum,
+            preferredBlockMinutes = o.optInt("preferredBlockMinutes", 25)
+                .coerceIn(minimum, 24 * 60),
+            interruptibility = o.optInt("interruptibility", 2).coerceIn(0, 4),
+            placeContext = o.optString("placeContext", "ANY"),
+            toolContext = o.optString("toolContext", ""),
+            internetRequirement = o.optString("internetRequirement", "ANY"),
+            peopleContext = o.optString("peopleContext", "ANY"),
+            canDoPartially = o.optBoolean("canDoPartially", true),
+            fixedTime = o.optBoolean("fixedTime", false),
+            provenance = o.optString("provenance", "USER"),
+            confidence = o.optDouble("confidence", 1.0).toFloat().coerceIn(0f, 1f),
+            userLockMask = o.optLong("userLockMask", 0L).coerceAtLeast(0L),
+            updatedAt = o.optLong("updatedAt", System.currentTimeMillis())
+        ).takeIf { it.taskId > 0 }
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга профиля нагрузки задачи", e); null
+    }
+
+    private fun taskDependencyFromJson(o: JSONObject): TaskDependencyEntity? = try {
+        TaskDependencyEntity(
+            taskId = o.optInt("taskId"),
+            dependsOnTaskId = o.optInt("dependsOnTaskId"),
+            dependencyType = o.optString("dependencyType", "FINISH_TO_START"),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis())
+        ).takeIf { it.taskId > 0 && it.dependsOnTaskId > 0 && it.taskId != it.dependsOnTaskId }
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга зависимости задач", e); null
+    }
+
+    private fun workEpisodeAssessmentFromJson(o: JSONObject): WorkEpisodeAssessmentEntity? = try {
+        WorkEpisodeAssessmentEntity(
+            id = o.optInt("id", 0),
+            activityRecordId = o.optInt("activityRecordId"),
+            beforeObservationId = o.optIntOrNull("beforeObservationId"),
+            afterObservationId = o.optIntOrNull("afterObservationId"),
+            recoveryObservationId = o.optIntOrNull("recoveryObservationId"),
+            goalOutcome = o.optString("goalOutcome", "UNKNOWN"),
+            perceivedDifficulty = o.optIntOrNull("perceivedDifficulty")?.coerceIn(1, 10),
+            interruptionReason = o.optStringOrNull("interruptionReason"),
+            profileMismatchFlags = o.optString("profileMismatchFlags", ""),
+            modelEligible = o.optBoolean("modelEligible", true),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = o.optLong("updatedAt", o.optLong("createdAt", System.currentTimeMillis()))
+        ).takeIf { it.activityRecordId > 0 }
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга оценки рабочего эпизода", e); null
+    }
+
+    private fun externalContextFromJson(o: JSONObject): ExternalContextEntity? = try {
+        val fetchedAt = o.optLong("fetchedAt", System.currentTimeMillis())
+        ExternalContextEntity(
+            id = o.optInt("id", 0),
+            localDate = o.optString("localDate", ""),
+            regionKey = o.optString("regionKey", ""),
+            source = o.optString("source", ""),
+            daylightMinutes = o.optIntOrNull("daylightMinutes")?.coerceIn(0, 24 * 60),
+            daylightChangeMinutes = o.optIntOrNull("daylightChangeMinutes"),
+            weatherCode = o.optStringOrNull("weatherCode"),
+            temperatureCelsius = o.optFloatOrNull("temperatureCelsius"),
+            cloudCoverPercent = o.optIntOrNull("cloudCoverPercent")?.coerceIn(0, 100),
+            precipitationProbability = o.optIntOrNull("precipitationProbability")
+                ?.coerceIn(0, 100),
+            outdoorSuitability = o.optFloatOrNull("outdoorSuitability")?.coerceIn(0f, 1f),
+            publicBackgroundSummary = o.optStringOrNull("publicBackgroundSummary"),
+            fetchedAt = fetchedAt,
+            expiresAt = o.optLong("expiresAt", fetchedAt).coerceAtLeast(fetchedAt),
+            provenance = o.optString("provenance", ""),
+            rawPayloadHash = o.optStringOrNull("rawPayloadHash"),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis())
+        ).takeIf { it.localDate.isNotBlank() && it.regionKey.isNotBlank() && it.source.isNotBlank() }
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга внешнего контекста", e); null
+    }
+
+    private fun contextSnapshotFromJson(o: JSONObject): ContextSnapshotEntity? = try {
+        ContextSnapshotEntity(
+            id = o.optInt("id", 0),
+            timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+            zoneId = o.optString("zoneId", "UTC"),
+            localDate = o.optString("localDate", ""),
+            minutesSinceWake = o.optIntOrNull("minutesSinceWake")?.coerceAtLeast(0),
+            hoursAwake = o.optFloatOrNull("hoursAwake")?.coerceIn(0f, 72f),
+            sleepDurationMinutes = o.optIntOrNull("sleepDurationMinutes")?.coerceAtLeast(0),
+            sleepDeviationMinutes = o.optIntOrNull("sleepDeviationMinutes"),
+            sleepDebtMinutes = o.optIntOrNull("sleepDebtMinutes")?.coerceAtLeast(0),
+            sleepRegularity = o.optFloatOrNull("sleepRegularity")?.coerceIn(0f, 1f),
+            dayOfWeek = o.optInt("dayOfWeek", 1).coerceIn(1, 7),
+            isFreeDay = o.optBoolean("isFreeDay", false),
+            calendarWindowMinutes = o.optIntOrNull("calendarWindowMinutes")?.coerceAtLeast(0),
+            recentFocusMinutes = o.optInt("recentFocusMinutes", 0).coerceAtLeast(0),
+            recentWorkModes = o.optString("recentWorkModes", ""),
+            recentBreakMinutes = o.optInt("recentBreakMinutes", 0).coerceAtLeast(0),
+            dailyCheckInId = o.optIntOrNull("dailyCheckInId"),
+            lastObservationAgeMinutes = o.optIntOrNull("lastObservationAgeMinutes")
+                ?.coerceAtLeast(0),
+            personalPeriodFlags = o.optString("personalPeriodFlags", ""),
+            externalContextId = o.optIntOrNull("externalContextId"),
+            version = o.optInt("version", 1).coerceAtLeast(1),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis())
+        ).takeIf { it.localDate.isNotBlank() }
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга снимка контекста", e); null
+    }
+
+    private fun recommendationDecisionFromJson(o: JSONObject): RecommendationDecisionEntity? = try {
+        RecommendationDecisionEntity(
+            id = o.optInt("id", 0),
+            generatedAt = o.optLong("generatedAt", System.currentTimeMillis()),
+            modelVersion = o.optString("modelVersion", "unknown"),
+            strategy = o.optString("strategy", "UNKNOWN"),
+            contextSnapshotId = o.optIntOrNull("contextSnapshotId"),
+            stateSnapshotJson = o.optString("stateSnapshotJson", "{}"),
+            selectedTaskId = o.optIntOrNull("selectedTaskId"),
+            candidateTaskIds = o.optString("candidateTaskIds", "[]"),
+            componentScores = o.optString("componentScores", "{}"),
+            reasonCodes = o.optString("reasonCodes", "[]"),
+            confidence = o.optDouble("confidence", 0.0).toFloat().coerceIn(0f, 1f),
+            accepted = o.optBoolean("accepted", false),
+            dismissed = o.optBoolean("dismissed", false),
+            reordered = o.optBoolean("reordered", false),
+            feedbackReason = o.optStringOrNull("feedbackReason"),
+            resultingActivityRecordId = o.optIntOrNull("resultingActivityRecordId"),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = o.optLong("updatedAt", o.optLong("createdAt", System.currentTimeMillis()))
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Ошибка парсинга решения рекомендателя", e); null
+    }
+
     private fun englishProgressFromJson(
         o: JSONObject,
         currentIdsByWord: Map<String, Int>
@@ -1454,6 +1914,12 @@ class BackupManager(private val context: Context) {
     private fun JSONObject.optStringOrNull(key: String): String? =
         if (isNull(key) || !has(key)) null else optString(key).takeIf { it.isNotEmpty() }
 
+    private fun JSONObject.optIntOrNull(key: String): Int? =
+        if (isNull(key) || !has(key)) null else optInt(key)
+
+    private fun JSONObject.optFloatOrNull(key: String): Float? =
+        if (isNull(key) || !has(key)) null else optDouble(key).toFloat()
+
     private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String, default: T): T =
         enumValueOrNull<T>(value) ?: default
 
@@ -1464,6 +1930,107 @@ class BackupManager(private val context: Context) {
             null
         }
 
+}
+
+private const val STRICT_BACKUP_STRUCTURE_VERSION = 14
+
+private val V14_REQUIRED_ARRAY_SECTIONS = listOf(
+    "subjects",
+    "studySessions",
+    "pomodoroSessions",
+    "focusProtocolSessions",
+    "energySamples",
+    "otherActivities",
+    "calendarEvents",
+    "tasks",
+    "projects",
+    "taskSubtasks",
+    "taskAttachments",
+    "taskLibraryLinks",
+    "activityRecords",
+    "dailyCheckIns",
+    "energyObservations",
+    "taskDemandProfiles",
+    "taskDependencies",
+    "workEpisodeAssessments",
+    "externalContexts",
+    "contextSnapshots",
+    "recommendationDecisions",
+    "englishProgress",
+    "englishDirectionalProgress",
+    "englishStudySets",
+    "englishStudyCards",
+    "englishCardProgress",
+    "reminders",
+    "ddays",
+    "diary",
+    "moodEntries",
+    "sleepSessions",
+    "cueEvents"
+)
+
+private val V14_REQUIRED_OBJECT_SECTIONS = listOf(
+    "sleepAutomation",
+    "dailyPlanNudges",
+    "library"
+)
+
+private val V14_OPTIONAL_OBJECT_SECTIONS = listOf("alarmProfile", "schedule")
+private val V14_LIBRARY_ARRAY_SECTIONS = listOf("items", "tags", "refs")
+
+/**
+ * v14 is the first strict, fully relational backup shape. Reject an incomplete or
+ * mistyped document before import can clear any user table. Older backup versions
+ * deliberately retain their permissive compatibility path.
+ */
+internal fun validateBackupStructureBeforeRestore(root: JSONObject, version: Int) {
+    if (version != STRICT_BACKUP_STRUCTURE_VERSION) return
+
+    val problems = mutableListOf<String>()
+    if (root.opt("version") !is Number) problems += "version (ожидалось число)"
+    if (root.opt("exportedAt") !is Number) problems += "exportedAt (ожидалось число)"
+
+    V14_REQUIRED_ARRAY_SECTIONS.forEach { key ->
+        val array = root.opt(key) as? JSONArray
+        if (array == null) {
+            problems += "$key (ожидался массив)"
+        } else {
+            val invalidIndex = (0 until array.length()).firstOrNull { array.opt(it) !is JSONObject }
+            if (invalidIndex != null) problems += "$key[$invalidIndex] (ожидался объект)"
+        }
+    }
+
+    V14_REQUIRED_OBJECT_SECTIONS.forEach { key ->
+        if (root.opt(key) !is JSONObject) problems += "$key (ожидался объект)"
+    }
+    V14_OPTIONAL_OBJECT_SECTIONS.forEach { key ->
+        if (root.has(key) && !root.isNull(key) && root.opt(key) !is JSONObject) {
+            problems += "$key (ожидался объект)"
+        }
+    }
+
+    (root.opt("library") as? JSONObject)?.let { library ->
+        V14_LIBRARY_ARRAY_SECTIONS.forEach { key ->
+            val array = library.opt(key) as? JSONArray
+            if (array == null) {
+                problems += "library.$key (ожидался массив)"
+            } else {
+                val invalidIndex = (0 until array.length())
+                    .firstOrNull { array.opt(it) !is JSONObject }
+                if (invalidIndex != null) {
+                    problems += "library.$key[$invalidIndex] (ожидался объект)"
+                }
+            }
+        }
+    }
+
+    if (problems.isNotEmpty()) {
+        throw IllegalArgumentException(
+            "Резервная копия v14 повреждена или неполна. " +
+                "Импорт отменён до изменения данных. Проверьте разделы: " +
+                problems.joinToString()
+        )
+    }
 }
 
 internal fun resolveEnglishProgressWordId(

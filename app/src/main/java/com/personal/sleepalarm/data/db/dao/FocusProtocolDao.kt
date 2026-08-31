@@ -48,6 +48,17 @@ interface FocusProtocolDao {
     @Query(
         """
         SELECT * FROM focus_protocol_sessions
+        WHERE phase = 'COMPLETE'
+          AND completedAt IS NOT NULL
+          AND completedAt >= :fromTimestamp
+        ORDER BY completedAt ASC
+        """
+    )
+    fun observeCompletedFrom(fromTimestamp: Long): Flow<List<FocusProtocolSessionEntity>>
+
+    @Query(
+        """
+        SELECT * FROM focus_protocol_sessions
         WHERE phase NOT IN ('COMPLETE', 'CANCELLED')
         ORDER BY createdAt DESC
         """
