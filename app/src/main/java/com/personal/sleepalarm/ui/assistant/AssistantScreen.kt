@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.ui.assistant
 
 import com.personal.sleepalarm.ui.theme.appAccents
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 
 import android.Manifest
 import android.content.Context
@@ -36,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -91,7 +93,7 @@ fun AssistantScreen(
             Text(
                 text = stringResource(R.string.assistant_title),
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.appAccents.info.color
             )
         }
 
@@ -108,7 +110,7 @@ fun AssistantScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.appAccents.calm.container.copy(alpha = 0.82f))
+                    .background(MaterialTheme.appAccents.energy.container)
                     .padding(12.dp)
             ) {
                 Text(
@@ -116,7 +118,7 @@ fun AssistantScreen(
                         "${Instant.ofEpochMilli(gap.endMillis).atZone(zone).format(formatter)} нет активности. " +
                         "Вы работали без таймера?",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.appAccents.calm.onContainer
+                    color = MaterialTheme.appAccents.energy.onContainer
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { viewModel.dismissActivityGap() }) { Text("Нет") }
@@ -132,8 +134,16 @@ fun AssistantScreen(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.appAccents.focus.container).padding(12.dp)
             ) {
-                Text("Начать «${action.title}» · ${action.focusMinutes} мин?", style = MaterialTheme.typography.titleSmall)
-                Text("Запустится выбранная задача без повторной настройки.", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "Начать «${action.title}» · ${action.focusMinutes} мин?",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.appAccents.focus.onContainer
+                )
+                Text(
+                    "Запустится выбранная задача без повторной настройки.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.appAccents.focus.onContainer.copy(alpha = 0.78f)
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = viewModel::dismissProposedAction) { Text("Отмена") }
                     TextButton(onClick = {
@@ -165,7 +175,7 @@ fun AssistantScreen(
                     Text(
                         text = stringResource(R.string.assistant_hint),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.appAccents.info.color
                     )
                 }
             }
@@ -181,13 +191,22 @@ fun AssistantScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            QuickChip(text = stringResource(R.string.assistant_quick_sleep)) {
+            QuickChip(
+                text = stringResource(R.string.assistant_quick_sleep),
+                tone = MaterialTheme.appAccents.sleep
+            ) {
                 viewModel.ask(it)
             }
-            QuickChip(text = stringResource(R.string.assistant_quick_morning)) {
+            QuickChip(
+                text = stringResource(R.string.assistant_quick_morning),
+                tone = MaterialTheme.appAccents.energy
+            ) {
                 viewModel.ask(it)
             }
-            QuickChip(text = stringResource(R.string.assistant_quick_tasks)) {
+            QuickChip(
+                text = stringResource(R.string.assistant_quick_tasks),
+                tone = MaterialTheme.appAccents.schedule
+            ) {
                 viewModel.ask(it)
             }
         }
@@ -282,18 +301,18 @@ private fun DailyPlanConfirmationCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.appAccents.success.container)
+            .background(MaterialTheme.appAccents.schedule.container)
             .padding(14.dp)
     ) {
         Text(
             text = stringResource(R.string.daily_plan_confirmation_title),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.appAccents.success.onContainer
+            color = MaterialTheme.appAccents.schedule.onContainer
         )
         Text(
             text = body,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.appAccents.success.onContainer
+            color = MaterialTheme.appAccents.schedule.onContainer
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onCancel) {
@@ -443,14 +462,14 @@ private fun InsightsRow(insights: AssistantInsights) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.appAccents.calm.container)
+                    .background(MaterialTheme.appAccents.info.container)
                     .padding(12.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.assistant_insight_morning),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.appAccents.calm.onContainer
+                        color = MaterialTheme.appAccents.info.onContainer
                     )
                     Text(
                         text = if (insights.isHeavyMorning) {
@@ -459,13 +478,13 @@ private fun InsightsRow(insights: AssistantInsights) {
                             stringResource(R.string.assistant_good)
                         },
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.appAccents.calm.onContainer
+                        color = MaterialTheme.appAccents.info.onContainer
                     )
                     insights.predictedMood?.let {
                         Text(
                             text = stringResource(R.string.assistant_predicted, "%.1f".format(it)),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.appAccents.calm.onContainer
+                            color = MaterialTheme.appAccents.info.onContainer
                         )
                     }
                 }
@@ -474,12 +493,12 @@ private fun InsightsRow(insights: AssistantInsights) {
                         Text(
                             text = stringResource(R.string.assistant_insight_snooze),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.appAccents.calm.onContainer
+                            color = MaterialTheme.appAccents.info.onContainer
                         )
                         Text(
                             text = limit.toString(),
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.appAccents.calm.onContainer
+                            color = MaterialTheme.appAccents.info.onContainer
                         )
                     }
                 }
@@ -502,12 +521,12 @@ private fun ChatBubble(fromUser: Boolean, text: String) {
     val bg = if (fromUser) {
         MaterialTheme.appAccents.focus.container
     } else {
-        MaterialTheme.colorScheme.surfaceVariant
+        MaterialTheme.appAccents.info.container
     }
     val fg = if (fromUser) {
         MaterialTheme.appAccents.focus.onContainer
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        MaterialTheme.appAccents.info.onContainer
     }
 
     Row(
@@ -531,9 +550,13 @@ private fun ChatBubble(fromUser: Boolean, text: String) {
 // =====================================================================
 
 @Composable
-private fun QuickChip(text: String, onAsk: (String) -> Unit) {
+private fun QuickChip(text: String, tone: AppAccentTone, onAsk: (String) -> Unit) {
     androidx.compose.material3.AssistChip(
         onClick = { onAsk(text) },
-        label = { Text(text, style = MaterialTheme.typography.bodySmall) }
+        label = { Text(text, style = MaterialTheme.typography.bodySmall) },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = tone.action,
+            labelColor = tone.onAction
+        )
     )
 }

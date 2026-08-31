@@ -40,18 +40,23 @@ fun DDayBadge(
 
     val event = nearest!!.event
     val days = nearest!!.days
+    val tone = if (days == 0) {
+        MaterialTheme.appAccents.urgent
+    } else {
+        MaterialTheme.appAccents.warning
+    }
 
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.appAccents.urgent.container)
+            .background(tone.container)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Default.Flag,
             contentDescription = null,
-            tint = MaterialTheme.appAccents.urgent.onContainer,
+            tint = tone.onContainer,
             modifier = Modifier.size(16.dp)
         )
         Text(
@@ -61,7 +66,7 @@ fun DDayBadge(
                 stringResource(R.string.dday_badge, event.title, days)
             },
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.appAccents.urgent.onContainer,
+            color = tone.onContainer,
             modifier = Modifier.padding(start = 8.dp)
         )
     }

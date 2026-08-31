@@ -34,11 +34,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -76,6 +78,7 @@ import com.personal.sleepalarm.ui.pomodoro.AnimatedFocusCat
 import com.personal.sleepalarm.ui.pomodoro.FocusCatMood
 import com.personal.sleepalarm.ui.pomodoro.pomodoroColorForToken
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -213,6 +216,7 @@ fun FocusProtocolSetupSheet(
             MinuteSlider(
                 title = stringResource(R.string.focus_protocol_reset_duration),
                 description = stringResource(R.string.focus_settings_reset_hint),
+                tone = MaterialTheme.appAccents.calm,
                 value = resetMinutes,
                 minimum = 0,
                 maximum = 20,
@@ -222,6 +226,7 @@ fun FocusProtocolSetupSheet(
             MinuteSlider(
                 title = stringResource(R.string.focus_protocol_focus_duration),
                 description = stringResource(R.string.focus_settings_focus_hint),
+                tone = MaterialTheme.appAccents.focus,
                 value = focusMinutes,
                 minimum = minimumFocusMinutes,
                 maximum = maximumFocusMinutes,
@@ -231,6 +236,7 @@ fun FocusProtocolSetupSheet(
             MinuteSlider(
                 title = stringResource(R.string.focus_protocol_recovery_duration),
                 description = stringResource(R.string.focus_settings_recovery_hint),
+                tone = MaterialTheme.appAccents.energy,
                 value = recoveryMinutes,
                 minimum = 1,
                 maximum = 30,
@@ -240,13 +246,19 @@ fun FocusProtocolSetupSheet(
 
             Text(
                 text = stringResource(R.string.focus_protocol_energy_before, energy),
-                style = MaterialTheme.typography.titleSmall
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.appAccents.energy.color
             )
             Slider(
                 value = energy.toFloat(),
                 onValueChange = { energy = it.roundToInt().coerceIn(1, 10) },
                 valueRange = 1f..10f,
                 steps = 8,
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.appAccents.energy.color,
+                    activeTrackColor = MaterialTheme.appAccents.energy.color,
+                    inactiveTrackColor = MaterialTheme.appAccents.energy.container
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -364,6 +376,7 @@ private fun TargetRibbon(
 private fun MinuteSlider(
     title: String,
     description: String,
+    tone: AppAccentTone,
     value: Int,
     minimum: Int,
     maximum: Int,
@@ -374,7 +387,7 @@ private fun MinuteSlider(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .background(tone.container)
             .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
@@ -384,17 +397,22 @@ private fun MinuteSlider(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = tone.onContainer,
+                    fontWeight = FontWeight.Bold
+                )
                 Text(
                     description,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = tone.onContainer.copy(alpha = 0.76f)
                 )
             }
             Text(
                 text = stringResource(R.string.focus_protocol_minutes_value, value),
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.appAccents.focus.color,
+                color = tone.onContainer,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -405,6 +423,11 @@ private fun MinuteSlider(
             },
             valueRange = minimum.toFloat()..maximum.toFloat(),
             steps = ((maximum - minimum) / step - 1).coerceAtLeast(0),
+            colors = SliderDefaults.colors(
+                thumbColor = tone.color,
+                activeTrackColor = tone.color,
+                inactiveTrackColor = tone.action.copy(alpha = 0.58f)
+            ),
             modifier = Modifier.fillMaxWidth()
         )
     }
@@ -578,6 +601,12 @@ fun FocusProtocolActiveScreen(
                             FilterChip(
                                 selected = energyAfter == value,
                                 onClick = { energyAfter = value },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.appAccents.energy.container,
+                                    labelColor = MaterialTheme.appAccents.energy.onContainer,
+                                    selectedContainerColor = MaterialTheme.appAccents.energy.action,
+                                    selectedLabelColor = MaterialTheme.appAccents.energy.onAction
+                                ),
                                 label = {
                                     Text(
                                         text = value.toString(),
@@ -602,9 +631,10 @@ fun FocusProtocolActiveScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f))
+                            .background(MaterialTheme.appAccents.energy.container)
                             .padding(horizontal = 12.dp, vertical = 9.dp),
                         style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.appAccents.energy.onContainer,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -718,8 +748,8 @@ private fun CatCompanion(
             },
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.appAccents.calm.container,
-            contentColor = MaterialTheme.appAccents.calm.onContainer
+            containerColor = MaterialTheme.appAccents.focus.container,
+            contentColor = MaterialTheme.appAccents.focus.onContainer
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -736,7 +766,7 @@ private fun CatCompanion(
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 12.dp, vertical = 9.dp),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.appAccents.calm.onContainer,
+                color = MaterialTheme.appAccents.focus.onContainer,
                 textAlign = TextAlign.Center
             )
         }
@@ -754,7 +784,7 @@ private fun BlockProgress(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f))
+            .background(MaterialTheme.appAccents.progress.container)
             .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -767,6 +797,7 @@ private fun BlockProgress(
                 Text(
                     text = phaseTitle(session.phase),
                     style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.appAccents.progress.onContainer,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
@@ -785,10 +816,10 @@ private fun BlockProgress(
                     text = stringResource(R.string.focus_block_cycles_count, session.completedCycles),
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.appAccents.focus.container)
+                        .background(MaterialTheme.appAccents.progress.action)
                         .padding(horizontal = 11.dp, vertical = 7.dp),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.appAccents.focus.color
+                    color = MaterialTheme.appAccents.progress.onAction
                 )
                 soundscapeState?.let { state ->
                     ActiveFocusSoundButton(
@@ -838,17 +869,18 @@ private fun GoalChip(itemName: String, outcome: String) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
+            .background(MaterialTheme.appAccents.work.container)
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Text(
             text = itemName,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.appAccents.focus.color
+            color = MaterialTheme.appAccents.work.onContainer.copy(alpha = 0.78f)
         )
         Text(
             text = outcome,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.appAccents.work.onContainer,
             fontWeight = FontWeight.Medium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
@@ -871,6 +903,7 @@ private fun RecoveryPrompt(cycle: Int) {
             .background(MaterialTheme.appAccents.calm.container)
             .padding(13.dp),
         style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.appAccents.calm.onContainer,
         textAlign = TextAlign.Center
     )
 }
@@ -964,7 +997,8 @@ fun CompletedFocusBlocksCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+            containerColor = MaterialTheme.appAccents.progress.container,
+            contentColor = MaterialTheme.appAccents.progress.onContainer
         )
     ) {
         Column(
@@ -980,7 +1014,7 @@ fun CompletedFocusBlocksCard(
                 Text(
                     text = stringResource(R.string.focus_history_empty),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.76f)
                 )
             } else {
                 blocks.take(8).forEach { block ->
@@ -996,7 +1030,7 @@ fun CompletedFocusBlocksCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(15.dp))
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+                            .background(MaterialTheme.appAccents.progress.action)
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
@@ -1011,12 +1045,13 @@ fun CompletedFocusBlocksCard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.appAccents.progress.onAction,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = date,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.appAccents.progress.onAction.copy(alpha = 0.74f)
                             )
                         }
                         Text(
@@ -1024,7 +1059,7 @@ fun CompletedFocusBlocksCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.appAccents.progress.onAction.copy(alpha = 0.82f)
                         )
                         Text(
                             text = stringResource(
@@ -1033,7 +1068,7 @@ fun CompletedFocusBlocksCard(
                                 formatCompactDuration(block.totalFocusMillis)
                             ),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.appAccents.focus.color
+                            color = MaterialTheme.appAccents.progress.onAction
                         )
                         block.energyAfter?.let { after ->
                             Text(
@@ -1044,7 +1079,7 @@ fun CompletedFocusBlocksCard(
                                     formatSignedEnergyDelta(after - block.energyBefore)
                                 ),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.appAccents.progress.onAction.copy(alpha = 0.78f)
                             )
                         }
                     }
@@ -1062,7 +1097,8 @@ fun EnergyPatternCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            containerColor = MaterialTheme.appAccents.energy.container,
+            contentColor = MaterialTheme.appAccents.energy.onContainer
         )
     ) {
         Column(
@@ -1078,7 +1114,7 @@ fun EnergyPatternCard(
                 Text(
                     text = stringResource(R.string.focus_protocol_energy_chart_hint),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.energy.onContainer.copy(alpha = 0.76f)
                 )
             } else {
                 val values = remember(points) { points.associateBy { it.hour } }
@@ -1104,12 +1140,12 @@ fun EnergyPatternCard(
                             ) {
                                 EnergyPatternBar(
                                     value = point?.averageBefore,
-                                    color = MaterialTheme.appAccents.focus.color,
+                                    color = MaterialTheme.appAccents.energy.color,
                                     modifier = Modifier.weight(1f)
                                 )
                                 EnergyPatternBar(
                                     value = point?.averageAfter,
-                                    color = MaterialTheme.appAccents.success.color,
+                                    color = MaterialTheme.appAccents.progress.color,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -1127,7 +1163,7 @@ fun EnergyPatternCard(
                 Text(
                     text = stringResource(R.string.focus_protocol_energy_chart_legend),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.energy.onContainer.copy(alpha = 0.76f)
                 )
                 Text(
                     text = stringResource(
@@ -1135,7 +1171,7 @@ fun EnergyPatternCard(
                         points.sumOf { it.sampleCount }
                     ),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.energy.onContainer.copy(alpha = 0.76f)
                 )
             }
         }

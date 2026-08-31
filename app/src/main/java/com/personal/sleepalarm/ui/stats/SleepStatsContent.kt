@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -233,17 +234,11 @@ private fun SleepSummaryGrid(nights: List<SleepNight>, zone: ZoneId) {
     val bedTime = averageClock(nights.map { it.bedTimeMillis }, zone, wrapAfterNoon = true)
     val wakeTime = averageClock(nights.map { it.endMillis }, zone, wrapAfterNoon = false)
     val accents = MaterialTheme.appAccents
-    val colors = listOf(
-        accents.sleep.color,
-        accents.focus.color,
-        accents.warning.color,
-        accents.success.color
-    )
     val values = listOf(
-        Triple(stringResource(R.string.sleep_stats_total), TimeFormatter.formatMinutes(total / MINUTE_MS), colors[0]),
-        Triple(stringResource(R.string.sleep_stats_average), TimeFormatter.formatMinutes(average / MINUTE_MS), colors[1]),
-        Triple(stringResource(R.string.sleep_stats_avg_bedtime), bedTime, colors[2]),
-        Triple(stringResource(R.string.sleep_stats_avg_wake), wakeTime, colors[3])
+        Triple(stringResource(R.string.sleep_stats_total), TimeFormatter.formatMinutes(total / MINUTE_MS), accents.sleep),
+        Triple(stringResource(R.string.sleep_stats_average), TimeFormatter.formatMinutes(average / MINUTE_MS), accents.progress),
+        Triple(stringResource(R.string.sleep_stats_avg_bedtime), bedTime, accents.schedule),
+        Triple(stringResource(R.string.sleep_stats_avg_wake), wakeTime, accents.energy)
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         values.chunked(2).forEach { rowValues ->
@@ -251,21 +246,31 @@ private fun SleepSummaryGrid(nights: List<SleepNight>, zone: ZoneId) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                rowValues.forEach { (label, value, accent) ->
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(accent.copy(alpha = 0.12f))
-                            .padding(14.dp)
+                rowValues.forEach { (label, value, tone) ->
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        color = tone.container,
+                        contentColor = tone.onContainer
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(9.dp).clip(CircleShape).background(accent))
-                            Spacer(Modifier.width(7.dp))
-                            Text(label, style = MaterialTheme.typography.labelLarge)
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(9.dp).clip(CircleShape).background(tone.color))
+                                Spacer(Modifier.width(7.dp))
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = tone.onContainer
+                                )
+                            }
+                            Spacer(Modifier.height(7.dp))
+                            Text(
+                                value,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = tone.onContainer
+                            )
                         }
-                        Spacer(Modifier.height(7.dp))
-                        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -290,7 +295,7 @@ private fun SelectedNightCard(night: SleepNight, zone: ZoneId, onEdit: (SleepNig
                         formatClock(night.endMillis, zone)
                     ),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.76f)
                 )
                 Text(
                     stringResource(
@@ -298,7 +303,7 @@ private fun SelectedNightCard(night: SleepNight, zone: ZoneId, onEdit: (SleepNig
                         TimeFormatter.formatMinutes(night.plannedDurationMillis / MINUTE_MS)
                     ),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.68f)
                 )
             }
             SleepOutcomeBadge(night.outcome)
@@ -324,7 +329,7 @@ private fun SelectedNightCard(night: SleepNight, zone: ZoneId, onEdit: (SleepNig
 private fun DurationComparisonChart(nights: List<SleepNight>) {
     val actualColor = MaterialTheme.appAccents.sleep.color
     val plannedColor = MaterialTheme.appAccents.study.color.copy(alpha = 0.55f)
-    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val gridColor = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.22f)
     val visible = nights.takeLast(MAX_GRAPH_NIGHTS)
     val maxValue = visible.maxOfOrNull { maxOf(it.durationMillis, it.plannedDurationMillis) }
         ?.coerceAtLeast(1L) ?: 1L
@@ -368,7 +373,7 @@ private fun DurationComparisonChart(nights: List<SleepNight>) {
 private fun SleepScheduleChart(nights: List<SleepNight>, zone: ZoneId, locale: Locale) {
     val visible = nights.takeLast(10)
     val accent = MaterialTheme.appAccents.sleep.color
-    val track = MaterialTheme.colorScheme.surfaceVariant
+    val track = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.14f)
     val formatter = remember(locale) { DateTimeFormatter.ofPattern("d MMM", locale) }
     SleepChartCard(stringResource(R.string.sleep_stats_schedule_chart)) {
         visible.forEach { night ->
@@ -408,7 +413,7 @@ private fun SleepScheduleChart(nights: List<SleepNight>, zone: ZoneId, locale: L
                     modifier = Modifier.weight(1f),
                     textAlign = if (index == 3) TextAlign.End else TextAlign.Start,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.72f)
                 )
             }
         }
@@ -420,7 +425,7 @@ private fun BedWakeTrendChart(nights: List<SleepNight>, zone: ZoneId) {
     val visible = nights.takeLast(MAX_GRAPH_NIGHTS)
     val bedColor = MaterialTheme.appAccents.sleep.color
     val wakeColor = MaterialTheme.appAccents.warning.color
-    val grid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val grid = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.22f)
     SleepChartCard(stringResource(R.string.sleep_stats_regularity_chart)) {
         Canvas(Modifier.fillMaxWidth().height(160.dp)) {
             repeat(4) { index ->
@@ -464,7 +469,7 @@ private fun LatencyChart(nights: List<SleepNight>) {
                 stringResource(R.string.sleep_stats_no_latency),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.72f)
             )
         } else {
             values.forEach { (night, minutes) ->
@@ -475,7 +480,7 @@ private fun LatencyChart(nights: List<SleepNight>) {
                             .weight(1f)
                             .height(10.dp)
                             .clip(RoundedCornerShape(5.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .background(MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.14f))
                     ) {
                         Box(
                             Modifier
@@ -508,7 +513,7 @@ private fun OutcomeChart(nights: List<SleepNight>) {
     SleepChartCard(stringResource(R.string.sleep_stats_outcomes_chart)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Box(Modifier.size(138.dp), contentAlignment = Alignment.Center) {
-                val emptyColor = MaterialTheme.colorScheme.surfaceVariant
+                val emptyColor = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.14f)
                 Canvas(Modifier.size(138.dp)) {
                     val stroke = 18.dp.toPx()
                     if (nights.isEmpty()) {
@@ -559,7 +564,7 @@ private fun CueEfficiencyCard(nights: List<SleepNight>) {
             Text(
                 stringResource(R.string.sleep_stats_cues_value, played, scheduled),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.72f)
             )
         }
         Box(
@@ -567,7 +572,7 @@ private fun CueEfficiencyCard(nights: List<SleepNight>) {
                 .fillMaxWidth()
                 .height(12.dp)
                 .clip(RoundedCornerShape(6.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.14f))
         ) {
             Box(
                 Modifier
@@ -595,7 +600,7 @@ private fun SleepHeatmap(month: YearMonth, nights: List<SleepNight>, locale: Loc
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.72f)
                 )
             }
         }
@@ -613,7 +618,7 @@ private fun SleepHeatmap(month: YearMonth, nights: List<SleepNight>, locale: Loc
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    if (value == 0L) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
+                                    if (value == 0L) MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.10f)
                                     else accent.copy(alpha = 0.20f + strength * 0.72f)
                                 ),
                             contentAlignment = Alignment.Center
@@ -658,7 +663,7 @@ private fun SleepHistory(
             stringResource(R.string.activity_no_data),
             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.appAccents.info.color
         )
     } else {
         nights.forEach { night -> SleepHistoryRow(night, zone, onEdit) }
@@ -668,50 +673,57 @@ private fun SleepHistory(
 @Composable
 private fun SleepHistoryRow(night: SleepNight, zone: ZoneId, onEdit: (SleepNight) -> Unit) {
     val locale = Locale.getDefault()
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
-            .clickable(enabled = night.outcome != SleepOutcome.ACTIVE) { onEdit(night) }
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp)
+    val tone = MaterialTheme.appAccents.sleep
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = tone.action,
+        contentColor = tone.onAction
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .clickable(enabled = night.outcome != SleepOutcome.ACTIVE) { onEdit(night) }
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        night.date.format(DateTimeFormatter.ofPattern("d MMMM, EEE", locale)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = tone.onAction
+                    )
+                    Text(
+                        "${formatClock(night.startMillis, zone)} — ${formatClock(night.endMillis, zone)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tone.onAction.copy(alpha = 0.72f)
+                    )
+                }
                 Text(
-                    night.date.format(DateTimeFormatter.ofPattern("d MMMM, EEE", locale)),
-                    style = MaterialTheme.typography.bodyMedium,
+                    TimeFormatter.formatMinutes(night.durationMillis / MINUTE_MS),
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = tone.onAction,
                     fontWeight = FontWeight.SemiBold
                 )
+                SleepOutcomeBadge(night.outcome)
+                if (night.outcome != SleepOutcome.ACTIVE) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Изменить длительность",
+                        modifier = Modifier.size(18.dp),
+                        tint = tone.onAction.copy(alpha = 0.72f)
+                    )
+                }
+            }
+            if (night.cuesScheduled > 0) {
                 Text(
-                    "${formatClock(night.startMillis, zone)} — ${formatClock(night.endMillis, zone)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    stringResource(R.string.sleep_stats_cues_value, night.cuesPlayed, night.cuesScheduled),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tone.onAction.copy(alpha = 0.72f)
                 )
             }
-            Text(
-                TimeFormatter.formatMinutes(night.durationMillis / MINUTE_MS),
-                modifier = Modifier.padding(horizontal = 10.dp),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.appAccents.sleep.color
-            )
-            SleepOutcomeBadge(night.outcome)
-            if (night.outcome != SleepOutcome.ACTIVE) {
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = "Изменить длительность",
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        if (night.cuesScheduled > 0) {
-            Text(
-                stringResource(R.string.sleep_stats_cues_value, night.cuesPlayed, night.cuesScheduled),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
@@ -733,7 +745,7 @@ private fun SleepDurationEditDialog(
                 Text(
                     "Коррекция применяется только к выбранной ночи и сразу пересчитывает статистику.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.info.color
                 )
                 OutlinedTextField(
                     value = durationText,
@@ -775,23 +787,27 @@ private fun SleepOutcomeBadge(outcome: SleepOutcome) {
 
 @Composable
 private fun SleepEmptyCard() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
-            .padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+    val tone = MaterialTheme.appAccents.sleep
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = tone.container,
+        contentColor = tone.onContainer
     ) {
-        Text("☾", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.appAccents.sleep.color)
-        Text(stringResource(R.string.stats_empty_title), fontWeight = FontWeight.Bold)
-        Text(
-            stringResource(R.string.sleep_stats_empty_period),
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(
+            modifier = Modifier.padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("☾", style = MaterialTheme.typography.displaySmall, color = tone.onContainer)
+            Text(stringResource(R.string.stats_empty_title), fontWeight = FontWeight.Bold, color = tone.onContainer)
+            Text(
+                stringResource(R.string.sleep_stats_empty_period),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+                color = tone.onContainer.copy(alpha = 0.72f)
+            )
+        }
     }
 }
 
@@ -811,7 +827,7 @@ private fun SleepDateAxis(nights: List<SleepNight>) {
                     else -> TextAlign.Center
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.sleep.onContainer.copy(alpha = 0.72f)
             )
         }
     }
@@ -828,16 +844,25 @@ private fun SleepLegend(color: Color, text: String) {
 
 @Composable
 private fun SleepChartCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    val tone = MaterialTheme.appAccents.sleep
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = tone.container,
+        contentColor = tone.onContainer
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        content()
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = tone.onContainer
+            )
+            content()
+        }
     }
 }
 

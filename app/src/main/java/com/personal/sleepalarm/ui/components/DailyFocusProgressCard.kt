@@ -36,8 +36,8 @@ fun DailyFocusProgressCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.appAccents.focus.container,
-        contentColor = MaterialTheme.appAccents.focus.onContainer
+        color = MaterialTheme.appAccents.progress.container,
+        contentColor = MaterialTheme.appAccents.progress.onContainer
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -60,19 +60,21 @@ fun DailyFocusProgressCard(
                         progress.targetMinutes
                     ),
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.appAccents.focus.color,
+                    color = MaterialTheme.appAccents.progress.onContainer,
                     fontWeight = FontWeight.Bold
                 )
             }
             LinearProgressIndicator(
                 progress = { progress.progressFraction },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.appAccents.progress.color,
+                trackColor = MaterialTheme.appAccents.progress.action
             )
             Text(
                 if (remainingMinutes == 0) stringResource(R.string.daily_focus_today_done)
                 else stringResource(R.string.daily_focus_today_remaining, remainingMinutes),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.78f)
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -92,12 +94,18 @@ fun DailyFocusProgressCard(
                     style = MaterialTheme.typography.labelLarge
                 )
                 if (requiredToday) {
-                    Text(
-                        stringResource(R.string.daily_focus_required_badge),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.appAccents.warning.color,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.appAccents.warning.action,
+                        contentColor = MaterialTheme.appAccents.warning.onAction
+                    ) {
+                        Text(
+                            stringResource(R.string.daily_focus_required_badge),
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

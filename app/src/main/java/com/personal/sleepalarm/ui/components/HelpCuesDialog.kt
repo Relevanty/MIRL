@@ -19,6 +19,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.domain.calculator.RemCueScheduleCalculator
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 
 /**
  * Справка по lucid-подсказкам, привязанным к REM-фазам (F7).
@@ -49,13 +51,14 @@ import com.personal.sleepalarm.domain.calculator.RemCueScheduleCalculator
 fun HelpCuesDialog(
     onDismiss: () -> Unit
 ) {
+    val infoTone = MaterialTheme.appAccents.info
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 600.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(infoTone.container)
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -65,14 +68,16 @@ fun HelpCuesDialog(
                 style = TextStyle(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = infoTone.onContainer
                 )
             )
 
             // 1. Модель цикла сна.
             HelpBlock(
                 title = stringResource(R.string.help_cues_model_title),
-                body = stringResource(R.string.help_cues_model)
+                body = stringResource(R.string.help_cues_model),
+                tone = MaterialTheme.appAccents.sleep,
+                bodyColor = infoTone.onContainer
             )
 
             // 2. Таблица пропорций REM.
@@ -81,7 +86,7 @@ fun HelpCuesDialog(
                 style = TextStyle(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.appAccents.focus.color
+                    color = MaterialTheme.appAccents.progress.color
                 )
             )
 
@@ -91,14 +96,16 @@ fun HelpCuesDialog(
                 text = stringResource(R.string.help_cues_table_note),
                 style = TextStyle(
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = infoTone.onContainer.copy(alpha = 0.76f)
                 )
             )
 
             // 3. Рекомендации по таймингу.
             HelpBlock(
                 title = stringResource(R.string.help_cues_timing_title),
-                body = stringResource(R.string.help_cues_timing)
+                body = stringResource(R.string.help_cues_timing),
+                tone = MaterialTheme.appAccents.schedule,
+                bodyColor = infoTone.onContainer
             )
 
             // 4. Источники.
@@ -116,21 +123,22 @@ fun HelpCuesDialog(
             SourceLine(stringResource(R.string.help_cues_source_3))
             SourceLine(stringResource(R.string.help_cues_source_4))
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(color = infoTone.color.copy(alpha = 0.34f))
 
             // 5. Дисклеймер.
             Text(
                 text = stringResource(R.string.help_cues_disclaimer),
                 style = TextStyle(
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.appAccents.warning.color,
                     lineHeight = 17.sp
                 )
             )
 
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.align(Alignment.End)
+                modifier = Modifier.align(Alignment.End),
+                colors = ButtonDefaults.textButtonColors(contentColor = infoTone.onContainer)
             ) {
                 Text(text = stringResource(R.string.help_cues_close))
             }
@@ -142,21 +150,26 @@ fun HelpCuesDialog(
  * Блок «заголовок + текст».
  */
 @Composable
-private fun HelpBlock(title: String, body: String) {
+private fun HelpBlock(
+    title: String,
+    body: String,
+    tone: AppAccentTone,
+    bodyColor: androidx.compose.ui.graphics.Color
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = title,
             style = TextStyle(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.appAccents.calm.color
+                color = tone.color
             )
         )
         Text(
             text = body,
             style = TextStyle(
                 fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = bodyColor,
                 lineHeight = 19.sp
             )
         )
@@ -171,11 +184,12 @@ private fun HelpBlock(title: String, body: String) {
  */
 @Composable
 private fun RemFractionTable() {
+    val progressTone = MaterialTheme.appAccents.progress
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .background(progressTone.action)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -192,7 +206,7 @@ private fun RemFractionTable() {
                     style = TextStyle(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = progressTone.onAction
                     ),
                     modifier = Modifier.weight(1f)
                 )
@@ -204,7 +218,7 @@ private fun RemFractionTable() {
                     style = TextStyle(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.appAccents.focus.color
+                        color = progressTone.onAction
                     )
                 )
             }
@@ -217,16 +231,17 @@ private fun RemFractionTable() {
  */
 @Composable
 private fun SourceLine(text: String) {
+    val infoTone = MaterialTheme.appAccents.info
     Row(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = "• ",
-            style = TextStyle(fontSize = 12.sp, color = MaterialTheme.appAccents.calm.color)
+            style = TextStyle(fontSize = 12.sp, color = MaterialTheme.appAccents.study.color)
         )
         Text(
             text = text,
             style = TextStyle(
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = infoTone.onContainer.copy(alpha = 0.82f),
                 lineHeight = 17.sp
             ),
             modifier = Modifier.weight(1f)

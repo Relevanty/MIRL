@@ -98,12 +98,17 @@ internal fun ProjectsScreen(
                     ?: projectTasks.sumOf(TaskEntity::effectiveWorkBudgetMinutes)
                 val budgetMillis = budgetMinutes * 60_000L
                 val progress = if (budgetMillis > 0L) (project.spentMillis.toFloat() / budgetMillis).coerceIn(0f, 1f) else 0f
+                val projectTone = if (project.isArchived) {
+                    MaterialTheme.appAccents.other
+                } else {
+                    MaterialTheme.appAccents.work
+                }
                 Card(
                     onClick = { editing = project },
                     shape = RoundedCornerShape(22.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (project.isArchived) MaterialTheme.colorScheme.surfaceContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = projectTone.container,
+                        contentColor = projectTone.onContainer
                     )
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -111,7 +116,12 @@ internal fun ProjectsScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 if (project.goal.isNotBlank()) {
-                                    Text(project.goal, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        project.goal,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = projectTone.onContainer.copy(alpha = 0.78f)
+                                    )
                                 }
                             }
                             IconButton(onClick = { onArchive(project) }) {
@@ -119,7 +129,12 @@ internal fun ProjectsScreen(
                             }
                         }
                         if (budgetMillis > 0L) {
-                            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.appAccents.progress.color,
+                                trackColor = MaterialTheme.appAccents.progress.action
+                            )
                             Text(
                                 stringResource(
                                     R.string.projects_progress,
@@ -128,14 +143,14 @@ internal fun ProjectsScreen(
                                     ((budgetMillis - project.spentMillis).coerceAtLeast(0L) / 60_000L)
                                 ),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = projectTone.onContainer.copy(alpha = 0.78f)
                             )
                         }
                         project.dueAtMillis?.let {
                             Text(
                                 stringResource(R.string.projects_deadline, formatProjectDate(it)),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.appAccents.work.color
+                                color = MaterialTheme.appAccents.schedule.color
                             )
                         }
                         Text(stringResource(R.string.projects_open_tasks, linked.size), style = MaterialTheme.typography.labelMedium)

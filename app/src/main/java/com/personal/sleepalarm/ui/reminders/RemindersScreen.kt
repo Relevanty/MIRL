@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -24,7 +25,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,6 +58,7 @@ fun RemindersScreen(
     modifier: Modifier = Modifier
 ) {
     val reminders by viewModel.uiState.collectAsStateWithLifecycle()
+    val scheduleTone = MaterialTheme.appAccents.schedule
 
     var showEdit by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<Int?>(null) }
@@ -77,8 +81,8 @@ fun RemindersScreen(
                     editTarget = null
                     showEdit = true
                 },
-                containerColor = MaterialTheme.appAccents.calm.color,
-                contentColor = MaterialTheme.appAccents.calm.onColor
+                containerColor = scheduleTone.color,
+                contentColor = scheduleTone.onColor
             ) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.reminders_new))
             }
@@ -94,17 +98,21 @@ fun RemindersScreen(
             // === Заголовок с котом ===
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = stringResource(R.string.action_back),
+                        tint = scheduleTone.color
+                    )
                 }
                 Text(
                     text = stringResource(R.string.reminders_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = scheduleTone.color,
                     modifier = Modifier.weight(1f)
                 )
                 CatText(
                     text = "=^..^=",
-                    color = MaterialTheme.appAccents.calm.color,
+                    color = scheduleTone.color,
                     fontSize = 16.sp
                 )
             }
@@ -116,7 +124,7 @@ fun RemindersScreen(
                 Text(
                     text = stringResource(R.string.reminders_exact_alarm_warning),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.appAccents.warning.color,
+                    color = MaterialTheme.appAccents.warning.onContainer,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
@@ -142,7 +150,7 @@ fun RemindersScreen(
                             lineHeight = 46.sp,
                             fontWeight = FontWeight.Bold
                         ),
-                        color = MaterialTheme.appAccents.other.color
+                        color = scheduleTone.color
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -150,7 +158,7 @@ fun RemindersScreen(
                     Text(
                         text = stringResource(R.string.reminders_empty),
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = scheduleTone.color.copy(alpha = 0.78f)
                     )
                 }
             } else {
@@ -179,44 +187,68 @@ private fun ReminderRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val scheduleTone = MaterialTheme.appAccents.schedule
+    val urgentTone = MaterialTheme.appAccents.urgent
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = scheduleTone.container.copy(alpha = 0.4f),
+        contentColor = scheduleTone.onContainer
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = reminder.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "%02d:%02d · %s".format(
-                    reminder.timeHour,
-                    reminder.timeMinute,
-                    repeatLabel(reminder.repeatMode)
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = reminder.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = scheduleTone.onContainer
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "%02d:%02d · %s".format(
+                        reminder.timeHour,
+                        reminder.timeMinute,
+                        repeatLabel(reminder.repeatMode)
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheduleTone.onContainer.copy(alpha = 0.76f)
+                )
+            }
 
-        Switch(checked = reminder.isEnabled, onCheckedChange = onToggle)
-
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.reminders_edit))
-        }
-
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = stringResource(R.string.reminders_delete),
-                tint = MaterialTheme.appAccents.urgent.color
+            Switch(
+                checked = reminder.isEnabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = scheduleTone.onColor,
+                    checkedTrackColor = scheduleTone.color,
+                    uncheckedThumbColor = scheduleTone.onAction,
+                    uncheckedTrackColor = scheduleTone.action
+                )
             )
+
+            IconButton(onClick = onEdit) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = stringResource(R.string.reminders_edit),
+                    tint = scheduleTone.onContainer
+                )
+            }
+
+            Surface(
+                shape = CircleShape,
+                color = urgentTone.action,
+                contentColor = urgentTone.onAction
+            ) {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.reminders_delete),
+                        tint = urgentTone.onAction
+                    )
+                }
+            }
         }
     }
 }

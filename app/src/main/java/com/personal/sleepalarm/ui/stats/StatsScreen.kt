@@ -115,8 +115,8 @@ fun StatsScreen(
                     onClick = { statsMode = "activity" },
                     label = { Text(stringResource(R.string.stats_tab_study)) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = accents.study.container,
-                        selectedLabelColor = accents.study.onContainer
+                        selectedContainerColor = accents.progress.container,
+                        selectedLabelColor = accents.progress.onContainer
                     )
                 )
                 FilterChip(
@@ -133,8 +133,8 @@ fun StatsScreen(
                     onClick = { statsMode = "energy" },
                     label = { Text(stringResource(R.string.stats_tab_energy)) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = accents.focus.container,
-                        selectedLabelColor = accents.focus.onContainer
+                        selectedContainerColor = accents.energy.container,
+                        selectedLabelColor = accents.energy.onContainer
                     )
                 )
             }

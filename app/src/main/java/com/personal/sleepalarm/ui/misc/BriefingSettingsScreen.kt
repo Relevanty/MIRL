@@ -19,7 +19,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.DropdownMenu
@@ -63,7 +65,7 @@ fun BriefingSettingsScreen(
             Text(
                 text = stringResource(R.string.briefing_settings_title),
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.appAccents.calm.color
             )
         }
 
@@ -102,10 +104,14 @@ fun BriefingSettingsContent(
         Text(
             text = stringResource(R.string.briefing_enable),
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = MaterialTheme.appAccents.calm.color,
             modifier = Modifier.weight(1f)
         )
-        Switch(checked = enabled, onCheckedChange = viewModel::setEnabled)
+        Switch(
+            checked = enabled,
+            onCheckedChange = viewModel::setEnabled,
+            colors = calmSwitchColors()
+        )
     }
 
     Spacer(modifier = Modifier.height(12.dp))
@@ -113,7 +119,7 @@ fun BriefingSettingsContent(
     Text(
         text = stringResource(R.string.briefing_system_tts_info),
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.appAccents.calm.color.copy(alpha = 0.78f)
     )
 
     if (!enabled) return
@@ -217,7 +223,7 @@ fun BriefingSettingsContent(
         Text(
             text = stringResource(R.string.briefing_daily_plan_voice_hint),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.appAccents.calm.color.copy(alpha = 0.78f)
         )
     }
 
@@ -227,7 +233,7 @@ fun BriefingSettingsContent(
     Text(
         stringResource(R.string.briefing_offline_voice_info),
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.appAccents.calm.color.copy(alpha = 0.78f)
     )
 }
 
@@ -239,7 +245,11 @@ private fun VoiceToggle(label: String, checked: Boolean, onChange: (Boolean) -> 
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = calmSwitchColors()
+        )
     }
 }
 
@@ -264,7 +274,20 @@ private fun VoiceSlider(
             onValueChange = { onChange(it.toInt()) },
             valueRange = range.first.toFloat()..range.last.toFloat(),
             steps = ((range.last - range.first) / 5) - 1,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.appAccents.calm.color,
+                activeTrackColor = MaterialTheme.appAccents.calm.color,
+                inactiveTrackColor = MaterialTheme.appAccents.calm.action
+            ),
             modifier = Modifier.fillMaxWidth()
         )
     }
 }
+
+@Composable
+private fun calmSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = MaterialTheme.appAccents.calm.onColor,
+    checkedTrackColor = MaterialTheme.appAccents.calm.color,
+    uncheckedThumbColor = MaterialTheme.appAccents.calm.onAction,
+    uncheckedTrackColor = MaterialTheme.appAccents.calm.action
+)

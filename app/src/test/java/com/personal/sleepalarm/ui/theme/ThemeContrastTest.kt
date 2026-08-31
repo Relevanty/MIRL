@@ -268,18 +268,66 @@ class ThemeContrastTest {
 
     @Test
     fun everyTheme_hasAReadableExpressiveSemanticSpectrum() {
+        val indistinguishableFills = mutableListOf<String>()
         ThemeCatalog.all.forEach { preset ->
             val scheme = buildColorScheme(preset)
             val accents = buildAppAccentPalette(preset, scheme)
+            val semanticRoles = semanticRoles(accents)
+            val themeHue = Color(preset.primary).toThemeHsl().hue
+            assertEquals("${preset.id}: semantic palette size", 15, semanticRoles.size)
+            assertEquals(
+                "${preset.id}: AppAccentPalette.all must expose every semantic role",
+                semanticRoles.map { it.second },
+                accents.all
+            )
             assertEquals(
                 "${preset.id}: focus fill must preserve the preset primary seed",
                 Color(preset.primary).toArgb(),
                 accents.focus.fill.toArgb()
             )
+            val duplicateFillRoles = semanticRoles
+                .groupBy { (_, tone) -> tone.fill.toArgb() }
+                .values
+                .filter { group -> group.size > 1 }
+                .map { group -> group.map { (name, _) -> name } }
             assertTrue(
-                "${preset.id}: semantic accents collapsed into too few colours",
-                accents.all.map { it.color }.toSet().size >= 7
+                "${preset.id}: duplicate semantic fills $duplicateFillRoles",
+                duplicateFillRoles.isEmpty()
             )
+            assertTrue(
+                "${preset.id}: readable semantic colours collapsed into too few shades",
+                semanticRoles.map { it.second.color.toArgb() }.toSet().size >= 13
+            )
+            assertTrue(
+                "${preset.id}: restrained action tones collapsed into too few shades",
+                semanticRoles.map { it.second.action.toArgb() }.toSet().size >= 12
+            )
+            listOf(
+                "focus" to accents.focus,
+                "sleep" to accents.sleep,
+                "study" to accents.study,
+                "work" to accents.work,
+                "other" to accents.other,
+                "calm" to accents.calm,
+                "info" to accents.info,
+                "energy" to accents.energy,
+                "progress" to accents.progress,
+                "creative" to accents.creative,
+                "leisure" to accents.leisure,
+                "schedule" to accents.schedule
+            ).forEach { (name, tone) ->
+                val distance = themeHueDistance(tone.fill.toThemeHsl().hue, themeHue)
+                assertTrue(
+                    "${preset.id}: $name looks detached from the selected theme ($distance°)",
+                    distance <= 82f
+                )
+            }
+            val closestPair = closestSemanticFillPair(semanticRoles)
+            if (closestPair.distance < MIN_SEMANTIC_FILL_OKLAB_DISTANCE) {
+                indistinguishableFills +=
+                    "${preset.id}:${closestPair.first}/${closestPair.second}=" +
+                    closestPair.distance.formatDistance()
+            }
             assertTrue(
                 "${preset.id}: expressive tertiary duplicates a seed",
                 scheme.tertiary != scheme.primary && scheme.tertiary != scheme.secondary
@@ -349,7 +397,51 @@ class ThemeContrastTest {
                 themeHueDistance(scheme.error.toThemeHsl().hue, urgentHue) <= 6.5f
             )
         }
+        assertTrue(
+            "Visually indistinguishable semantic fills: ${indistinguishableFills.joinToString()}",
+            indistinguishableFills.isEmpty()
+        )
     }
+
+    private fun semanticRoles(accents: AppAccentPalette): List<Pair<String, AppAccentTone>> = listOf(
+        "focus" to accents.focus,
+        "sleep" to accents.sleep,
+        "study" to accents.study,
+        "work" to accents.work,
+        "other" to accents.other,
+        "success" to accents.success,
+        "warning" to accents.warning,
+        "urgent" to accents.urgent,
+        "calm" to accents.calm,
+        "info" to accents.info,
+        "energy" to accents.energy,
+        "progress" to accents.progress,
+        "creative" to accents.creative,
+        "leisure" to accents.leisure,
+        "schedule" to accents.schedule
+    )
+
+    private fun closestSemanticFillPair(
+        roles: List<Pair<String, AppAccentTone>>
+    ): SemanticPairDistance = buildList {
+        roles.indices.forEach { firstIndex ->
+            for (secondIndex in firstIndex + 1 until roles.size) {
+                val first = roles[firstIndex]
+                val second = roles[secondIndex]
+                add(
+                    SemanticPairDistance(
+                        first = first.first,
+                        second = second.first,
+                        distance = sqrt(
+                            first.second.fill.toOklab().squaredDistanceTo(
+                                second.second.fill.toOklab()
+                            )
+                        )
+                    )
+                )
+            }
+        }
+    }.minBy { it.distance }
 
     @Test
     fun lightAndDarkVariants_keepTheirSurfaceCharacter() {
@@ -397,19 +489,28 @@ class ThemeContrastTest {
     private fun perceptualSignature(preset: ThemePreset): List<Oklab> {
         val scheme = buildColorScheme(preset)
         val accents = buildAppAccentPalette(preset, scheme)
-        return listOf(
+        val thematicAccents = listOf(
+            accents.focus,
+            accents.sleep,
+            accents.study,
+            accents.work,
+            accents.other,
+            accents.calm,
+            accents.info,
+            accents.energy,
+            accents.progress,
+            accents.creative,
+            accents.leisure,
+            accents.schedule
+        )
+        return (listOf(
             scheme.background,
             scheme.surface,
             scheme.primary,
             scheme.secondary,
-            scheme.tertiary,
-            accents.focus.fill,
-            accents.sleep.fill,
-            accents.study.fill,
-            accents.work.fill,
-            accents.other.fill,
-            accents.calm.fill
-        ).map { color -> color.toOklab() }
+            scheme.tertiary
+        ) + thematicAccents.map { tone -> tone.fill })
+            .map { color -> color.toOklab() }
     }
 
     private fun aggregateOklabDistance(first: List<Oklab>, second: List<Oklab>): Double {
@@ -489,16 +590,24 @@ class ThemeContrastTest {
         val sameTreatmentFamily: Boolean
     )
 
+    private data class SemanticPairDistance(
+        val first: String,
+        val second: String,
+        val distance: Double
+    )
+
     private companion object {
         // Oklab is expressed on a 0..1 scale. Around 0.02 is a useful
         // just-noticeable reference for one flat colour; this signature is the
-        // RMS of eleven UI roles. The current catalogue's nearest unrelated
+        // RMS of seventeen theme-bearing UI roles (fixed safety statuses are
+        // deliberately excluded). The current catalogue's nearest unrelated
         // pair is 0.03081, so 0.028 keeps a regression margin without making
         // harmless colour rounding fail the build. Treatments intentionally
         // share a family identity: their observed floor is 0.01561, hence the
         // separate, slightly more permissive 0.014 guard.
         const val MIN_UNRELATED_THEME_OKLAB_RMS = 0.028
         const val MIN_RELATED_TREATMENT_OKLAB_RMS = 0.014
+        const val MIN_SEMANTIC_FILL_OKLAB_DISTANCE = 0.0035
 
         val TREATMENT_SUFFIXES = setOf("original", "depth", "velvet", "glow", "dusk")
     }

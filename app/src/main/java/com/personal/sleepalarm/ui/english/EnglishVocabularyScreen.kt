@@ -692,7 +692,10 @@ private fun EnglishStudyPreferences(
     onRevealMode: (EnglishCardRevealMode) -> Unit
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.appAccents.study.container,
+            contentColor = MaterialTheme.appAccents.study.onContainer
+        ),
         shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -710,7 +713,7 @@ private fun EnglishStudyPreferences(
             Text(
                 stringResource(R.string.english_front_side),
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.study.onContainer.copy(alpha = 0.76f)
             )
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -724,7 +727,7 @@ private fun EnglishStudyPreferences(
             Text(
                 stringResource(R.string.english_after_tap),
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.study.onContainer.copy(alpha = 0.76f)
             )
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -876,7 +879,10 @@ private fun EnglishDictionaryWordRow(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.appAccents.info.container,
+            contentColor = MaterialTheme.appAccents.info.onContainer
+        )
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -910,7 +916,7 @@ private fun EnglishDictionaryWordRow(
                         Text(
                             word.pronunciation,
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.appAccents.info.onContainer.copy(alpha = 0.76f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -919,7 +925,7 @@ private fun EnglishDictionaryWordRow(
                 Text(
                     word.translation,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.appAccents.info.onContainer.copy(alpha = 0.82f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1005,7 +1011,8 @@ private fun EnglishSetRow(
         ) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f),
+                color = MaterialTheme.appAccents.creative.action,
+                contentColor = MaterialTheme.appAccents.creative.onAction,
                 modifier = Modifier.size(52.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -1512,8 +1519,8 @@ private fun EnglishSwipeCard(
                 },
             shape = RoundedCornerShape(30.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                containerColor = MaterialTheme.appAccents.study.container,
+                contentColor = MaterialTheme.appAccents.study.onContainer
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
         ) {
@@ -1544,7 +1551,7 @@ private fun EnglishSwipeCard(
                     Text(
                         card.pronunciation,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.appAccents.study.onContainer.copy(alpha = 0.76f)
                     )
                 }
                 if (card.partOfSpeech.isNotBlank()) {
@@ -1826,7 +1833,8 @@ private fun EnglishDictionaryArticleSheet(
                     Spacer(Modifier.height(10.dp))
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
+                        color = MaterialTheme.appAccents.info.container,
+                        contentColor = MaterialTheme.appAccents.info.onContainer
                     ) {
                         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
                             Text(sense.example, fontStyle = FontStyle.Italic)
@@ -1834,7 +1842,7 @@ private fun EnglishDictionaryArticleSheet(
                                 Text(
                                     sense.exampleTranslation,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.appAccents.info.onContainer.copy(alpha = 0.78f)
                                 )
                             }
                         }
@@ -1953,8 +1961,11 @@ private fun EnglishSetEditorSheet(
             )
             Spacer(Modifier.height(16.dp))
             Text(stringResource(R.string.english_set_accent), style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                repeat(4) { seed ->
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                repeat(MaterialTheme.appAccents.all.size) { seed ->
                     val colors = englishSetSeedColors(seed)
                     Surface(
                         modifier = Modifier
@@ -2165,11 +2176,10 @@ private fun englishSetCardColors(seed: Int): androidx.compose.material3.CardColo
 }
 
 @Composable
-private fun englishSetSeedColors(seed: Int) = when (Math.floorMod(seed, 4)) {
-    0 -> MaterialTheme.appAccents.study.container to MaterialTheme.appAccents.study.onContainer
-    1 -> MaterialTheme.appAccents.calm.container to MaterialTheme.appAccents.calm.onContainer
-    2 -> MaterialTheme.appAccents.focus.container to MaterialTheme.appAccents.focus.onContainer
-    else -> MaterialTheme.appAccents.other.container to MaterialTheme.appAccents.other.onContainer
+private fun englishSetSeedColors(seed: Int): Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color> {
+    val tones = MaterialTheme.appAccents.all
+    val tone = tones[Math.floorMod(seed, tones.size)]
+    return tone.container to tone.onContainer
 }
 
 private fun Modifier.englishContentWidth(): Modifier = this

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -77,6 +79,7 @@ fun LauncherIconsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val creativeTone = MaterialTheme.appAccents.creative
 
     val visibleIcons = remember(filter, viewModel.icons) {
         if (filter == LauncherIconFilter.ALL) viewModel.icons
@@ -99,26 +102,29 @@ fun LauncherIconsScreen(
                 IconButton(onClick = onBack) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.action_back)
+                        contentDescription = stringResource(R.string.action_back),
+                        tint = creativeTone.color
                     )
                 }
                 Column(modifier = Modifier.padding(horizontal = 8.dp)) {
                     Text(
                         text = stringResource(R.string.launcher_icons_title),
                         style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        color = creativeTone.color
                     )
                     Text(
                         text = stringResource(R.string.launcher_icons_subtitle),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = creativeTone.color
                     )
                 }
             }
 
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    containerColor = creativeTone.container,
+                    contentColor = creativeTone.onContainer
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -132,17 +138,24 @@ fun LauncherIconsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.launcher_icon_auto_match),
-                            style = MaterialTheme.typography.titleSmall
+                            style = MaterialTheme.typography.titleSmall,
+                            color = creativeTone.onContainer
                         )
                         Text(
                             text = stringResource(R.string.launcher_icon_auto_match_summary),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = creativeTone.onContainer
                         )
                     }
                     Switch(
                         checked = autoMatch,
-                        onCheckedChange = viewModel::setAutoMatch
+                        onCheckedChange = viewModel::setAutoMatch,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = creativeTone.onColor,
+                            checkedTrackColor = creativeTone.color,
+                            uncheckedThumbColor = creativeTone.onAction,
+                            uncheckedTrackColor = creativeTone.action
+                        )
                     )
                 }
             }
@@ -155,7 +168,13 @@ fun LauncherIconsScreen(
                     FilterChip(
                         selected = filter == item,
                         onClick = { filter = item },
-                        label = { Text(stringResource(item.titleRes)) }
+                        label = { Text(stringResource(item.titleRes)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = creativeTone.action,
+                            labelColor = creativeTone.onAction,
+                            selectedContainerColor = creativeTone.color,
+                            selectedLabelColor = creativeTone.onColor
+                        )
                     )
                 }
             }
@@ -193,15 +212,17 @@ private fun LauncherIconCard(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val creativeTone = MaterialTheme.appAccents.creative
     val borderColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.appAccents.focus.color else Color.Transparent,
+        targetValue = if (selected) creativeTone.color else Color.Transparent,
         label = "launcherIconBorder"
     )
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+            containerColor = creativeTone.container,
+            contentColor = creativeTone.onContainer
         ),
         modifier = Modifier.border(2.dp, borderColor, RoundedCornerShape(18.dp))
     ) {
@@ -224,13 +245,13 @@ private fun LauncherIconCard(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .size(30.dp)
-                        .background(MaterialTheme.appAccents.focus.color, CircleShape),
+                        .background(creativeTone.color, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Check,
                         contentDescription = stringResource(R.string.launcher_icon_selected),
-                        tint = MaterialTheme.appAccents.focus.onColor,
+                        tint = creativeTone.onColor,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -240,6 +261,7 @@ private fun LauncherIconCard(
         Text(
             text = stringResource(icon.nameRes),
             style = MaterialTheme.typography.titleSmall,
+            color = creativeTone.onContainer,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)

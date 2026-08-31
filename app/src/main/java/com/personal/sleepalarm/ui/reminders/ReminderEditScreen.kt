@@ -2,6 +2,7 @@ package com.personal.sleepalarm.ui.reminders
 
 import com.personal.sleepalarm.ui.theme.appAccents
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,12 +18,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -48,7 +54,6 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.RepeatMode
 import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.domain.calculator.ReminderTimeCalculator
-import com.personal.sleepalarm.ui.components.TimeStepper
 import com.personal.sleepalarm.ui.components.CatText
 
 @Composable
@@ -64,6 +69,26 @@ fun ReminderEditScreen(
         "BEFORE_DEADLINE", "NO_PROGRESS", "BECOMES_URGENT", "BEFORE_FOCUS"
     )
     var taskMenuExpanded by remember { mutableStateOf(false) }
+    val scheduleTone = MaterialTheme.appAccents.schedule
+    val reminderChipColors = FilterChipDefaults.filterChipColors(
+        containerColor = scheduleTone.action.copy(alpha = 0.62f),
+        labelColor = scheduleTone.onAction,
+        selectedContainerColor = scheduleTone.color,
+        selectedLabelColor = scheduleTone.onColor
+    )
+    val reminderFieldColors = TextFieldDefaults.colors(
+        unfocusedContainerColor = Color.Transparent,
+        focusedContainerColor = Color.Transparent,
+        focusedTextColor = scheduleTone.onContainer,
+        unfocusedTextColor = scheduleTone.onContainer,
+        cursorColor = scheduleTone.color,
+        focusedIndicatorColor = scheduleTone.color,
+        unfocusedIndicatorColor = scheduleTone.onContainer.copy(alpha = 0.34f),
+        focusedLabelColor = scheduleTone.color,
+        unfocusedLabelColor = scheduleTone.onContainer.copy(alpha = 0.78f),
+        focusedPlaceholderColor = scheduleTone.onContainer.copy(alpha = 0.58f),
+        unfocusedPlaceholderColor = scheduleTone.onContainer.copy(alpha = 0.58f)
+    )
 
     LaunchedEffect(editReminderId, linkedTaskId) {
         viewModel.init(editReminderId, linkedTaskId)
@@ -78,7 +103,11 @@ fun ReminderEditScreen(
         // === Заголовок с котом ===
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                    tint = scheduleTone.color
+                )
             }
             Text(
                 text = stringResource(
@@ -86,12 +115,12 @@ fun ReminderEditScreen(
                     else R.string.reminder_edit_title
                 ),
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = scheduleTone.color,
                 modifier = Modifier.weight(1f)
             )
             CatText(
                 text = "=^..^=",
-                color = MaterialTheme.appAccents.calm.color,
+                color = scheduleTone.color,
                 fontSize = 16.sp
             )
         }
@@ -101,27 +130,34 @@ fun ReminderEditScreen(
         Text(
             text = "Связь и условие",
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.appAccents.other.color,
+            color = scheduleTone.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(scheduleTone.container.copy(alpha = 0.4f))
                 .padding(12.dp)
         ) {
             Box {
                 val selectedTask = tasks.firstOrNull { it.id == state.linkedTaskId }
-                OutlinedButton(onClick = { taskMenuExpanded = true }) {
-                    Text(selectedTask?.primaryLabel() ?: "Связать с задачей")
+                OutlinedButton(
+                    onClick = { taskMenuExpanded = true },
+                    border = BorderStroke(1.dp, scheduleTone.color),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = scheduleTone.onContainer)
+                ) {
+                    Text(
+                        selectedTask?.primaryLabel() ?: "Связать с задачей",
+                        color = scheduleTone.onContainer
+                    )
                 }
                 DropdownMenu(
                     expanded = taskMenuExpanded,
                     onDismissRequest = { taskMenuExpanded = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Без задачи") },
+                        text = { Text("Без задачи", color = scheduleTone.color) },
                         onClick = {
                             viewModel.setLinkedTask(null)
                             taskMenuExpanded = false
@@ -129,7 +165,7 @@ fun ReminderEditScreen(
                     )
                     tasks.forEach { task ->
                         DropdownMenuItem(
-                            text = { Text(task.primaryLabel()) },
+                            text = { Text(task.primaryLabel(), color = scheduleTone.color) },
                             onClick = {
                                 viewModel.setLinkedTask(task.id)
                                 taskMenuExpanded = false
@@ -154,34 +190,23 @@ fun ReminderEditScreen(
                     FilterChip(
                         selected = state.triggerRule == rule,
                         onClick = { viewModel.setTriggerRule(rule) },
-                        label = { Text(label) }
+                        label = { Text(label) },
+                        colors = reminderChipColors
                     )
                 }
             }
             if (requiresTask && state.linkedTaskId == null) {
-                Text(
-                    "Для этого условия выберите задачу",
-                    color = MaterialTheme.appAccents.warning.color,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                ReminderWarningText("Для этого условия выберите задачу")
             }
             if (state.triggerRule in setOf("BEFORE_DEADLINE", "BECOMES_URGENT") &&
                 tasks.firstOrNull { it.id == state.linkedTaskId }?.dueAtMillis == null
             ) {
-                Text(
-                    "У выбранной задачи должен быть дедлайн",
-                    color = MaterialTheme.appAccents.warning.color,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                ReminderWarningText("У выбранной задачи должен быть дедлайн")
             }
             if (state.triggerRule == "BEFORE_FOCUS" &&
                 tasks.firstOrNull { it.id == state.linkedTaskId }?.startAtMillis == null
             ) {
-                Text(
-                    "У задачи должно быть запланированное время начала",
-                    color = MaterialTheme.appAccents.warning.color,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                ReminderWarningText("У задачи должно быть запланированное время начала")
             }
             if (state.triggerRule in setOf("BEFORE_DEADLINE", "BECOMES_URGENT", "BEFORE_FOCUS")) {
                 StepperRow(
@@ -205,7 +230,7 @@ fun ReminderEditScreen(
         Text(
             text = stringResource(R.string.reminder_edit_title),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.appAccents.calm.color,
+            color = scheduleTone.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -213,7 +238,7 @@ fun ReminderEditScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(scheduleTone.container.copy(alpha = 0.4f))
                 .padding(12.dp)
         ) {
             Column {
@@ -224,17 +249,12 @@ fun ReminderEditScreen(
                     label = { Text(stringResource(R.string.reminder_field_title)) },
                     placeholder = { Text(stringResource(R.string.reminder_title_placeholder)) },
                     singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.appAccents.calm.color
-                    )
+                    colors = reminderFieldColors
                 )
 
                 if (state.triggerRule == "AT_TIME" || state.triggerRule == "BEFORE_SLEEP") {
                     Spacer(modifier = Modifier.height(12.dp))
-                    TimeStepper(
+                    ReminderTimeStepper(
                         label = stringResource(R.string.reminder_field_time),
                         hour = state.timeHour,
                         minute = state.timeMinute,
@@ -251,7 +271,7 @@ fun ReminderEditScreen(
         Text(
             text = stringResource(R.string.reminder_field_repeat),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.appAccents.other.color,
+            color = scheduleTone.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -259,7 +279,7 @@ fun ReminderEditScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(scheduleTone.container.copy(alpha = 0.4f))
                 .padding(12.dp)
         ) {
             Column {
@@ -271,7 +291,8 @@ fun ReminderEditScreen(
                         FilterChip(
                             selected = state.repeatMode == mode,
                             onClick = { viewModel.setRepeatMode(mode) },
-                            label = { Text(repeatShort(mode)) }
+                            label = { Text(repeatShort(mode)) },
+                            colors = reminderChipColors
                         )
                     }
                 }
@@ -282,7 +303,7 @@ fun ReminderEditScreen(
                     Text(
                         text = stringResource(R.string.reminder_field_days),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = scheduleTone.onContainer.copy(alpha = 0.78f)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -292,7 +313,8 @@ fun ReminderEditScreen(
                             FilterChip(
                                 selected = ReminderTimeCalculator.isDaySelected(state.daysOfWeek, dayValue),
                                 onClick = { viewModel.toggleDay(dayValue) },
-                                label = { Text(label) }
+                                label = { Text(label) },
+                                colors = reminderChipColors
                             )
                         }
                     }
@@ -305,16 +327,16 @@ fun ReminderEditScreen(
                         Text(
                             text = stringResource(R.string.reminder_field_interval, state.intervalDays),
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = scheduleTone.onContainer
                         )
                         Spacer(modifier = Modifier.weight(1f))
                         IconButton(onClick = { viewModel.setIntervalDays(state.intervalDays - 1) }) {
                             Text("−", style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.appAccents.other.color)
+                                color = scheduleTone.onContainer)
                         }
                         IconButton(onClick = { viewModel.setIntervalDays(state.intervalDays + 1) }) {
                             Text("+", style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.appAccents.other.color)
+                                color = scheduleTone.onContainer)
                         }
                     }
                 }
@@ -337,7 +359,11 @@ fun ReminderEditScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(16.dp)),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = scheduleTone.color,
+                contentColor = scheduleTone.onColor
+            )
         ) {
             Text(
                 text = stringResource(R.string.reminder_save),
@@ -350,14 +376,99 @@ fun ReminderEditScreen(
 }
 
 @Composable
+private fun ReminderWarningText(text: String) {
+    val warningTone = MaterialTheme.appAccents.warning
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = warningTone.action,
+        contentColor = warningTone.onAction
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            color = warningTone.onAction,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@Composable
+private fun ReminderTimeStepper(
+    label: String,
+    hour: Int,
+    minute: Int,
+    onHourChange: (Int) -> Unit,
+    onMinuteChange: (Int) -> Unit
+) {
+    val tone = MaterialTheme.appAccents.schedule
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = tone.onContainer
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ReminderTimeValue(
+                value = "%02d".format(hour),
+                unit = stringResource(R.string.time_unit_hours),
+                onMinus = { onHourChange((hour - 1 + 24) % 24) },
+                onPlus = { onHourChange((hour + 1) % 24) }
+            )
+            ReminderTimeValue(
+                value = "%02d".format(minute),
+                unit = stringResource(R.string.time_unit_minutes),
+                onMinus = { onMinuteChange((minute - 5 + 60) % 60) },
+                onPlus = { onMinuteChange((minute + 5) % 60) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReminderTimeValue(
+    value: String,
+    unit: String,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit
+) {
+    val tone = MaterialTheme.appAccents.schedule
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onMinus) {
+            Icon(Icons.Default.Remove, contentDescription = null, tint = tone.onContainer)
+        }
+        Text(value, style = MaterialTheme.typography.headlineSmall, color = tone.onContainer)
+        IconButton(onClick = onPlus) {
+            Icon(Icons.Default.Add, contentDescription = null, tint = tone.onContainer)
+        }
+        Text(unit, style = MaterialTheme.typography.bodyMedium, color = tone.onContainer)
+    }
+}
+
+@Composable
 private fun StepperRow(label: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    val tone = MaterialTheme.appAccents.schedule
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        IconButton(onClick = onMinus) { Text("−", style = MaterialTheme.typography.titleLarge) }
-        IconButton(onClick = onPlus) { Text("+", style = MaterialTheme.typography.titleLarge) }
+        Text(
+            label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = tone.onContainer
+        )
+        IconButton(onClick = onMinus) {
+            Text("−", style = MaterialTheme.typography.titleLarge, color = tone.onContainer)
+        }
+        IconButton(onClick = onPlus) {
+            Text("+", style = MaterialTheme.typography.titleLarge, color = tone.onContainer)
+        }
     }
 }
 

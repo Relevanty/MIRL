@@ -37,6 +37,7 @@ fun ScheduleScreen(
     modifier: Modifier = Modifier
 ) {
     val content by viewModel.content.collectAsStateWithLifecycle()
+    val scheduleTone = MaterialTheme.appAccents.schedule
 
     Column(
         modifier = modifier
@@ -46,13 +47,13 @@ fun ScheduleScreen(
         Text(
             text = stringResource(R.string.schedule_title),
             style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground
+            color = scheduleTone.color
         )
 
         Text(
             text = stringResource(R.string.schedule_hint),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = scheduleTone.color.copy(alpha = 0.78f)
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -66,7 +67,7 @@ fun ScheduleScreen(
             placeholder = {
                 Text(
                     text = stringResource(R.string.schedule_placeholder),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = scheduleTone.color.copy(alpha = 0.62f)
                 )
             },
             // Моноширинный шрифт — удобно писать списки/Markdown-подобный текст.
@@ -77,11 +78,11 @@ fun ScheduleScreen(
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,
                 unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
-                cursorColor = MaterialTheme.appAccents.work.color
+                focusedIndicatorColor = scheduleTone.color,
+                unfocusedIndicatorColor = scheduleTone.color.copy(alpha = 0.36f),
+                focusedTextColor = scheduleTone.color,
+                unfocusedTextColor = scheduleTone.color,
+                cursorColor = scheduleTone.color
             ),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences

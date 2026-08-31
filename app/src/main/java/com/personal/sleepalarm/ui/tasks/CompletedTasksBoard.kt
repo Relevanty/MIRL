@@ -200,9 +200,9 @@ private fun CompletedTaskNote(
     val accents = MaterialTheme.appAccents
     val tone = when (TaskQuadrant.fromStorage(task.matrixQuadrant)) {
         TaskQuadrant.NOW -> accents.urgent
-        TaskQuadrant.SCHEDULE -> accents.study
-        TaskQuadrant.DELEGATE -> accents.other
-        TaskQuadrant.LET_GO -> accents.calm
+        TaskQuadrant.SCHEDULE -> accents.schedule
+        TaskQuadrant.DELEGATE -> accents.work
+        TaskQuadrant.LET_GO -> accents.other
     }
     Surface(
         onClick = { onOpenTask(task) },
@@ -218,14 +218,14 @@ private fun CompletedTaskNote(
                     Icons.Default.PushPin,
                     null,
                     Modifier.size(17.dp).graphicsLayer { rotationZ = -18f },
-                    tint = tone.color
+                    tint = tone.onContainer
                 )
                 Spacer(Modifier.weight(1f))
                 task.completedAt?.let {
                     Text(
                         formatCompletedDate(it),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = tone.onContainer.copy(alpha = 0.78f)
                     )
                 }
             }
@@ -247,7 +247,7 @@ private fun CompletedTaskNote(
                 Text(
                     task.definitionOfDone,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = tone.onContainer.copy(alpha = 0.78f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -261,7 +261,7 @@ private fun CompletedTaskNote(
                     "${countedActivities.count { it.source == "TIMER" }} фокусов"
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = tone.onContainer.copy(alpha = 0.78f)
             )
             Spacer(Modifier.height(6.dp))
             Row(modifier = Modifier.align(Alignment.End)) {

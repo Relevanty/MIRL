@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,9 +32,8 @@ import com.personal.sleepalarm.domain.calculator.CorrelationCalculator
 /**
  * Секция «Сон vs Задачи vs Настроение» для StatsScreen.
  *
- * Все цвета берутся из MaterialTheme.colorScheme, поэтому секция
- * подстраивается под любую из 14 тем. Три серии различимы:
- * сон = primary, задачи = secondary, настроение = их смесь (lerp).
+ * Оболочка использует семантический цвет прогресса текущей темы, а линии
+ * сохраняют отдельные цвета сна, задач и настроения.
  */
 @Composable
 fun CorrelationSection(
@@ -39,38 +41,53 @@ fun CorrelationSection(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val tone = MaterialTheme.appAccents.progress
 
-    Column(
+    Surface(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        shape = RoundedCornerShape(22.dp),
+        color = tone.container,
+        contentColor = tone.onContainer
     ) {
-        Text(
-            text = stringResource(R.string.corr_title),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-
-        if (!state.enoughData) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Text(
-                text = stringResource(R.string.corr_not_enough),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = stringResource(R.string.corr_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = tone.onContainer
             )
-            return
-        }
 
-        CorrRow(label = stringResource(R.string.corr_sleep_mood), r = state.rSleepMood)
-        CorrRow(label = stringResource(R.string.corr_tasks_mood), r = state.rTasksMood)
-        CorrRow(label = stringResource(R.string.corr_sleep_tasks), r = state.rSleepTasks)
+            if (!state.enoughData) {
+                val infoTone = MaterialTheme.appAccents.info
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = infoTone.action,
+                    contentColor = infoTone.onAction
+                ) {
+                    Text(
+                        text = stringResource(R.string.corr_not_enough),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = infoTone.onAction,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            } else {
+                CorrRow(label = stringResource(R.string.corr_sleep_mood), r = state.rSleepMood)
+                CorrRow(label = stringResource(R.string.corr_tasks_mood), r = state.rTasksMood)
+                CorrRow(label = stringResource(R.string.corr_sleep_tasks), r = state.rSleepTasks)
 
-        Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-        CorrelationChart(points = state.points)
+                CorrelationChart(points = state.points)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            LegendDot(color = sleepColor(), text = stringResource(R.string.corr_legend_sleep))
-            LegendDot(color = tasksColor(), text = stringResource(R.string.corr_legend_tasks))
-            LegendDot(color = moodColor(), text = stringResource(R.string.corr_legend_mood))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LegendDot(color = sleepColor(), text = stringResource(R.string.corr_legend_sleep))
+                    LegendDot(color = tasksColor(), text = stringResource(R.string.corr_legend_tasks))
+                    LegendDot(color = moodColor(), text = stringResource(R.string.corr_legend_mood))
+                }
+            }
         }
     }
 }
@@ -81,6 +98,7 @@ fun CorrelationSection(
 
 @Composable
 private fun CorrRow(label: String, r: Double?) {
+    val tone = MaterialTheme.appAccents.progress
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
@@ -88,20 +106,20 @@ private fun CorrRow(label: String, r: Double?) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground
+            color = tone.onContainer
         )
 
         if (r == null) {
             Text(
                 text = stringResource(R.string.corr_no_data),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = tone.onContainer.copy(alpha = 0.64f)
             )
         } else {
             Text(
                 text = "%.2f · %s".format(r, strengthText(r)),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.appAccents.focus.color
+                color = tone.onContainer
             )
         }
     }
@@ -126,7 +144,7 @@ private fun CorrelationChart(points: List<DayPoint>) {
     val sleep = sleepColor()
     val tasks = tasksColor()
     val mood = moodColor()
-    val grid = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    val grid = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.24f)
 
     Canvas(
         modifier = Modifier
@@ -171,6 +189,7 @@ private fun CorrelationChart(points: List<DayPoint>) {
 
 @Composable
 private fun LegendDot(color: Color, text: String) {
+    val tone = MaterialTheme.appAccents.progress
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Canvas(modifier = Modifier.size(10.dp)) {
             drawCircle(color)
@@ -179,7 +198,7 @@ private fun LegendDot(color: Color, text: String) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = tone.onContainer.copy(alpha = 0.72f)
         )
     }
 }

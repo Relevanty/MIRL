@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.ui.home
 
 import com.personal.sleepalarm.ui.theme.appAccents
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -277,8 +278,8 @@ fun HomeScreen(
                     QuickAccessPill(
                         label = stringResource(R.string.quick_notes_title),
                         onClick = { showQuickNotes = true },
-                        containerColor = MaterialTheme.appAccents.calm.action,
-                        contentColor = MaterialTheme.appAccents.calm.onAction,
+                        containerColor = MaterialTheme.appAccents.creative.action,
+                        contentColor = MaterialTheme.appAccents.creative.onAction,
                         modifier = Modifier
                             .weight(0.44f)
                             .height(48.dp)
@@ -287,8 +288,8 @@ fun HomeScreen(
                     QuickAccessPill(
                         label = stringResource(R.string.diary_title),
                         onClick = onOpenDiary,
-                        containerColor = MaterialTheme.appAccents.other.action,
-                        contentColor = MaterialTheme.appAccents.other.onAction,
+                        containerColor = MaterialTheme.appAccents.leisure.action,
+                        contentColor = MaterialTheme.appAccents.leisure.onAction,
                         modifier = Modifier
                             .weight(0.44f)
                             .height(48.dp)
@@ -337,6 +338,7 @@ fun HomeScreen(
                 HomeToolTile(
                     icon = Icons.Default.Flag,
                     label = stringResource(R.string.misc_dday),
+                    tone = MaterialTheme.appAccents.schedule,
                     onClick = {
                         showHomeTools = false
                         onOpenDDay()
@@ -350,6 +352,7 @@ fun HomeScreen(
                     HomeToolTile(
                         icon = Icons.Default.BarChart,
                         label = stringResource(R.string.action_open_stats),
+                        tone = MaterialTheme.appAccents.progress,
                         onClick = {
                             showHomeTools = false
                             onOpenStats?.invoke() ?: run { showStats = true }
@@ -359,6 +362,7 @@ fun HomeScreen(
                     HomeToolTile(
                         icon = Icons.Default.SmartToy,
                         label = stringResource(R.string.misc_assistant),
+                        tone = MaterialTheme.appAccents.info,
                         onClick = {
                             showHomeTools = false
                             onOpenAssistant()
@@ -373,6 +377,7 @@ fun HomeScreen(
                     HomeToolTile(
                         icon = Icons.Default.Translate,
                         label = stringResource(R.string.language_english),
+                        tone = MaterialTheme.appAccents.study,
                         onClick = {
                             showHomeTools = false
                             onOpenEnglishLearning()
@@ -382,6 +387,7 @@ fun HomeScreen(
                     HomeToolTile(
                         icon = Icons.Default.Calculate,
                         label = stringResource(R.string.math_practice_open),
+                        tone = MaterialTheme.appAccents.creative,
                         onClick = {
                             showHomeTools = false
                             onOpenMathPractice()
@@ -513,10 +519,17 @@ private fun TodayDynamicCard(
         adaptivePlan.shouldOfferRecoveryCheckIn -> stringResource(R.string.energy_recovery_action)
         else -> null
     }
+    val cardTone = when {
+        activeSession != null -> MaterialTheme.appAccents.sleep
+        morningResult != null -> MaterialTheme.appAccents.success
+        task != null -> MaterialTheme.appAccents.focus
+        else -> MaterialTheme.appAccents.schedule
+    }
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.94f)
+            containerColor = cardTone.container,
+            contentColor = cardTone.onContainer
         ),
         modifier = modifier.then(
             if (activeSession == null && morningResult == null) {
@@ -576,7 +589,7 @@ private fun TodayDynamicCard(
                         )
                     },
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = cardTone.onContainer
                 )
                 Text(
                     text = stringResource(
@@ -587,7 +600,7 @@ private fun TodayDynamicCard(
                         }
                     ),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = cardTone.onContainer.copy(alpha = 0.78f),
                     maxLines = if (compact) 2 else 3,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -625,7 +638,7 @@ private fun TodayDynamicCard(
                 Text(
                     text = stringResource(R.string.home_sleep_morning_body),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = cardTone.onContainer.copy(alpha = 0.78f),
                     maxLines = if (compact) 2 else 3,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -736,7 +749,7 @@ private fun TodayDynamicCard(
                             else R.string.home_no_tasks_title
                         ),
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = cardTone.onContainer,
                         minFontSize = 10.sp
                     )
                     FittedSingleLineText(
@@ -745,7 +758,7 @@ private fun TodayDynamicCard(
                             else R.string.home_no_tasks_body
                         ),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = cardTone.onContainer.copy(alpha = 0.78f),
                         minFontSize = 9.sp
                     )
                 }
@@ -990,8 +1003,8 @@ private fun DayContextStrip(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.appAccents.info.container,
+        contentColor = MaterialTheme.appAccents.info.onContainer
     ) {
         Column(
             modifier = Modifier
@@ -1005,8 +1018,8 @@ private fun DayContextStrip(
                     else Icons.Default.Thermostat,
                     contentDescription = null,
                     modifier = Modifier.size(17.dp),
-                    tint = if (daylightMinutes != null) MaterialTheme.appAccents.warning.color
-                    else MaterialTheme.appAccents.calm.color
+                    tint = if (daylightMinutes != null) MaterialTheme.appAccents.schedule.color
+                    else MaterialTheme.appAccents.info.color
                 )
                 FittedSingleLineText(
                     text = stringResource(
@@ -1020,8 +1033,8 @@ private fun DayContextStrip(
                 FittedSingleLineText(
                     text = headerSummary,
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (hasWeather) MaterialTheme.appAccents.calm.color
-                    else MaterialTheme.appAccents.warning.color,
+                    color = if (hasWeather) MaterialTheme.appAccents.info.color
+                    else MaterialTheme.appAccents.schedule.color,
                     fontWeight = FontWeight.SemiBold,
                     minFontSize = 9.sp,
                     textAlign = TextAlign.End
@@ -1034,8 +1047,8 @@ private fun DayContextStrip(
                         .fillMaxWidth()
                         .height(5.dp)
                         .clip(RoundedCornerShape(50)),
-                    color = MaterialTheme.appAccents.warning.color,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    color = MaterialTheme.appAccents.schedule.color,
+                    trackColor = MaterialTheme.appAccents.schedule.action
                 )
             }
             if (metrics.isNotEmpty()) {
@@ -1051,7 +1064,7 @@ private fun DayContextStrip(
                                 modifier = Modifier
                                     .width(1.dp)
                                     .height(if (compact) 20.dp else 24.dp)
-                                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
+                                    .background(MaterialTheme.appAccents.info.color.copy(alpha = 0.42f))
                             )
                         }
                         HomeContextMetricCell(
@@ -1066,7 +1079,7 @@ private fun DayContextStrip(
                     text = footer,
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.appAccents.info.onContainer.copy(alpha = 0.78f),
                     minFontSize = 8.sp,
                     textAlign = TextAlign.Center
                 )
@@ -1096,11 +1109,11 @@ private fun HomeContextMetricCell(
     modifier: Modifier = Modifier
 ) {
     val valueColor = when (metric.tone) {
-        HomeContextTone.DAYLIGHT -> MaterialTheme.appAccents.warning.color
-        HomeContextTone.COUNTDOWN -> MaterialTheme.appAccents.focus.color
-        HomeContextTone.HUMIDITY -> MaterialTheme.appAccents.calm.color
-        HomeContextTone.WIND -> MaterialTheme.appAccents.study.color
-        HomeContextTone.TEMPERATURE -> MaterialTheme.appAccents.sleep.color
+        HomeContextTone.DAYLIGHT -> MaterialTheme.appAccents.schedule.color
+        HomeContextTone.COUNTDOWN -> MaterialTheme.appAccents.progress.color
+        HomeContextTone.HUMIDITY -> MaterialTheme.appAccents.info.color
+        HomeContextTone.WIND -> MaterialTheme.appAccents.energy.color
+        HomeContextTone.TEMPERATURE -> MaterialTheme.appAccents.calm.color
         HomeContextTone.PRECIPITATION -> MaterialTheme.appAccents.other.color
     }
     Column(
@@ -1111,7 +1124,7 @@ private fun HomeContextMetricCell(
             text = metric.label,
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.labelSmall,
-            color = lerp(MaterialTheme.colorScheme.onSurfaceVariant, valueColor, 0.28f),
+            color = lerp(MaterialTheme.appAccents.info.onContainer, valueColor, 0.28f),
             minFontSize = 8.sp,
             textAlign = TextAlign.Center
         )
@@ -1200,9 +1213,9 @@ private fun TaskDeadlineBadge(dueAtMillis: Long, nowMillis: Long) {
     Surface(
         shape = RoundedCornerShape(9.dp),
         color = if (urgent) MaterialTheme.appAccents.urgent.container
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        else MaterialTheme.appAccents.schedule.container,
         contentColor = if (urgent) MaterialTheme.appAccents.urgent.onContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant
+        else MaterialTheme.appAccents.schedule.onContainer
     ) {
         FittedSingleLineText(
             text = text,
@@ -1246,7 +1259,8 @@ private fun UpcomingTasksStrip(tasks: List<TaskEntity>, onOpenTasks: () -> Unit)
         onClick = onOpenTasks,
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            containerColor = MaterialTheme.appAccents.schedule.container,
+            contentColor = MaterialTheme.appAccents.schedule.onContainer
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1260,7 +1274,7 @@ private fun UpcomingTasksStrip(tasks: List<TaskEntity>, onOpenTasks: () -> Unit)
                 Text(
                     text = stringResource(R.string.home_tasks_all),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.appAccents.work.color
+                    color = MaterialTheme.appAccents.schedule.onContainer
                 )
             }
             tasks.forEach { task ->
@@ -1276,7 +1290,7 @@ private fun UpcomingTasksStrip(tasks: List<TaskEntity>, onOpenTasks: () -> Unit)
                         Text(
                             TimeFormatter.formatEpochMillis(it, ZoneId.systemDefault().id),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.appAccents.schedule.onContainer.copy(alpha = 0.76f),
                             modifier = Modifier.padding(start = 10.dp)
                         )
                     }
@@ -1879,6 +1893,7 @@ private fun LearningShortcutsOverlay(
             description = stringResource(R.string.home_english_learning_open),
             testTag = HOME_ENGLISH_SHORTCUT_TEST_TAG,
             geometry = geometry,
+            tone = MaterialTheme.appAccents.study,
             onClick = onOpenEnglishLearning
         )
         LearningShortcut(
@@ -1886,6 +1901,7 @@ private fun LearningShortcutsOverlay(
             description = stringResource(R.string.math_practice_open),
             testTag = HOME_MATH_SHORTCUT_TEST_TAG,
             geometry = geometry,
+            tone = MaterialTheme.appAccents.creative,
             onClick = onOpenMathPractice
         )
     }
@@ -1897,6 +1913,7 @@ private fun LearningShortcut(
     description: String,
     testTag: String,
     geometry: HomeLearningShortcutsGeometry,
+    tone: AppAccentTone,
     onClick: () -> Unit
 ) {
     IconButton(
@@ -1909,14 +1926,14 @@ private fun LearningShortcut(
             modifier = Modifier
                 .size(geometry.visualDiameterDp.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                .background(tone.container),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = description,
                 modifier = Modifier.size(21.dp),
-                tint = MaterialTheme.colorScheme.onSurface
+                tint = tone.onContainer
             )
         }
     }
@@ -1996,12 +2013,13 @@ private fun PlanSummaryCard(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(30.dp)
+    val sleepTone = MaterialTheme.appAccents.sleep
     if (plan == null && activeSession == null) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
                 .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f))
+                .background(sleepTone.container)
                 .padding(
                     start = if (dense) 14.dp else if (compact) 16.dp else 20.dp,
                     end = if (dense) 10.dp else if (compact) 12.dp else 16.dp,
@@ -2013,6 +2031,7 @@ private fun PlanSummaryCard(
             Text(
                 text = stringResource(R.string.home_summary_no_plan),
                 style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                color = sleepTone.onContainer,
                 textAlign = TextAlign.Center,
                 maxLines = if (compact) 3 else 4,
                 overflow = TextOverflow.Ellipsis
@@ -2040,7 +2059,7 @@ private fun PlanSummaryCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f))
+            .background(sleepTone.container)
             .padding(
                 start = if (dense) 14.dp else if (compact) 16.dp else 20.dp,
                 end = if (dense) 10.dp else if (compact) 12.dp else 16.dp,
@@ -2063,7 +2082,7 @@ private fun PlanSummaryCard(
                     style = if (dense) MaterialTheme.typography.labelMedium
                     else if (compact) MaterialTheme.typography.labelLarge
                     else MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = sleepTone.onContainer.copy(alpha = 0.78f),
                     minFontSize = 10.sp
                 )
                 FittedSingleLineText(
@@ -2074,7 +2093,7 @@ private fun PlanSummaryCard(
                         else -> MaterialTheme.typography.displayLarge.copy(fontSize = 56.sp)
                     },
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.appAccents.sleep.color,
+                    color = sleepTone.onContainer,
                     minFontSize = if (dense) 32.sp else if (compact) 38.sp else 46.sp
                 )
                 FittedSingleLineText(
@@ -2082,7 +2101,7 @@ private fun PlanSummaryCard(
                     style = if (dense) MaterialTheme.typography.labelSmall
                     else if (compact) MaterialTheme.typography.labelMedium
                     else MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = sleepTone.onContainer.copy(alpha = 0.78f),
                     minFontSize = 9.sp
                 )
             }
@@ -2128,7 +2147,7 @@ private fun PlanSummaryCard(
             activeSession == null && plan?.isCutByPreferredWake == true -> Text(
                 text = stringResource(R.string.home_summary_cut_by_wake),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = sleepTone.onContainer.copy(alpha = 0.78f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = if (dense) 1 else 2,
@@ -2149,7 +2168,7 @@ private fun PlanDetail(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.48f))
+            .background(MaterialTheme.appAccents.sleep.action)
             .padding(
                 horizontal = if (dense) 5.dp else if (compact) 6.dp else 10.dp,
                 vertical = if (dense) 2.dp else if (compact) 3.dp else 5.dp
@@ -2160,7 +2179,7 @@ private fun PlanDetail(
             text = label,
             style = if (dense) MaterialTheme.typography.labelSmall
             else MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.appAccents.sleep.onAction.copy(alpha = 0.78f),
             minFontSize = 8.sp
         )
         if (!compact && !dense) Spacer(Modifier.height(2.dp))
@@ -2169,6 +2188,7 @@ private fun PlanDetail(
             style = if (dense) MaterialTheme.typography.labelLarge
             else if (compact) MaterialTheme.typography.titleSmall
             else MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.appAccents.sleep.onAction,
             fontWeight = FontWeight.SemiBold,
             minFontSize = 9.sp
         )
@@ -2187,6 +2207,16 @@ private fun StartButtons(
     val cancellableSession = activeSession != null && !automationArmed
     val sleepContainerColor = MaterialTheme.appAccents.sleep.action
     val sleepContentColor = MaterialTheme.appAccents.sleep.onAction
+    val disabledSleepContainer = lerp(
+        MaterialTheme.colorScheme.surface,
+        sleepContainerColor,
+        0.46f
+    )
+    val disabledSleepContent = lerp(
+        disabledSleepContainer,
+        sleepContentColor,
+        0.72f
+    )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = if (cancellableSession) onCancelActive else onStart,
@@ -2203,7 +2233,9 @@ private fun StartButtons(
             } else {
                 ButtonDefaults.buttonColors(
                     containerColor = sleepContainerColor,
-                    contentColor = sleepContentColor
+                    contentColor = sleepContentColor,
+                    disabledContainerColor = disabledSleepContainer,
+                    disabledContentColor = disabledSleepContent
                 )
             }
         ) {
@@ -2237,8 +2269,8 @@ private fun HomeActionDock(
             icon = Icons.Default.EditNote,
             label = stringResource(R.string.quick_notes_title),
             onClick = onQuickNotes,
-            containerColor = MaterialTheme.appAccents.calm.container,
-            contentColor = MaterialTheme.appAccents.calm.onContainer,
+            containerColor = MaterialTheme.appAccents.creative.container,
+            contentColor = MaterialTheme.appAccents.creative.onContainer,
             modifier = Modifier.weight(1f)
         )
         HomeDockAction(
@@ -2253,16 +2285,16 @@ private fun HomeActionDock(
             icon = Icons.AutoMirrored.Filled.MenuBook,
             label = stringResource(R.string.diary_title),
             onClick = onDiary,
-            containerColor = MaterialTheme.appAccents.other.container,
-            contentColor = MaterialTheme.appAccents.other.onContainer,
+            containerColor = MaterialTheme.appAccents.leisure.container,
+            contentColor = MaterialTheme.appAccents.leisure.onContainer,
             modifier = Modifier.weight(1f)
         )
         HomeDockAction(
             icon = Icons.Default.Apps,
             label = stringResource(R.string.home_action_sections),
             onClick = onTools,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            containerColor = MaterialTheme.appAccents.other.container,
+            contentColor = MaterialTheme.appAccents.other.onContainer,
             modifier = Modifier.weight(1f)
         )
     }
@@ -2303,6 +2335,7 @@ private fun HomeDockAction(
 private fun HomeToolTile(
     icon: ImageVector,
     label: String,
+    tone: AppAccentTone,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2310,8 +2343,8 @@ private fun HomeToolTile(
         onClick = onClick,
         modifier = modifier.height(64.dp),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface
+        color = tone.container,
+        contentColor = tone.onContainer
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),

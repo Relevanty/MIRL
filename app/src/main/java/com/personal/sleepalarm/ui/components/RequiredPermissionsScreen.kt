@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -58,6 +59,7 @@ fun RequiredPermissionsScreen(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val infoTone = MaterialTheme.appAccents.info
     val permissions = buildList {
         add(
             RequiredPermission(
@@ -128,12 +130,13 @@ fun RequiredPermissionsScreen(
             Text(
                 text = stringResource(R.string.required_permissions_title),
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = infoTone.color
             )
             Text(
                 text = stringResource(R.string.required_permissions_description),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = infoTone.color
             )
             Text(
                 text = stringResource(
@@ -142,7 +145,7 @@ fun RequiredPermissionsScreen(
                     permissions.size
                 ),
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.appAccents.focus.color
+                color = infoTone.color
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -156,7 +159,11 @@ fun RequiredPermissionsScreen(
             if (next != null) {
                 Button(
                     onClick = next.request,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = infoTone.action,
+                        contentColor = infoTone.onAction
+                    )
                 ) {
                     Text(stringResource(R.string.required_permissions_grant, next.title))
                 }
@@ -164,7 +171,11 @@ fun RequiredPermissionsScreen(
 
             OutlinedButton(
                 onClick = onRefresh,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = infoTone.container,
+                    contentColor = infoTone.onContainer
+                )
             ) {
                 Text(stringResource(R.string.system_check_refresh))
             }
@@ -172,7 +183,7 @@ fun RequiredPermissionsScreen(
             Text(
                 text = stringResource(R.string.required_permissions_footer),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = infoTone.color
             )
         }
     }
@@ -180,32 +191,32 @@ fun RequiredPermissionsScreen(
 
 @Composable
 private fun PermissionStatusRow(permission: RequiredPermission) {
+    val infoTone = MaterialTheme.appAccents.info
+    val statusTone = if (permission.granted) {
+        MaterialTheme.appAccents.success
+    } else {
+        MaterialTheme.appAccents.urgent
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .background(infoTone.container)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Surface(
             shape = CircleShape,
-            color = if (permission.granted) {
-                MaterialTheme.appAccents.success.color
-            } else {
-                MaterialTheme.appAccents.urgent.color
-            },
+            color = statusTone.action,
+            contentColor = statusTone.onAction,
             modifier = Modifier.size(30.dp)
         ) {
             Icon(
                 imageVector = if (permission.granted) Icons.Default.Check else Icons.Default.Close,
                 contentDescription = null,
-                tint = if (permission.granted) {
-                    MaterialTheme.appAccents.success.onColor
-                } else {
-                    MaterialTheme.appAccents.urgent.onColor
-                },
+                tint = statusTone.onAction,
                 modifier = Modifier.padding(6.dp)
             )
         }
@@ -214,12 +225,13 @@ private fun PermissionStatusRow(permission: RequiredPermission) {
             Text(
                 text = permission.title,
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = infoTone.onContainer
             )
             Text(
                 text = permission.description,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = infoTone.onContainer
             )
         }
 
@@ -231,12 +243,12 @@ private fun PermissionStatusRow(permission: RequiredPermission) {
                     R.string.required_permissions_missing
                 }
             ),
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(statusTone.action)
+                .padding(horizontal = 8.dp, vertical = 5.dp),
             style = MaterialTheme.typography.labelMedium,
-            color = if (permission.granted) {
-                MaterialTheme.appAccents.success.color
-            } else {
-                MaterialTheme.appAccents.urgent.color
-            }
+            color = statusTone.onAction
         )
     }
 }

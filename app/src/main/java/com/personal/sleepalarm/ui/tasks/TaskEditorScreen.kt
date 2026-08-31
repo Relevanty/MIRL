@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.ui.tasks
 
 import com.personal.sleepalarm.ui.theme.appAccents
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -271,7 +272,8 @@ internal fun TaskEditorScreen(
             item {
                 TaskEditorSection(
                     title = stringResource(R.string.task_section_activity),
-                    hint = stringResource(R.string.task_section_activity_hint)
+                    hint = stringResource(R.string.task_section_activity_hint),
+                    tone = MaterialTheme.appAccents.work
                 ) {
                     OutlinedTextField(
                         value = title,
@@ -310,7 +312,8 @@ internal fun TaskEditorScreen(
             item {
                 TaskEditorSection(
                     title = stringResource(R.string.task_section_result),
-                    hint = stringResource(R.string.task_section_result_hint)
+                    hint = stringResource(R.string.task_section_result_hint),
+                    tone = MaterialTheme.appAccents.progress
                 ) {
                     OutlinedTextField(
                         value = description,
@@ -355,7 +358,10 @@ internal fun TaskEditorScreen(
             }
 
             item {
-                TaskEditorSection(title = stringResource(R.string.task_section_visual)) {
+                TaskEditorSection(
+                    title = stringResource(R.string.task_section_visual),
+                    tone = MaterialTheme.appAccents.creative
+                ) {
                     if (imagePath == null) {
                         Text(
                             stringResource(R.string.task_image_required_hint),
@@ -397,7 +403,8 @@ internal fun TaskEditorScreen(
             item {
                 TaskEditorSection(
                     title = stringResource(R.string.task_adaptive_profile_title),
-                    hint = stringResource(R.string.task_adaptive_profile_hint)
+                    hint = stringResource(R.string.task_adaptive_profile_hint),
+                    tone = MaterialTheme.appAccents.energy
                 ) {
                     Text(
                         stringResource(R.string.task_work_mode_label),
@@ -500,7 +507,8 @@ internal fun TaskEditorScreen(
             item {
                 TaskEditorSection(
                     title = stringResource(R.string.task_section_conditions),
-                    hint = stringResource(R.string.task_section_conditions_hint)
+                    hint = stringResource(R.string.task_section_conditions_hint),
+                    tone = MaterialTheme.appAccents.schedule
                 ) {
                     Text(stringResource(R.string.task_field_quadrant), style = MaterialTheme.typography.labelLarge)
                     Row(
@@ -709,7 +717,8 @@ internal fun TaskEditorScreen(
                 item {
                     TaskEditorSection(
                         title = stringResource(R.string.task_section_plan),
-                        hint = stringResource(R.string.task_section_plan_hint)
+                        hint = stringResource(R.string.task_section_plan_hint),
+                        tone = MaterialTheme.appAccents.schedule
                     ) {
                         OutlinedTextField(
                             value = checklist,
@@ -768,22 +777,29 @@ internal fun TaskEditorScreen(
 private fun TaskEditorSection(
     title: String,
     hint: String? = null,
+    tone: AppAccentTone,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = tone.container,
+        contentColor = tone.onContainer,
         tonalElevation = 1.dp
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = tone.onContainer,
+                fontWeight = FontWeight.SemiBold
+            )
             if (hint != null) {
-                Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = tone.onContainer.copy(alpha = 0.78f))
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            HorizontalDivider(color = tone.color.copy(alpha = 0.42f))
             content()
         }
     }

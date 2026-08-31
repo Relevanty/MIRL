@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,6 +56,7 @@ import com.personal.sleepalarm.domain.calculator.TrackedInterval
 import com.personal.sleepalarm.domain.model.DismissType
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.model.projectActivityRecords
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 import com.personal.sleepalarm.ui.theme.appAccents
 import java.time.Instant
 import java.time.LocalDate
@@ -80,7 +82,9 @@ private data class ActivityRecord(
 private data class CategoryVisual(
     val type: TrackedActivityType,
     val label: String,
-    val color: Color
+    val color: Color,
+    val container: Color,
+    val onContainer: Color
 )
 
 private data class ActivityBucket(
@@ -235,12 +239,16 @@ private fun CompletedStudyBlocksCard(
     blocks: List<FocusProtocolSessionEntity>,
     locale: Locale
 ) {
-    ChartCard(stringResource(R.string.study_completed_blocks)) {
+    val tone = MaterialTheme.appAccents.study
+    ChartCard(
+        title = stringResource(R.string.study_completed_blocks),
+        tone = tone
+    ) {
         if (blocks.isEmpty()) {
             Text(
                 text = stringResource(R.string.study_completed_blocks_empty),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = tone.onContainer.copy(alpha = 0.72f)
             )
             return@ChartCard
         }
@@ -272,44 +280,49 @@ private fun CompletedStudyBlocksCard(
                     .atZone(ZoneId.systemDefault())
                     .format(DateTimeFormatter.ofPattern("d MMM, HH:mm", locale))
             }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.48f))
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = tone.action,
+                contentColor = tone.onAction
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = block.itemName,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = tone.onAction
+                        )
+                        Text(
+                            text = date,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tone.onAction.copy(alpha = 0.68f)
+                        )
+                    }
                     Text(
-                        text = block.itemName,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
+                        text = block.outcome,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tone.onAction.copy(alpha = 0.72f)
                     )
                     Text(
-                        text = date,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = stringResource(
+                            R.string.study_block_result,
+                            block.completedCycles,
+                            formatDuration(block.totalFocusMillis)
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = tone.onAction,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
-                Text(
-                    text = block.outcome,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = stringResource(
-                        R.string.study_block_result,
-                        block.completedCycles,
-                        formatDuration(block.totalFocusMillis)
-                    ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.appAccents.work.color
-                )
             }
         }
     }
@@ -317,41 +330,67 @@ private fun CompletedStudyBlocksCard(
 
 @Composable
 private fun StudyMetric(value: String, label: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.appAccents.work.container)
-            .padding(horizontal = 8.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    val tone = MaterialTheme.appAccents.progress
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = tone.action,
+        contentColor = tone.onAction
     ) {
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(label, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = tone.onAction
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
+                color = tone.onAction.copy(alpha = 0.72f)
+            )
+        }
     }
 }
 
 @Composable
-private fun categoryVisuals(): List<CategoryVisual> = listOf(
-    CategoryVisual(
-        TrackedActivityType.SLEEP,
-        stringResource(R.string.activity_sleep),
-        MaterialTheme.appAccents.sleep.color
-    ),
-    CategoryVisual(
-        TrackedActivityType.STUDY,
-        stringResource(R.string.activity_study),
-        MaterialTheme.appAccents.study.color
-    ),
-    CategoryVisual(
-        TrackedActivityType.WORK,
-        stringResource(R.string.activity_work),
-        MaterialTheme.appAccents.work.color
-    ),
-    CategoryVisual(
-        TrackedActivityType.OTHER,
-        stringResource(R.string.activity_other),
-        MaterialTheme.appAccents.other.color
+private fun categoryVisuals(): List<CategoryVisual> {
+    val accents = MaterialTheme.appAccents
+    return listOf(
+        CategoryVisual(
+            TrackedActivityType.SLEEP,
+            stringResource(R.string.activity_sleep),
+            accents.sleep.color,
+            accents.sleep.container,
+            accents.sleep.onContainer
+        ),
+        CategoryVisual(
+            TrackedActivityType.STUDY,
+            stringResource(R.string.activity_study),
+            accents.study.color,
+            accents.study.container,
+            accents.study.onContainer
+        ),
+        CategoryVisual(
+            TrackedActivityType.WORK,
+            stringResource(R.string.activity_work),
+            accents.work.color,
+            accents.work.container,
+            accents.work.onContainer
+        ),
+        CategoryVisual(
+            TrackedActivityType.OTHER,
+            stringResource(R.string.activity_other),
+            accents.other.color,
+            accents.other.container,
+            accents.other.onContainer
+        )
     )
-)
+}
 
 @Composable
 private fun PeriodNavigator(label: String, onPrevious: () -> Unit, onNext: () -> Unit) {
@@ -385,29 +424,35 @@ private fun SummaryGrid(totals: ActivityPeriodTotals, categories: List<CategoryV
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 row.forEach { category ->
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(category.color.copy(alpha = 0.12f))
-                            .padding(14.dp)
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        color = category.container,
+                        contentColor = category.onContainer
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(9.dp)
-                                    .clip(CircleShape)
-                                    .background(category.color)
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier
+                                        .size(9.dp)
+                                        .clip(CircleShape)
+                                        .background(category.color)
+                                )
+                                Spacer(Modifier.width(7.dp))
+                                Text(
+                                    category.label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = category.onContainer
+                                )
+                            }
+                            Spacer(Modifier.height(7.dp))
+                            Text(
+                                text = formatDuration(totals.value(category.type)),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = category.onContainer
                             )
-                            Spacer(Modifier.width(7.dp))
-                            Text(category.label, style = MaterialTheme.typography.labelLarge)
                         }
-                        Spacer(Modifier.height(7.dp))
-                        Text(
-                            text = formatDuration(totals.value(category.type)),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
                 }
             }
@@ -425,7 +470,7 @@ private fun DistributionChart(totals: ActivityPeriodTotals, categories: List<Cat
             horizontalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(142.dp)) {
-                val emptyColor = MaterialTheme.colorScheme.surfaceVariant
+                val emptyColor = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.14f)
                 Canvas(Modifier.size(142.dp)) {
                     val stroke = 18.dp.toPx()
                     if (total <= 0L) {
@@ -456,7 +501,7 @@ private fun DistributionChart(totals: ActivityPeriodTotals, categories: List<Cat
                     Text(
                         text = stringResource(R.string.activity_total_tracked),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.72f)
                     )
                 }
             }
@@ -487,7 +532,7 @@ private fun ComparisonChart(totals: ActivityPeriodTotals, categories: List<Categ
                         .weight(1f)
                         .height(12.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .background(MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.14f))
                 ) {
                     Box(
                         modifier = Modifier
@@ -518,12 +563,13 @@ private fun DayTimelineChart(
 ) {
     val periodDuration = (periodEnd - periodStart).coerceAtLeast(1L)
     val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
-    val gridLineColor = MaterialTheme.colorScheme.outlineVariant
+    val progressTone = MaterialTheme.appAccents.progress
+    val gridLineColor = progressTone.onContainer.copy(alpha = 0.22f)
     ChartCard(stringResource(R.string.activity_chart_timeline)) {
         categories.forEach { category ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(category.label, modifier = Modifier.width(72.dp), style = MaterialTheme.typography.bodySmall)
-                val track = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                val track = progressTone.onContainer.copy(alpha = 0.14f)
                 Canvas(
                     modifier = Modifier
                         .weight(1f)
@@ -566,7 +612,7 @@ private fun DayTimelineChart(
                     modifier = Modifier.weight(1f),
                     textAlign = if (label == labels.last()) TextAlign.End else TextAlign.Start,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = progressTone.onContainer.copy(alpha = 0.72f)
                 )
             }
         }
@@ -581,7 +627,7 @@ private fun StackedBarChart(
     labelCount: Int
 ) {
     val maxValue = buckets.maxOfOrNull { it.totals.total() }?.coerceAtLeast(1L) ?: 1L
-    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val gridColor = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.22f)
     ChartCard(title) {
         Canvas(
             modifier = Modifier
@@ -624,7 +670,7 @@ private fun StackedBarChart(
 private fun TrendChart(buckets: List<ActivityBucket>, color: Color) {
     val values = buckets.map { it.totals.total() }
     val maximum = values.maxOrNull()?.coerceAtLeast(1L) ?: 1L
-    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val gridColor = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.22f)
     ChartCard(stringResource(R.string.activity_chart_trend)) {
         Canvas(
             modifier = Modifier
@@ -675,7 +721,7 @@ private fun ActivityHeatmap(
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.72f)
                 )
             }
         }
@@ -688,7 +734,7 @@ private fun ActivityHeatmap(
                         val dominant = categories.maxByOrNull { totals.value(it.type) }
                         val strength = (totals.total().toFloat() / maxTotal).coerceIn(0f, 1f)
                         val cellColor = if (totals.total() == 0L) {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
+                            MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.10f)
                         } else {
                             dominant!!.color.copy(alpha = 0.20f + strength * 0.72f)
                         }
@@ -748,7 +794,7 @@ private fun TopActivitiesChart(
                     .fillMaxWidth()
                     .padding(vertical = 16.dp),
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.72f)
             )
         } else {
             rows.forEach { (type, label, value) ->
@@ -765,7 +811,7 @@ private fun TopActivitiesChart(
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .background(MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.14f))
                     ) {
                         Box(
                             Modifier
@@ -796,7 +842,7 @@ private fun BucketAxisLabels(buckets: List<ActivityBucket>, labelCount: Int) {
                     else -> TextAlign.Center
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.72f)
             )
         }
     }
@@ -809,7 +855,11 @@ private fun LegendRow(category: CategoryVisual, value: String, percent: String) 
         Spacer(Modifier.width(7.dp))
         Column(Modifier.weight(1f)) {
             Text(category.label, style = MaterialTheme.typography.bodySmall)
-            Text(value, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                value,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.72f)
+            )
         }
         Text(percent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
     }
@@ -825,17 +875,29 @@ private fun MiniLegend(category: CategoryVisual) {
 }
 
 @Composable
-private fun ChartCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+private fun ChartCard(
+    title: String,
+    tone: AppAccentTone = MaterialTheme.appAccents.progress,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = tone.container,
+        contentColor = tone.onContainer
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        content()
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = tone.onContainer
+            )
+            content()
+        }
     }
 }
 

@@ -34,15 +34,30 @@ fun ChallengeVisualRenderer(
     visual: ChallengeVisual,
     modifier: Modifier = Modifier
 ) {
-    val primary = MaterialTheme.appAccents.focus.color
-    val secondary = MaterialTheme.appAccents.study.color
-    val foreground = MaterialTheme.colorScheme.onSurface
-    val grid = MaterialTheme.colorScheme.outlineVariant
+    val accents = MaterialTheme.appAccents
+    val containerTone = when (visual) {
+        is ChallengeVisual.FunctionGraph -> accents.progress
+        is ChallengeVisual.NumberLine -> accents.info
+        is ChallengeVisual.GeometryDiagram -> accents.creative
+    }
+    val primary = when (visual) {
+        is ChallengeVisual.FunctionGraph -> accents.progress.fill
+        is ChallengeVisual.NumberLine -> accents.info.fill
+        is ChallengeVisual.GeometryDiagram -> accents.creative.fill
+    }
+    val secondary = when (visual) {
+        is ChallengeVisual.FunctionGraph -> accents.creative.fill
+        is ChallengeVisual.NumberLine -> accents.study.fill
+        is ChallengeVisual.GeometryDiagram -> accents.study.fill
+    }
+    val foreground = containerTone.onContainer
+    val grid = containerTone.onContainer.copy(alpha = 0.18f)
 
     Surface(
         modifier = modifier.semantics { contentDescription = visual.contentDescription },
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
+        color = containerTone.container,
+        contentColor = containerTone.onContainer
     ) {
         Canvas(
             modifier = Modifier

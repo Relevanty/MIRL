@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -63,6 +64,7 @@ fun SystemCheckDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val infoTone = MaterialTheme.appAccents.info
 
     var permissionState by remember {
         mutableStateOf(PermissionChecker.state(context))
@@ -90,7 +92,7 @@ fun SystemCheckDialog(
                 .fillMaxWidth()
                 .heightIn(max = 580.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(infoTone.container)
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -100,7 +102,7 @@ fun SystemCheckDialog(
                 style = TextStyle(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = infoTone.onContainer
                 )
             )
 
@@ -108,7 +110,7 @@ fun SystemCheckDialog(
                 text = stringResource(R.string.system_check_subtitle),
                 style = TextStyle(
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = infoTone.onContainer
                 )
             )
 
@@ -186,7 +188,7 @@ fun SystemCheckDialog(
 
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 8.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = infoTone.onContainer.copy(alpha = 0.22f)
             )
 
             Text(
@@ -194,7 +196,7 @@ fun SystemCheckDialog(
                 style = TextStyle(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = infoTone.onContainer
                 )
             )
 
@@ -202,7 +204,7 @@ fun SystemCheckDialog(
                 text = stringResource(R.string.system_check_oem_subtitle),
                 style = TextStyle(
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = infoTone.onContainer
                 )
             )
 
@@ -233,7 +235,11 @@ fun SystemCheckDialog(
 
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.align(Alignment.End)
+                modifier = Modifier.align(Alignment.End),
+                colors = ButtonDefaults.textButtonColors(
+                    containerColor = infoTone.action,
+                    contentColor = infoTone.onAction
+                )
             ) {
                 Text(text = stringResource(R.string.system_check_close))
             }
@@ -252,17 +258,18 @@ private fun CheckRow(
     critical: Boolean,
     onOpen: () -> Unit
 ) {
-    val statusColor = when {
-        granted -> MaterialTheme.appAccents.success.color
-        critical -> MaterialTheme.appAccents.urgent.color
-        else -> MaterialTheme.appAccents.warning.color
+    val infoTone = MaterialTheme.appAccents.info
+    val statusTone = when {
+        granted -> MaterialTheme.appAccents.success
+        critical -> MaterialTheme.appAccents.urgent
+        else -> MaterialTheme.appAccents.warning
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .background(infoTone.action)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -270,7 +277,7 @@ private fun CheckRow(
             modifier = Modifier
                 .size(10.dp)
                 .clip(CircleShape)
-                .background(statusColor)
+                .background(statusTone.color)
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -284,7 +291,7 @@ private fun CheckRow(
                 style = TextStyle(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = infoTone.onAction
                 )
             )
 
@@ -292,7 +299,7 @@ private fun CheckRow(
                 text = subtitle,
                 style = TextStyle(
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = infoTone.onAction
                 )
             )
         }
@@ -300,14 +307,24 @@ private fun CheckRow(
         if (granted) {
             Text(
                 text = stringResource(R.string.system_check_status_ok),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(statusTone.action)
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
                 style = TextStyle(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.appAccents.success.color
+                    color = statusTone.onAction
                 )
             )
         } else {
-            TextButton(onClick = onOpen) {
+            TextButton(
+                onClick = onOpen,
+                colors = ButtonDefaults.textButtonColors(
+                    containerColor = statusTone.action,
+                    contentColor = statusTone.onAction
+                )
+            ) {
                 Text(
                     text = stringResource(R.string.system_check_action_configure)
                 )
@@ -324,11 +341,13 @@ private fun OemCard(
     name: String,
     steps: String
 ) {
+    val infoTone = MaterialTheme.appAccents.info
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .background(infoTone.action)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -337,7 +356,7 @@ private fun OemCard(
             style = TextStyle(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.appAccents.warning.color
+                color = infoTone.onAction
             )
         )
 
@@ -345,7 +364,7 @@ private fun OemCard(
             text = steps,
             style = TextStyle(
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = infoTone.onAction,
                 lineHeight = 17.sp
             )
         )

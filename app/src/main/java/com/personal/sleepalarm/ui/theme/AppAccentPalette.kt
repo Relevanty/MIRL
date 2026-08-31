@@ -51,13 +51,40 @@ data class AppAccentPalette(
     val warning: AppAccentTone,
     val urgent: AppAccentTone,
     val calm: AppAccentTone,
-    val chrome: AppChromePalette
+    val chrome: AppChromePalette,
+    /** General information, weather and system explanations. */
+    val info: AppAccentTone = study,
+    /** Energy, movement and high-activation states. */
+    val energy: AppAccentTone = warning,
+    /** Statistics, milestones and measurable progress. */
+    val progress: AppAccentTone = success,
+    /** Notes, diary entries and original ideas. */
+    val creative: AppAccentTone = other,
+    /** Library, recovery and unstructured leisure. */
+    val leisure: AppAccentTone = calm,
+    /** Calendar, reminders and deadline planning. */
+    val schedule: AppAccentTone = focus
 ) {
     val all: List<AppAccentTone>
-        get() = listOf(focus, sleep, study, work, other, success, warning, urgent, calm)
+        get() = listOf(
+            focus,
+            sleep,
+            study,
+            work,
+            other,
+            success,
+            warning,
+            urgent,
+            calm,
+            info,
+            energy,
+            progress,
+            creative,
+            leisure,
+            schedule
+        )
 }
-
-private val FallbackAccentPalette = AppAccentPalette(
+private val DEFAULT_APP_ACCENTS = AppAccentPalette(
     focus = AppAccentTone(Color(0xFFFFB86B), Color.Black, Color(0xFF49331F), Color.White),
     sleep = AppAccentTone(Color(0xFFC5A3FF), Color.Black, Color(0xFF34284E), Color.White),
     study = AppAccentTone(Color(0xFF71C7FF), Color.Black, Color(0xFF173A50), Color.White),
@@ -67,10 +94,16 @@ private val FallbackAccentPalette = AppAccentPalette(
     warning = AppAccentTone(Color(0xFFFFCC66), Color.Black, Color(0xFF463719), Color.White),
     urgent = AppAccentTone(Color(0xFFFF7F87), Color.Black, Color(0xFF492126), Color.White),
     calm = AppAccentTone(Color(0xFF63D8C2), Color.Black, Color(0xFF173D38), Color.White),
-    chrome = AppChromePalette(Color(0xFF080C1B), Color.White, Color(0xFFC7CAD3))
+    chrome = AppChromePalette(Color(0xFF080C1B), Color.White, Color(0xFFC7CAD3)),
+    info = AppAccentTone(Color(0xFF58D4ED), Color.Black, Color(0xFF153D47), Color.White),
+    energy = AppAccentTone(Color(0xFFFF9857), Color.Black, Color(0xFF4B2B19), Color.White),
+    progress = AppAccentTone(Color(0xFF58D6AA), Color.Black, Color(0xFF163D32), Color.White),
+    creative = AppAccentTone(Color(0xFFD58AFF), Color.Black, Color(0xFF40244D), Color.White),
+    leisure = AppAccentTone(Color(0xFFFF8FAD), Color.Black, Color(0xFF492632), Color.White),
+    schedule = AppAccentTone(Color(0xFF7EA7FF), Color.Black, Color(0xFF203554), Color.White)
 )
 
-internal val LocalAppAccentPalette = staticCompositionLocalOf { FallbackAccentPalette }
+internal val LocalAppAccentPalette = staticCompositionLocalOf { DEFAULT_APP_ACCENTS }
 
 val MaterialTheme.appAccents: AppAccentPalette
     @Composable
@@ -84,7 +117,6 @@ internal fun buildAppAccentPalette(
     val direction = themeArtDirection(preset)
     val primaryHsl = Color(preset.primary).toThemeHsl()
     val secondaryHsl = Color(preset.secondary).toThemeHsl()
-    val tertiaryHsl = scheme.tertiary.toThemeHsl()
     val identitySeed = themeIdentitySeed(preset, direction)
     val identityHsl = identitySeed.toThemeHsl()
     val navigation = if (preset.isDark) {
@@ -124,25 +156,70 @@ internal fun buildAppAccentPalette(
     } else {
         0.34f + direction.accentToneDelta * 0.35f
     }.coerceIn(if (preset.isDark) 0.62f else 0.27f, if (preset.isDark) 0.79f else 0.41f)
-    val semanticRecipe = semanticHueRecipe(preset.category)
     val identityKey = themeIdentityKey(preset)
+    // Treatments deliberately share a family identity, but their semantic
+    // spectrum still needs its own fine-grained character. Using the complete
+    // preset id for the small variations keeps siblings recognisable without
+    // rendering their cards as the same palette.
+    val variantKey = preset.id
+    val usedSemanticFills = mutableListOf<Color>()
+
+    fun separatedSemanticFill(raw: Color): Color {
+        val source = raw.toThemeHsl()
+        var candidate = raw
+        repeat(15) { attempt ->
+            val isSeparated = usedSemanticFills.none { used ->
+                val red = candidate.red - used.red
+                val green = candidate.green - used.green
+                val blue = candidate.blue - used.blue
+                red * red + green * green + blue * blue < 0.00045f
+            }
+            if (isSeparated) {
+                usedSemanticFills += candidate
+                return candidate
+            }
+
+            // Preserve the semantic hue (especially for warning/danger) and
+            // move through neighbouring tonal stops until the fill is clearly
+            // distinct. Alternating directions avoids forcing every later role
+            // brighter and keeps both light and dark themes balanced.
+            val stepIndex = attempt / 2 + 1
+            val directionSign = if (attempt % 2 == 0) 1f else -1f
+            candidate = themeHslColor(
+                hue = source.hue,
+                saturation = source.saturation,
+                lightness = (source.lightness + directionSign * stepIndex * 0.012f)
+                    .coerceIn(0.25f, 0.82f)
+            )
+        }
+        usedSemanticFills += candidate
+        return candidate
+    }
 
     fun tone(
         raw: Color,
         containerOverride: Color? = null
     ): AppAccentTone {
-        val content = ensureContrast(raw, commonSurfaces, MIN_TEXT_CONTRAST)
-        val container = containerOverride ?: lerp(scheme.background, raw, direction.containerBlend)
-        val rawHsl = raw.toThemeHsl()
+        val fill = separatedSemanticFill(raw)
+        val content = ensureContrast(fill, commonSurfaces, MIN_TEXT_CONTRAST)
+        val container = containerOverride ?: lerp(scheme.background, fill, direction.containerBlend)
+        val rawHsl = fill.toThemeHsl()
+        val actionSaturationFloor = minOf(
+            rawHsl.saturation,
+            0.045f + vividness * 0.045f
+        )
+        val actionLightnessDelta = (rawHsl.lightness - lightness) * 0.16f
         val action = themeHslColor(
             hue = rawHsl.hue,
             saturation = (rawHsl.saturation * (0.38f + direction.fingerprint * 0.06f))
-                .coerceIn(0f, 0.38f),
+                .coerceIn(actionSaturationFloor, 0.38f),
             lightness = if (preset.isDark) {
-                (0.225f + direction.fingerprint * 0.025f + direction.accentToneDelta * 0.05f)
+                (0.225f + direction.fingerprint * 0.025f +
+                    direction.accentToneDelta * 0.05f + actionLightnessDelta)
                     .coerceIn(0.21f, 0.26f)
             } else {
-                (0.84f + direction.fingerprint * 0.025f - direction.accentToneDelta * 0.08f)
+                (0.84f + direction.fingerprint * 0.025f -
+                    direction.accentToneDelta * 0.08f + actionLightnessDelta)
                     .coerceIn(0.81f, 0.88f)
             }
         )
@@ -151,33 +228,51 @@ internal fun buildAppAccentPalette(
             onColor = ensureContrast(scheme.onSurface, content, MIN_TEXT_CONTRAST),
             container = container,
             onContainer = ensureContrast(scheme.onSurface, container, MIN_TEXT_CONTRAST),
-            fill = raw,
-            onFill = ensureContrast(scheme.onSurface, raw, MIN_TEXT_CONTRAST),
+            fill = fill,
+            onFill = ensureContrast(scheme.onSurface, fill, MIN_TEXT_CONTRAST),
             action = action,
             onAction = scheme.onSurfaceVariant
         )
     }
 
-    fun role(
+    /**
+     * Non-status roles stay inside the selected theme's own colour family.
+     * `position` only moves them around a restrained arc near the preset
+     * primary hue, so a green theme produces distinct greens/teals/limes
+     * instead of importing fixed purple, pink or blue cards.
+     */
+    fun familyRole(
         name: String,
-        seedHue: Float,
+        position: Float,
         saturationScale: Float = 1f,
-        harmonisationScale: Float = 0.28f,
         toneDelta: Float = 0f
     ): AppAccentTone {
-        val roleJitter = (stableThemeUnit(identityKey, "accent-$name") - 0.5f) * 5f
-        val hue = mixThemeHue(
-            seedHue + roleJitter,
-            identityHsl.hue,
-            direction.semanticHarmonisation * harmonisationScale
+        val roleJitter = (stableThemeUnit(variantKey, "family-$name") - 0.5f) * 9f
+        val familyRotation = (stableThemeUnit(variantKey, "family-rotation") - 0.5f) * 16f
+        val familyAnchor = normaliseThemeHue(
+            mixThemeHue(
+                primaryHsl.hue,
+                identityHsl.hue,
+                0.12f + direction.semanticHarmonisation * 0.10f
+            ) + familyRotation
         )
+        val radiusPersonality = 0.90f + stableThemeUnit(variantKey, "family-radius") * 0.18f
+        val familyRadius = ((direction.semanticSpread * 0.34f).coerceIn(18f, 36f) * radiusPersonality)
+            .coerceAtMost(38f)
+        val hue = normaliseThemeHue(familyAnchor + familyRadius * position + roleJitter)
+        val saturationPersonality = 0.85f + stableThemeUnit(
+            variantKey,
+            "family-saturation-$name"
+        ) * 0.30f
+        val tonePersonality =
+            (stableThemeUnit(variantKey, "family-tone-$name") - 0.5f) * 0.08f
         val raw = themeHslColor(
             hue = hue,
-            saturation = (saturation * saturationScale).coerceIn(
+            saturation = (saturation * saturationScale * saturationPersonality).coerceIn(
                 0.06f + 0.44f * vividness,
                 0.28f + 0.64f * vividness
             ),
-            lightness = (lightness + toneDelta).coerceIn(0.25f, 0.82f)
+            lightness = (lightness + toneDelta + tonePersonality).coerceIn(0.25f, 0.82f)
         )
         return tone(raw)
     }
@@ -206,37 +301,34 @@ internal fun buildAppAccentPalette(
         return tone(raw)
     }
 
-    val spread = direction.semanticSpread
-
     return AppAccentPalette(
         focus = tone(
             raw = Color(preset.primary),
             containerOverride = scheme.primaryContainer
         ),
-        sleep = role(
+        sleep = familyRole(
             name = "sleep",
-            seedHue = secondaryHsl.hue + spread * semanticRecipe.sleep,
+            position = -0.35f,
             saturationScale = 0.90f,
-            harmonisationScale = 0.20f,
-            toneDelta = if (preset.isDark) 0.015f else 0f
+            toneDelta = 0.015f
         ),
-        study = role(
+        study = familyRole(
             name = "study",
-            seedHue = tertiaryHsl.hue + spread * semanticRecipe.study,
+            position = 0.50f,
             saturationScale = 1.00f,
-            harmonisationScale = 0.12f
+            toneDelta = -0.085f
         ),
-        work = role(
+        work = familyRole(
             name = "work",
-            seedHue = primaryHsl.hue + spread * semanticRecipe.work,
+            position = -0.82f,
             saturationScale = 0.94f,
-            harmonisationScale = 0.30f
+            toneDelta = -0.075f
         ),
-        other = role(
+        other = familyRole(
             name = "other",
-            seedHue = secondaryHsl.hue + spread * semanticRecipe.other,
+            position = 0.78f,
             saturationScale = 0.92f,
-            harmonisationScale = 0.34f
+            toneDelta = 0.040f
         ),
         success = statusRole(
             name = "success",
@@ -258,12 +350,47 @@ internal fun buildAppAccentPalette(
             saturationScale = 0.96f,
             hueOverride = scheme.error.toThemeHsl().hue
         ),
-        calm = role(
+        calm = familyRole(
             name = "calm",
-            seedHue = identityHsl.hue + spread * semanticRecipe.calm,
+            position = -0.08f,
             saturationScale = 0.82f,
-            harmonisationScale = 0.22f,
-            toneDelta = if (preset.isDark) 0.010f else 0f
+            toneDelta = 0.060f
+        ),
+        info = familyRole(
+            name = "info",
+            position = 0.20f,
+            saturationScale = 0.96f,
+            toneDelta = if (preset.isDark) -0.065f else -0.055f
+        ),
+        energy = familyRole(
+            name = "energy",
+            position = -0.92f,
+            saturationScale = 1.06f,
+            toneDelta = 0.055f
+        ),
+        progress = familyRole(
+            name = "progress",
+            position = 0.92f,
+            saturationScale = 0.90f,
+            toneDelta = -0.028f
+        ),
+        creative = familyRole(
+            name = "creative",
+            position = 0.60f,
+            saturationScale = 1.02f,
+            toneDelta = 0.085f
+        ),
+        leisure = familyRole(
+            name = "leisure",
+            position = -0.55f,
+            saturationScale = 0.88f,
+            toneDelta = -0.045f
+        ),
+        schedule = familyRole(
+            name = "schedule",
+            position = -0.24f,
+            saturationScale = 0.94f,
+            toneDelta = if (preset.isDark) 0.105f else 0.095f
         ),
         chrome = ensureContrast(scheme.onSurface, navigation, MIN_TEXT_CONTRAST).let { onNavigation ->
             AppChromePalette(
@@ -313,27 +440,4 @@ internal fun expressiveTertiarySeed(
             0.34f + direction.accentToneDelta * 0.35f
         }
     )
-}
-
-private data class SemanticHueRecipe(
-    val sleep: Float,
-    val study: Float,
-    val work: Float,
-    val other: Float,
-    val calm: Float
-)
-
-private fun semanticHueRecipe(category: ThemeCategory): SemanticHueRecipe = when (category) {
-    ThemeCategory.BASIC -> SemanticHueRecipe(0.08f, 0.00f, -0.82f, 1.02f, 1.74f)
-    ThemeCategory.AMOLED -> SemanticHueRecipe(0.04f, 0.00f, 0.88f, -1.02f, 1.92f)
-    ThemeCategory.NATURE -> SemanticHueRecipe(-0.14f, 0.05f, -0.62f, 0.88f, 1.42f)
-    ThemeCategory.OCEAN -> SemanticHueRecipe(-0.10f, 0.04f, 1.78f, 0.78f, -0.46f)
-    ThemeCategory.SPACE -> SemanticHueRecipe(0.20f, -0.04f, 1.34f, -0.92f, 1.88f)
-    ThemeCategory.NEON -> SemanticHueRecipe(0.02f, 0.06f, 1.18f, -1.10f, 1.78f)
-    ThemeCategory.INDUSTRIAL -> SemanticHueRecipe(-0.12f, 0.02f, 0.56f, 1.38f, 1.92f)
-    ThemeCategory.RETRO -> SemanticHueRecipe(0.12f, -0.04f, 0.82f, 1.62f, 2.16f)
-    ThemeCategory.ELEGANT -> SemanticHueRecipe(0.16f, 0.03f, 0.66f, -0.94f, 1.72f)
-    ThemeCategory.SYSTEM -> SemanticHueRecipe(-0.08f, 0.00f, 0.78f, 1.48f, 2.12f)
-    ThemeCategory.PAPER -> SemanticHueRecipe(0.10f, 0.02f, 0.72f, 1.38f, 2.10f)
-    ThemeCategory.PASTEL -> SemanticHueRecipe(0.18f, -0.03f, 0.94f, 1.72f, 2.48f)
 }

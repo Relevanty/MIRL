@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.ui.settings
 
 import com.personal.sleepalarm.ui.theme.appAccents
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 
 import com.personal.sleepalarm.ui.system.SystemCheckScreen
 import com.personal.sleepalarm.ui.settings.ThemesScreen
@@ -346,6 +347,7 @@ fun SettingsScreen(
 
             SettingsDetailHeader(
                 title = stringResource(selectedPage.titleRes),
+                tone = selectedPage.accentTone(),
                 onBack = { selectedPageName = null }
             )
 
@@ -496,7 +498,10 @@ fun SettingsScreen(
                     onPreview = viewModel::previewAppNotificationSound
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                SectionCard(title = stringResource(R.string.briefing_settings_title)) {
+                SectionCard(
+                    title = stringResource(R.string.briefing_settings_title),
+                    tone = MaterialTheme.appAccents.calm
+                ) {
                     BriefingSettingsContent(viewModel = briefingViewModel)
                 }
             }
@@ -546,7 +551,10 @@ fun SettingsScreen(
                     onCutoffChange = viewModel::setDailyPlanCutoffMinutesOfDay
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                SectionCard(title = stringResource(R.string.settings_category_day_context)) {
+                SectionCard(
+                    title = stringResource(R.string.settings_category_day_context),
+                    tone = MaterialTheme.appAccents.info
+                ) {
                     ExternalContextSection(
                         settings = state.externalContext,
                         city = externalCity,
@@ -576,7 +584,10 @@ fun SettingsScreen(
             }
 
             if (selectedPage == SettingsPage.APPEARANCE) {
-                SectionCard(title = stringResource(R.string.settings_category_appearance)) {
+                SectionCard(
+                    title = stringResource(R.string.settings_category_appearance),
+                    tone = MaterialTheme.appAccents.creative
+                ) {
                 LanguageSection()
                 Spacer(modifier = Modifier.height(16.dp))
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -619,7 +630,10 @@ fun SettingsScreen(
             }
 
             if (selectedPage == SettingsPage.DATA_AND_SYSTEM) {
-                SectionCard(title = stringResource(R.string.settings_category_data)) {
+                SectionCard(
+                    title = stringResource(R.string.settings_category_data),
+                    tone = MaterialTheme.appAccents.info
+                ) {
                 OutlinedButton(
                     onClick = { exportAllLauncher.launch("sleep_alarm_full_backup.json") },
                     modifier = Modifier.fillMaxWidth()
@@ -642,7 +656,10 @@ fun SettingsScreen(
             }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                SectionCard(title = stringResource(R.string.settings_category_reliability)) {
+                SectionCard(
+                    title = stringResource(R.string.settings_category_reliability),
+                    tone = MaterialTheme.appAccents.success
+                ) {
                     OutlinedButton(
                         onClick = { showSystemCheck = true },
                         modifier = Modifier.fillMaxWidth()
@@ -699,7 +716,8 @@ private enum class SettingsPage(val titleRes: Int) {
 private data class SettingsHubItem(
     val page: SettingsPage,
     val title: String,
-    val summary: String
+    val summary: String,
+    val tone: AppAccentTone
 )
 
 private data class SettingsSearchEntry(
@@ -752,7 +770,8 @@ private fun SettingsRootContent(
                 wakeHour,
                 wakeMinute,
                 cycles
-            )
+            ),
+            tone = SettingsPage.SLEEP.accentTone()
         ),
         SettingsHubItem(
             page = SettingsPage.WAKE_AND_DREAMS,
@@ -760,7 +779,8 @@ private fun SettingsRootContent(
             summary = stringResource(
                 if (cuesEnabled) R.string.settings_hub_wake_summary_on
                 else R.string.settings_hub_wake_summary_off
-            )
+            ),
+            tone = SettingsPage.WAKE_AND_DREAMS.accentTone()
         ),
         SettingsHubItem(
             page = SettingsPage.PLANNING,
@@ -768,7 +788,8 @@ private fun SettingsRootContent(
             summary = stringResource(
                 if (externalContextEnabled) R.string.settings_hub_planning_summary_on
                 else R.string.settings_hub_planning_summary_off
-            )
+            ),
+            tone = SettingsPage.PLANNING.accentTone()
         ),
         SettingsHubItem(
             page = SettingsPage.AUDIO_AND_VOICE,
@@ -776,17 +797,20 @@ private fun SettingsRootContent(
             summary = stringResource(
                 if (briefingEnabled) R.string.settings_hub_audio_summary_on
                 else R.string.settings_hub_audio_summary_off
-            )
+            ),
+            tone = SettingsPage.AUDIO_AND_VOICE.accentTone()
         ),
         SettingsHubItem(
             page = SettingsPage.APPEARANCE,
             title = stringResource(SettingsPage.APPEARANCE.titleRes),
-            summary = stringResource(R.string.settings_hub_appearance_summary)
+            summary = stringResource(R.string.settings_hub_appearance_summary),
+            tone = SettingsPage.APPEARANCE.accentTone()
         ),
         SettingsHubItem(
             page = SettingsPage.DATA_AND_SYSTEM,
             title = stringResource(SettingsPage.DATA_AND_SYSTEM.titleRes),
-            summary = stringResource(R.string.settings_hub_data_system_summary)
+            summary = stringResource(R.string.settings_hub_data_system_summary),
+            tone = SettingsPage.DATA_AND_SYSTEM.accentTone()
         )
     )
 
@@ -830,6 +854,7 @@ private fun SettingsRootContent(
             SettingsSearchResult(
                 entry = entry,
                 category = hubItems.first { it.page == entry.page }.title,
+                tone = hubItems.first { it.page == entry.page }.tone,
                 onClick = { onOpen(entry.page) }
             )
         }
@@ -847,7 +872,8 @@ private fun SettingsHubCard(
             .fillMaxSize()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        color = item.tone.container,
+        contentColor = item.tone.onContainer,
         tonalElevation = 1.dp
     ) {
         Column(
@@ -857,6 +883,7 @@ private fun SettingsHubCard(
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.titleSmall,
+                color = item.tone.onContainer,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -865,7 +892,7 @@ private fun SettingsHubCard(
                 Text(
                     text = item.summary,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = item.tone.onContainer.copy(alpha = 0.78f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -884,6 +911,7 @@ private fun SettingsHubCard(
 private fun SettingsSearchResult(
     entry: SettingsSearchEntry,
     category: String,
+    tone: AppAccentTone,
     onClick: () -> Unit
 ) {
     Surface(
@@ -891,18 +919,19 @@ private fun SettingsSearchResult(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+        color = tone.container,
+        contentColor = tone.onContainer
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(entry.title, style = MaterialTheme.typography.bodyLarge)
+                Text(entry.title, style = MaterialTheme.typography.bodyLarge, color = tone.onContainer)
                 Text(
                     category,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = tone.onContainer.copy(alpha = 0.78f)
                 )
             }
             Icon(Icons.Default.ChevronRight, contentDescription = null)
@@ -911,7 +940,7 @@ private fun SettingsSearchResult(
 }
 
 @Composable
-private fun SettingsDetailHeader(title: String, onBack: () -> Unit) {
+private fun SettingsDetailHeader(title: String, tone: AppAccentTone, onBack: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) {
             Icon(
@@ -922,9 +951,20 @@ private fun SettingsDetailHeader(title: String, onBack: () -> Unit) {
         Text(
             text = title,
             style = MaterialTheme.typography.headlineSmall,
+            color = tone.color,
             fontWeight = FontWeight.SemiBold
         )
     }
+}
+
+@Composable
+private fun SettingsPage.accentTone(): AppAccentTone = when (this) {
+    SettingsPage.SLEEP -> MaterialTheme.appAccents.sleep
+    SettingsPage.WAKE_AND_DREAMS -> MaterialTheme.appAccents.energy
+    SettingsPage.PLANNING -> MaterialTheme.appAccents.schedule
+    SettingsPage.AUDIO_AND_VOICE -> MaterialTheme.appAccents.calm
+    SettingsPage.APPEARANCE -> MaterialTheme.appAccents.creative
+    SettingsPage.DATA_AND_SYSTEM -> MaterialTheme.appAccents.info
 }
 
 @Composable
@@ -1136,7 +1176,10 @@ private fun NotificationSoundsSection(
         AppSignalType.DAILY_PLAN -> dailyPlan
     }
 
-    SectionCard(title = stringResource(R.string.section_notification_sounds)) {
+    SectionCard(
+        title = stringResource(R.string.section_notification_sounds),
+        tone = MaterialTheme.appAccents.energy
+    ) {
         Text(
             text = stringResource(R.string.app_signals_mixer_hint),
             style = MaterialTheme.typography.bodySmall,
@@ -1181,7 +1224,10 @@ private fun DailyPlanNudgeSection(
     onRepeatIntervalChange: (Int) -> Unit,
     onCutoffChange: (Int) -> Unit
 ) {
-    SectionCard(title = stringResource(R.string.daily_plan_settings_title)) {
+    SectionCard(
+        title = stringResource(R.string.daily_plan_settings_title),
+        tone = MaterialTheme.appAccents.schedule
+    ) {
         Text(
             text = stringResource(R.string.daily_plan_settings_hint),
             style = MaterialTheme.typography.bodySmall,
@@ -1321,7 +1367,7 @@ private fun AppSignalControl(
                     Text(
                         text = stringResource(R.string.app_signal_current_sound),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.appAccents.calm.onContainer.copy(alpha = 0.72f)
                     )
                     Text(
                         text = currentSound,
@@ -1453,7 +1499,10 @@ private fun TimeSection(
     wakeMinute: Int,
     onWakeTimeChange: (Int, Int) -> Unit
 ) {
-    SectionCard(title = stringResource(R.string.section_time)) {
+    SectionCard(
+        title = stringResource(R.string.section_time),
+        tone = MaterialTheme.appAccents.sleep
+    ) {
         TimeStepper(
             label = stringResource(R.string.setting_wake_time),
             hour = wakeHour,
@@ -1485,7 +1534,10 @@ private fun CyclesSection(
     onCyclesChange: (Int) -> Unit,
     onOnsetChange: (Int) -> Unit
 ) {
-    SectionCard(title = stringResource(R.string.section_cycles)) {
+    SectionCard(
+        title = stringResource(R.string.section_cycles),
+        tone = MaterialTheme.appAccents.progress
+    ) {
         LabeledSlider(
             label = stringResource(R.string.setting_cycle_length),
             value = cycleLength,
@@ -1556,7 +1608,10 @@ private fun CuesSection(
     onRemOffsetChange: (Int) -> Unit,
     onOpenHelp: () -> Unit
 ) {
-    SectionCard(title = stringResource(R.string.section_lucid_cues)) {
+    SectionCard(
+        title = stringResource(R.string.section_lucid_cues),
+        tone = MaterialTheme.appAccents.creative
+    ) {
         // 1. Включение.
         SwitchSetting(
             label = stringResource(R.string.setting_cues_enabled),
@@ -1754,7 +1809,10 @@ private fun AlarmSection(
     onSmartRepeatMaxChange: (Int) -> Unit,
     onMirrorChange: (Boolean) -> Unit
 ) {
-    SectionCard(title = stringResource(R.string.section_alarm)) {
+    SectionCard(
+        title = stringResource(R.string.section_alarm),
+        tone = MaterialTheme.appAccents.energy
+    ) {
         ChoiceChips(
             label = stringResource(R.string.setting_math_difficulty),
             options = MathDifficulty.entries,
@@ -1951,7 +2009,10 @@ private fun AutoDetectSection(
     onMinConfidenceChange: (Int) -> Unit,
     onMaxShiftChange: (Int) -> Unit
 ) {
-    SectionCard(title = stringResource(R.string.section_auto_detect)) {
+    SectionCard(
+        title = stringResource(R.string.section_auto_detect),
+        tone = MaterialTheme.appAccents.info
+    ) {
         SwitchSetting(
             label = stringResource(R.string.setting_auto_start_sleep),
             checked = automaticStart,
@@ -2049,7 +2110,10 @@ private fun DataSection(
     onExport: () -> Unit,
     onImport: () -> Unit
 ) {
-    SectionCard(title = stringResource(R.string.section_data)) {
+    SectionCard(
+        title = stringResource(R.string.section_data),
+        tone = MaterialTheme.appAccents.info
+    ) {
         OutlinedButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) {
             Text(text = stringResource(R.string.action_export_settings))
         }
@@ -2068,7 +2132,10 @@ private fun DataSection(
 
 @Composable
 private fun DisclaimerSection() {
-    SectionCard(title = stringResource(R.string.section_disclaimer)) {
+    SectionCard(
+        title = stringResource(R.string.section_disclaimer),
+        tone = MaterialTheme.appAccents.warning
+    ) {
         Text(
             text = stringResource(R.string.disclaimer_text),
             style = MaterialTheme.typography.bodySmall

@@ -86,6 +86,7 @@ import com.personal.sleepalarm.ui.activity.ManualActivitySheet
 import com.personal.sleepalarm.ui.components.DailyFocusProgressCard
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import com.personal.sleepalarm.ui.theme.appAccents
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 import java.time.ZoneId
 
 /** Живая матрица задач, полная карточка и доска завершённого. */
@@ -373,6 +374,7 @@ private fun TaskMatrixHeader(
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.appAccents.work.container,
+                contentColor = MaterialTheme.appAccents.work.onContainer,
                 tonalElevation = 2.dp
             ) {
                 Row(
@@ -380,13 +382,13 @@ private fun TaskMatrixHeader(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
-                    Icon(Icons.Default.AccountTree, null, Modifier.size(20.dp), tint = MaterialTheme.appAccents.work.color)
+                    Icon(Icons.Default.AccountTree, null, Modifier.size(20.dp), tint = MaterialTheme.appAccents.work.onContainer)
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(R.string.task_projects_hub), fontWeight = FontWeight.SemiBold)
                         Text(
                             stringResource(R.string.task_projects_count, projectCount),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.appAccents.work.onContainer.copy(alpha = 0.78f)
                         )
                     }
                 }
@@ -394,7 +396,8 @@ private fun TaskMatrixHeader(
             Surface(
                 onClick = onOpenLibrary,
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                color = MaterialTheme.appAccents.leisure.container,
+                contentColor = MaterialTheme.appAccents.leisure.onContainer
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
@@ -405,7 +408,7 @@ private fun TaskMatrixHeader(
                         Icons.Default.MenuBook,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.appAccents.study.color
+                        tint = MaterialTheme.appAccents.leisure.onContainer
                     )
                     Text(
                         text = stringResource(R.string.misc_library),
@@ -418,7 +421,8 @@ private fun TaskMatrixHeader(
             Surface(
                 onClick = onOpenBoard,
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                color = MaterialTheme.appAccents.success.container,
+                contentColor = MaterialTheme.appAccents.success.onContainer
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
@@ -439,7 +443,8 @@ private fun CompletedDock(completedCount: Int, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.appAccents.success.container,
+        contentColor = MaterialTheme.appAccents.success.onContainer,
         tonalElevation = 2.dp
     ) {
         Row(
@@ -453,10 +458,10 @@ private fun CompletedDock(completedCount: Int, onClick: () -> Unit) {
                 Text(
                     stringResource(R.string.task_done_dock_hint),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.appAccents.success.onContainer.copy(alpha = 0.78f)
                 )
             }
-            Text(completedCount.toString(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.appAccents.success.color)
+            Text(completedCount.toString(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.appAccents.success.onContainer)
         }
     }
 }
@@ -613,7 +618,8 @@ private fun TaskDetailSheet(
                     onClick = { onEditActivity(activity) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = MaterialTheme.appAccents.progress.container,
+                    contentColor = MaterialTheme.appAccents.progress.onContainer
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
@@ -624,14 +630,14 @@ private fun TaskDetailSheet(
                             Text(
                                 formatActivityMoment(activity),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.76f)
                             )
                         }
                         if (activity.source == "MANUAL") {
                             Text(
                                 stringResource(R.string.activity_added_manually),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.appAccents.calm.color
+                                color = MaterialTheme.appAccents.info.color
                             )
                         }
                     }
@@ -643,7 +649,7 @@ private fun TaskDetailSheet(
             Text(
                 stringResource(R.string.task_library_materials),
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.appAccents.focus.color
+                color = MaterialTheme.appAccents.leisure.color
             )
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -802,17 +808,19 @@ private fun ExpandedTaskQuadrant(
                 ) {
                     items(visibleTasks.size, key = { visibleTasks[it].id }) { index ->
                         val task = visibleTasks[index]
+                        val taskTone = taskAccentTone(task)
                         Surface(
                             onClick = { onOpenTask(task) },
                             shape = RoundedCornerShape(22.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                            color = taskTone.container,
+                            contentColor = taskTone.onContainer
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxWidth().padding(14.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                TaskBallPreview(task, dailyProgress[task.id])
+                                TaskBallPreview(task, dailyProgress[task.id], taskTone)
                                 IconButton(onClick = { onFocus(task) }) {
                                     Icon(Icons.Default.PlayArrow, "Начать фокус")
                                 }
@@ -826,7 +834,7 @@ private fun ExpandedTaskQuadrant(
                                         )
                                     },
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = taskTone.onContainer.copy(alpha = 0.78f),
                                     maxLines = 2,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
@@ -883,13 +891,15 @@ private fun ReorderableTaskRow(
         dragging = false
         dragY = 0f
     }
+    val taskTone = taskAccentTone(task)
     Surface(
         onClick = onOpen,
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer { translationY = animatedY },
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = taskTone.container,
+        contentColor = taskTone.onContainer,
         tonalElevation = 1.dp
     ) {
         Row(
@@ -914,7 +924,7 @@ private fun ReorderableTaskRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            TaskBallPreview(task, dailyProgress)
+            TaskBallPreview(task, dailyProgress, taskTone)
             Column(Modifier.weight(1f)) {
                 Text(
                     task.primaryLabel(),
@@ -929,7 +939,7 @@ private fun ReorderableTaskRow(
                         Text(
                             description,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = taskTone.onContainer.copy(alpha = 0.78f),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -950,14 +960,14 @@ private fun ReorderableTaskRow(
                         )
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = taskTone.onContainer.copy(alpha = 0.78f)
                 )
                 task.nextAction.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.appAccents.focus.color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = taskTone.onContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 val meta = listOfNotNull(projectTitle, task.category.takeIf(String::isNotBlank)).joinToString(" · ")
                 if (meta.isNotBlank()) {
-                    Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.appAccents.other.color)
+                    Text(meta, style = MaterialTheme.typography.labelSmall, color = taskTone.onContainer.copy(alpha = 0.72f))
                 }
             }
             IconButton(onClick = onFocus) { Icon(Icons.Default.PlayArrow, "Начать фокус") }
@@ -972,15 +982,19 @@ internal fun calculateReorderDirection(dragY: Float, thresholdPx: Float = 34f): 
 }
 
 @Composable
-private fun TaskBallPreview(task: TaskEntity, dailyProgress: DailyTaskFocusProgress? = null) {
+private fun TaskBallPreview(
+    task: TaskEntity,
+    dailyProgress: DailyTaskFocusProgress? = null,
+    tone: AppAccentTone = MaterialTheme.appAccents.focus
+) {
     val progress = dailyProgress?.progressFraction ?: 0f
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(52.dp)) {
         androidx.compose.material3.CircularProgressIndicator(
             progress = { progress },
             modifier = Modifier.fillMaxSize(),
             strokeWidth = 4.dp,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            color = MaterialTheme.appAccents.focus.color
+            trackColor = tone.action,
+            color = tone.onContainer
         )
         if (task.imagePath != null) {
             LocalTaskImage(task.imagePath, Modifier.size(38.dp), circular = true)
@@ -989,7 +1003,7 @@ private fun TaskBallPreview(task: TaskEntity, dailyProgress: DailyTaskFocusProgr
                 Icons.Default.Image,
                 contentDescription = null,
                 modifier = Modifier.size(21.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = tone.onContainer.copy(alpha = 0.72f)
             )
         }
         if (task.isDailyRequired) {
@@ -1023,9 +1037,23 @@ private fun DetailText(label: String, value: String) {
 
 @Composable
 private fun TaskMetaChip(text: String) {
-    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.appAccents.schedule.action,
+        contentColor = MaterialTheme.appAccents.schedule.onAction
+    ) {
         Text(text, Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium)
     }
+}
+
+@Composable
+private fun taskAccentTone(task: TaskEntity): AppAccentTone = when (
+    TaskQuadrant.fromStorage(task.matrixQuadrant)
+) {
+    TaskQuadrant.NOW -> MaterialTheme.appAccents.urgent
+    TaskQuadrant.SCHEDULE -> MaterialTheme.appAccents.schedule
+    TaskQuadrant.DELEGATE -> MaterialTheme.appAccents.work
+    TaskQuadrant.LET_GO -> MaterialTheme.appAccents.other
 }
 
 private fun formatSpentTime(spentMillis: Long, estimateMinutes: Int): String {

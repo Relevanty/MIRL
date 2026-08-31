@@ -978,9 +978,9 @@ private fun quadrantColors(quadrant: TaskQuadrant): QuadrantColors {
     val accents = MaterialTheme.appAccents
     val tone = when (quadrant) {
         TaskQuadrant.NOW -> accents.urgent
-        TaskQuadrant.SCHEDULE -> accents.study
-        TaskQuadrant.DELEGATE -> accents.other
-        TaskQuadrant.LET_GO -> accents.calm
+        TaskQuadrant.SCHEDULE -> accents.schedule
+        TaskQuadrant.DELEGATE -> accents.work
+        TaskQuadrant.LET_GO -> accents.leisure
     }
     return tone.toQuadrantColors()
 }
