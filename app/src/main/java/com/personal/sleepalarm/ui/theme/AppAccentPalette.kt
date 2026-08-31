@@ -19,7 +19,10 @@ data class AppAccentTone(
     val onContainer: Color,
     /** Unclamped expressive fill for artwork, swatches and larger shapes. */
     val fill: Color = color,
-    val onFill: Color = onColor
+    val onFill: Color = onColor,
+    /** Restrained theme-derived fill for large actions that should not glow. */
+    val action: Color = container,
+    val onAction: Color = onContainer
 )
 
 /** App chrome is separate from Material surface containers used by cards. */
@@ -130,13 +133,28 @@ internal fun buildAppAccentPalette(
     ): AppAccentTone {
         val content = ensureContrast(raw, commonSurfaces, MIN_TEXT_CONTRAST)
         val container = containerOverride ?: lerp(scheme.background, raw, direction.containerBlend)
+        val rawHsl = raw.toThemeHsl()
+        val action = themeHslColor(
+            hue = rawHsl.hue,
+            saturation = (rawHsl.saturation * (0.38f + direction.fingerprint * 0.06f))
+                .coerceIn(0f, 0.38f),
+            lightness = if (preset.isDark) {
+                (0.225f + direction.fingerprint * 0.025f + direction.accentToneDelta * 0.05f)
+                    .coerceIn(0.21f, 0.26f)
+            } else {
+                (0.84f + direction.fingerprint * 0.025f - direction.accentToneDelta * 0.08f)
+                    .coerceIn(0.81f, 0.88f)
+            }
+        )
         return AppAccentTone(
             color = content,
             onColor = ensureContrast(scheme.onSurface, content, MIN_TEXT_CONTRAST),
             container = container,
             onContainer = ensureContrast(scheme.onSurface, container, MIN_TEXT_CONTRAST),
             fill = raw,
-            onFill = ensureContrast(scheme.onSurface, raw, MIN_TEXT_CONTRAST)
+            onFill = ensureContrast(scheme.onSurface, raw, MIN_TEXT_CONTRAST),
+            action = action,
+            onAction = scheme.onSurfaceVariant
         )
     }
 

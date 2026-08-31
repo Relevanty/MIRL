@@ -9,7 +9,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -85,9 +84,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -112,7 +113,6 @@ import com.personal.sleepalarm.ui.dday.NearestDDay
 import com.personal.sleepalarm.ui.stats.StatsScreen
 import com.personal.sleepalarm.ui.stats.StatsViewModel
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
-import com.personal.sleepalarm.ui.theme.ensureContrast
 import com.personal.sleepalarm.ui.mood.MorningCheckInDialog
 import com.personal.sleepalarm.ui.mood.EnergyCheckInDialog
 import com.personal.sleepalarm.util.PermissionChecker
@@ -219,8 +219,7 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(sectionSpacing)
+                        .weight(1f)
                 ) {
                     SleepPlanWithCat(
                         plan = state.plan,
@@ -231,6 +230,7 @@ fun HomeScreen(
                             .fillMaxWidth()
                             .weight(1f)
                     )
+                    Spacer(Modifier.height(sectionSpacing))
                     DayContextStrip(
                         adaptivePlan = adaptivePlan,
                         nowMillis = state.now,
@@ -239,6 +239,7 @@ fun HomeScreen(
                             .fillMaxWidth()
                             .height(contextStripHeight)
                     )
+                    Spacer(Modifier.height(sectionSpacing))
                     TodayDynamicCard(
                         activeSession = activeSleepSession,
                         latestCompleted = state.latestCompletedSession,
@@ -276,7 +277,8 @@ fun HomeScreen(
                     QuickAccessPill(
                         label = stringResource(R.string.quick_notes_title),
                         onClick = { showQuickNotes = true },
-                        accent = MaterialTheme.appAccents.calm.color,
+                        containerColor = MaterialTheme.appAccents.calm.action,
+                        contentColor = MaterialTheme.appAccents.calm.onAction,
                         modifier = Modifier
                             .weight(0.44f)
                             .height(48.dp)
@@ -285,7 +287,8 @@ fun HomeScreen(
                     QuickAccessPill(
                         label = stringResource(R.string.diary_title),
                         onClick = onOpenDiary,
-                        accent = MaterialTheme.appAccents.other.color,
+                        containerColor = MaterialTheme.appAccents.other.action,
+                        contentColor = MaterialTheme.appAccents.other.onAction,
                         modifier = Modifier
                             .weight(0.44f)
                             .height(48.dp)
@@ -443,6 +446,40 @@ fun HomeScreen(
 }
 
 @Composable
+private fun FittedSingleLineText(
+    text: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    fontWeight: FontWeight? = null,
+    minFontSize: TextUnit = 9.sp,
+    textAlign: TextAlign? = null
+) {
+    val baseFontSize = style.fontSize
+    var fittedFontSize by remember(text, baseFontSize, minFontSize) {
+        mutableStateOf(baseFontSize)
+    }
+    Text(
+        text = text,
+        modifier = modifier,
+        style = style.copy(fontSize = fittedFontSize),
+        color = color,
+        fontWeight = fontWeight,
+        textAlign = textAlign,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { result ->
+            if (result.didOverflowWidth && fittedFontSize.value > minFontSize.value) {
+                fittedFontSize = (fittedFontSize.value - 0.75f)
+                    .coerceAtLeast(minFontSize.value)
+                    .sp
+            }
+        }
+    )
+}
+
+@Composable
 private fun TodayDynamicCard(
     activeSession: SleepSessionEntity?,
     latestCompleted: SleepSessionEntity?,
@@ -577,11 +614,10 @@ private fun TodayDynamicCard(
                     )
                     checkInAction?.let { action ->
                         TextButton(onClick = action) {
-                            Text(
+                            FittedSingleLineText(
                                 text = checkInDescription.orEmpty(),
                                 style = MaterialTheme.typography.labelLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                minFontSize = 10.sp
                             )
                         }
                     }
@@ -646,7 +682,7 @@ private fun TodayDynamicCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
+                    FittedSingleLineText(
                         text = if (remainingTodayMinutes <= 0) {
                             stringResource(
                                 R.string.daily_focus_home_today_complete,
@@ -664,8 +700,7 @@ private fun TodayDynamicCard(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.appAccents.focus.color,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        minFontSize = 9.sp
                     )
                     task.dueAtMillis?.let { dueAt ->
                         TaskDeadlineBadge(dueAtMillis = dueAt, nowMillis = now)
@@ -695,25 +730,23 @@ private fun TodayDynamicCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
+                    FittedSingleLineText(
                         stringResource(
                             if (allDailyTargetsComplete) R.string.home_daily_targets_complete_title
                             else R.string.home_no_tasks_title
                         ),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        minFontSize = 10.sp
                     )
-                    Text(
+                    FittedSingleLineText(
                         stringResource(
                             if (allDailyTargetsComplete) R.string.home_daily_targets_complete_body
                             else R.string.home_no_tasks_body
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        minFontSize = 9.sp
                     )
                 }
                 nearestDDay?.let { deadline ->
@@ -749,12 +782,11 @@ private fun AdaptivePlanExplanation(plan: AdaptiveHomePlan, taskId: Int) {
         AdaptivePlanReason.CAPACITY_MATCH -> stringResource(R.string.adaptive_reason_capacity)
         AdaptivePlanReason.DEFAULT_ORDER -> stringResource(R.string.adaptive_reason_default)
     }
-    Text(
+    FittedSingleLineText(
         text = "$energy/10 · $confidence% · $reason",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
+        minFontSize = 8.sp
     )
 }
 
@@ -841,273 +873,257 @@ private fun DayContextStrip(
     val hasWeather = temperature != null || adaptivePlan.weatherCode != null
     if (daylightMinutes == null && !hasWeather) return
 
+    val progress = daylightMinutes?.let { totalMinutes ->
+        calculateHomeDaylightProgress(
+            nowMillis = nowMillis,
+            sunriseMillis = adaptivePlan.sunriseMillis,
+            sunsetMillis = adaptivePlan.sunsetMillis,
+            daylightMinutes = totalMinutes
+        )
+    }
+    val condition = homeWeatherCondition(adaptivePlan.weatherCode)
+    val weatherSummary = listOfNotNull(
+        temperature?.let(::formatHomeTemperature),
+        condition
+    ).joinToString(" · ")
+    val headerSummary = weatherSummary.ifBlank {
+        daylightMinutes?.let { TimeFormatter.formatMinutes(it.toLong()) }.orEmpty()
+    }
+    val metrics = mutableListOf<HomeContextMetric>()
+    if (daylightMinutes != null && progress != null) {
+        when (progress.phase) {
+            HomeDaylightPhase.DAYLIGHT -> {
+                metrics += HomeContextMetric(
+                    stringResource(R.string.home_context_elapsed),
+                    TimeFormatter.formatMinutes(progress.elapsedMinutes.toLong()),
+                    HomeContextTone.DAYLIGHT
+                )
+                metrics += HomeContextMetric(
+                    stringResource(R.string.home_context_until_sunset),
+                    TimeFormatter.formatMinutes(progress.remainingMinutes.toLong()),
+                    HomeContextTone.COUNTDOWN
+                )
+            }
+            HomeDaylightPhase.BEFORE_SUNRISE -> {
+                metrics += HomeContextMetric(
+                    stringResource(R.string.home_context_until_sunrise),
+                    TimeFormatter.formatMinutes(progress.minutesUntilSunrise.toLong()),
+                    HomeContextTone.COUNTDOWN
+                )
+                metrics += HomeContextMetric(
+                    stringResource(R.string.home_context_daylight_amount),
+                    TimeFormatter.formatMinutes(daylightMinutes.toLong()),
+                    HomeContextTone.DAYLIGHT
+                )
+            }
+            else -> metrics += HomeContextMetric(
+                stringResource(R.string.home_context_day_length),
+                TimeFormatter.formatMinutes(daylightMinutes.toLong()),
+                HomeContextTone.DAYLIGHT
+            )
+        }
+    }
+    adaptivePlan.relativeHumidityPercent?.let { humidity ->
+        metrics += HomeContextMetric(
+            stringResource(R.string.home_context_humidity_title),
+            stringResource(R.string.home_context_humidity_value, humidity),
+            HomeContextTone.HUMIDITY
+        )
+    }
+    adaptivePlan.windSpeedKilometersPerHour?.roundToInt()?.let { wind ->
+        metrics += HomeContextMetric(
+            stringResource(R.string.home_context_wind_title),
+            stringResource(R.string.home_context_wind_value, wind),
+            HomeContextTone.WIND
+        )
+    }
+    var apparentShownAsMetric = false
+    if (metrics.size < 4) {
+        adaptivePlan.apparentTemperatureCelsius?.roundToInt()?.let { feels ->
+            metrics += HomeContextMetric(
+                stringResource(R.string.home_context_apparent_title),
+                formatHomeTemperature(feels),
+                HomeContextTone.TEMPERATURE
+            )
+            apparentShownAsMetric = true
+        }
+    }
+    var precipitationShownAsMetric = false
+    if (metrics.size < 4) {
+        adaptivePlan.precipitationMillimeters?.takeIf { it >= 0.1 }?.let { precipitation ->
+            metrics += HomeContextMetric(
+                stringResource(R.string.home_context_precipitation_title),
+                stringResource(R.string.home_context_precipitation_value, precipitation),
+                HomeContextTone.PRECIPITATION
+            )
+            precipitationShownAsMetric = true
+        }
+    }
+
+    val safeZone = adaptivePlan.daylightZoneId ?: ZoneId.systemDefault().id
+    val phaseStatus = when (progress?.phase) {
+        HomeDaylightPhase.AFTER_SUNSET -> stringResource(R.string.home_context_after_sunset)
+        HomeDaylightPhase.POLAR_DAY -> stringResource(R.string.home_context_polar_day)
+        HomeDaylightPhase.POLAR_NIGHT -> stringResource(R.string.home_context_polar_night)
+        else -> null
+    }
+    val sunWindow = if (adaptivePlan.sunriseMillis != null && adaptivePlan.sunsetMillis != null) {
+        stringResource(
+            R.string.home_context_sun_window,
+            TimeFormatter.formatEpochMillis(adaptivePlan.sunriseMillis, safeZone),
+            TimeFormatter.formatEpochMillis(adaptivePlan.sunsetMillis, safeZone)
+        )
+    } else null
+    val feelsLike = if (apparentShownAsMetric) null else {
+        adaptivePlan.apparentTemperatureCelsius?.roundToInt()?.let { value ->
+            stringResource(R.string.home_context_feels_like_compact, formatHomeTemperature(value))
+        }
+    }
+    val precipitation = if (precipitationShownAsMetric) null else {
+        adaptivePlan.precipitationMillimeters
+            ?.takeIf { it >= 0.1 }
+            ?.let { value -> stringResource(R.string.home_context_precipitation_compact, value) }
+    }
+    val footer = listOfNotNull(phaseStatus, sunWindow, feelsLike, precipitation)
+        .joinToString(" · ")
+
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
-        )
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = if (compact) 10.dp else 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = if (compact) 10.dp else 12.dp, vertical = if (compact) 7.dp else 8.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp)
         ) {
-            daylightMinutes?.let { totalMinutes ->
-                val progress = calculateHomeDaylightProgress(
-                    nowMillis = nowMillis,
-                    sunriseMillis = adaptivePlan.sunriseMillis,
-                    sunsetMillis = adaptivePlan.sunsetMillis,
-                    daylightMinutes = totalMinutes
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (daylightMinutes != null) Icons.Default.LightMode
+                    else Icons.Default.Thermostat,
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = if (daylightMinutes != null) MaterialTheme.appAccents.warning.color
+                    else MaterialTheme.appAccents.calm.color
                 )
-                DaylightContextContent(
-                    totalMinutes = totalMinutes,
-                    progress = progress,
-                    sunriseMillis = adaptivePlan.sunriseMillis,
-                    sunsetMillis = adaptivePlan.sunsetMillis,
-                    zoneId = adaptivePlan.daylightZoneId,
-                    compact = compact,
-                    modifier = Modifier.weight(if (hasWeather) 1.12f else 1f)
+                FittedSingleLineText(
+                    text = stringResource(
+                        if (daylightMinutes != null) R.string.home_context_daylight_title
+                        else R.string.home_context_weather_today
+                    ),
+                    modifier = Modifier.padding(start = 6.dp).weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    minFontSize = 10.sp
+                )
+                FittedSingleLineText(
+                    text = headerSummary,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (hasWeather) MaterialTheme.appAccents.calm.color
+                    else MaterialTheme.appAccents.warning.color,
+                    fontWeight = FontWeight.SemiBold,
+                    minFontSize = 9.sp,
+                    textAlign = TextAlign.End
                 )
             }
-            if (daylightMinutes != null && hasWeather) {
-                Box(
+            if (progress != null) {
+                LinearProgressIndicator(
+                    progress = { progress.fraction },
                     modifier = Modifier
-                        .width(1.dp)
-                        .height(if (compact) 48.dp else 62.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(50)),
+                    color = MaterialTheme.appAccents.warning.color,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
-            if (hasWeather) {
-                WeatherContextContent(
-                    plan = adaptivePlan,
-                    compact = compact,
-                    modifier = Modifier.weight(if (daylightMinutes != null) 0.88f else 1f)
+            if (metrics.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (compact) 28.dp else 32.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    metrics.take(4).forEachIndexed { index, metric ->
+                        if (index > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .width(1.dp)
+                                    .height(if (compact) 20.dp else 24.dp)
+                                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
+                            )
+                        }
+                        HomeContextMetricCell(
+                            metric = metric,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+            if (footer.isNotBlank()) {
+                FittedSingleLineText(
+                    text = footer,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    minFontSize = 8.sp,
+                    textAlign = TextAlign.Center
                 )
             }
         }
     }
 }
 
-@Composable
-private fun DaylightContextContent(
-    totalMinutes: Int,
-    progress: HomeDaylightProgress,
-    sunriseMillis: Long?,
-    sunsetMillis: Long?,
-    zoneId: String?,
-    compact: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val status = when (progress.phase) {
-        HomeDaylightPhase.AFTER_SUNSET -> stringResource(R.string.home_context_after_sunset)
-        HomeDaylightPhase.POLAR_DAY -> stringResource(R.string.home_context_polar_day)
-        HomeDaylightPhase.POLAR_NIGHT -> stringResource(R.string.home_context_polar_night)
-        HomeDaylightPhase.UNKNOWN -> stringResource(
-            R.string.home_context_daylight,
-            totalMinutes / 60,
-            totalMinutes % 60
-        )
-        HomeDaylightPhase.BEFORE_SUNRISE,
-        HomeDaylightPhase.DAYLIGHT -> null
-    }
-    val safeZone = zoneId ?: ZoneId.systemDefault().id
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Default.LightMode,
-                contentDescription = null,
-                modifier = Modifier.size(17.dp),
-                tint = MaterialTheme.appAccents.warning.color
-            )
-            Text(
-                text = stringResource(R.string.home_context_daylight_title),
-                modifier = Modifier.padding(start = 6.dp).weight(1f),
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = TimeFormatter.formatMinutes(totalMinutes.toLong()),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.appAccents.warning.color,
-                maxLines = 1
-            )
-        }
-        LinearProgressIndicator(
-            progress = { progress.fraction },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(5.dp)
-                .clip(RoundedCornerShape(50)),
-            color = MaterialTheme.appAccents.warning.color,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-        when (progress.phase) {
-            HomeDaylightPhase.DAYLIGHT -> DaylightValuePair(
-                leftLabel = stringResource(R.string.home_context_elapsed),
-                leftValue = TimeFormatter.formatMinutes(progress.elapsedMinutes.toLong()),
-                rightLabel = stringResource(R.string.home_context_until_sunset),
-                rightValue = TimeFormatter.formatMinutes(progress.remainingMinutes.toLong())
-            )
-            HomeDaylightPhase.BEFORE_SUNRISE -> DaylightValuePair(
-                leftLabel = stringResource(R.string.home_context_until_sunrise),
-                leftValue = TimeFormatter.formatMinutes(progress.minutesUntilSunrise.toLong()),
-                rightLabel = stringResource(R.string.home_context_daylight_amount),
-                rightValue = TimeFormatter.formatMinutes(totalMinutes.toLong())
-            )
-            else -> Text(
-                text = status.orEmpty(),
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (!compact && sunriseMillis != null && sunsetMillis != null) {
-            Text(
-                text = stringResource(
-                    R.string.home_context_sun_window,
-                    TimeFormatter.formatEpochMillis(sunriseMillis, safeZone),
-                    TimeFormatter.formatEpochMillis(sunsetMillis, safeZone)
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
+private data class HomeContextMetric(
+    val label: String,
+    val value: String,
+    val tone: HomeContextTone
+)
+
+private enum class HomeContextTone {
+    DAYLIGHT,
+    COUNTDOWN,
+    HUMIDITY,
+    WIND,
+    TEMPERATURE,
+    PRECIPITATION
 }
 
 @Composable
-private fun DaylightValuePair(
-    leftLabel: String,
-    leftValue: String,
-    rightLabel: String,
-    rightValue: String
-) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = leftLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-            Text(
-                text = leftValue,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1
-            )
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.End
-        ) {
-            Text(
-                text = rightLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-            Text(
-                text = rightValue,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1
-            )
-        }
-    }
-}
-
-@Composable
-private fun WeatherContextContent(
-    plan: AdaptiveHomePlan,
-    compact: Boolean,
+private fun HomeContextMetricCell(
+    metric: HomeContextMetric,
     modifier: Modifier = Modifier
 ) {
-    val temperature = plan.temperatureCelsius?.roundToInt()
-    val condition = homeWeatherCondition(plan.weatherCode)
-    val feelsLike = plan.apparentTemperatureCelsius?.roundToInt()?.let { value ->
-        stringResource(R.string.home_context_feels_like, formatHomeTemperature(value))
+    val valueColor = when (metric.tone) {
+        HomeContextTone.DAYLIGHT -> MaterialTheme.appAccents.warning.color
+        HomeContextTone.COUNTDOWN -> MaterialTheme.appAccents.focus.color
+        HomeContextTone.HUMIDITY -> MaterialTheme.appAccents.calm.color
+        HomeContextTone.WIND -> MaterialTheme.appAccents.study.color
+        HomeContextTone.TEMPERATURE -> MaterialTheme.appAccents.sleep.color
+        HomeContextTone.PRECIPITATION -> MaterialTheme.appAccents.other.color
     }
-    val wind = plan.windSpeedKilometersPerHour?.roundToInt()?.let { value ->
-        stringResource(R.string.home_context_wind, value)
-    }
-    val humidity = plan.relativeHumidityPercent?.let { value ->
-        stringResource(R.string.home_context_humidity, value)
-    }
-    val precipitation = plan.precipitationMillimeters
-        ?.takeIf { it >= 0.1 }
-        ?.let { value -> stringResource(R.string.home_context_precipitation, value) }
-    val outdoorText = if (plan.outdoorFeasible == false) {
-        stringResource(R.string.home_context_outdoor_later)
-    } else null
-    val detailLine = listOfNotNull(
-        feelsLike,
-        wind,
-        humidity,
-        precipitation
-    ).joinToString(" · ")
-    val title = temperature?.let(::formatHomeTemperature).orEmpty()
-    val warning = plan.outdoorFeasible == false
     Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 5.dp)
+        modifier = modifier.padding(horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Default.Thermostat,
-                contentDescription = null,
-                modifier = Modifier.size(17.dp),
-                tint = if (warning) MaterialTheme.appAccents.warning.color
-                else MaterialTheme.appAccents.calm.color
-            )
-            Text(
-                text = title,
-                modifier = Modifier.padding(start = 6.dp),
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        condition?.let { weatherCondition ->
-            Text(
-                text = weatherCondition,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        outdoorText?.let { warningText ->
-            Text(
-                text = warningText,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.appAccents.warning.color,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (detailLine.isNotBlank()) {
-            Text(
-                text = detailLine,
-                style = if (compact) MaterialTheme.typography.labelSmall
-                else MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (compact || warning) 1 else 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        FittedSingleLineText(
+            text = metric.label,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.labelSmall,
+            color = lerp(MaterialTheme.colorScheme.onSurfaceVariant, valueColor, 0.28f),
+            minFontSize = 8.sp,
+            textAlign = TextAlign.Center
+        )
+        FittedSingleLineText(
+            text = metric.value,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.labelLarge,
+            color = valueColor,
+            fontWeight = FontWeight.SemiBold,
+            minFontSize = 9.sp,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -1154,14 +1170,14 @@ private fun HomeDDayBadge(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(13.dp))
-            Text(
+            FittedSingleLineText(
                 text = if (nearest.days == 0) {
                     stringResource(R.string.dday_today)
                 } else {
                     stringResource(R.string.dday_days_left, nearest.days)
                 },
                 style = MaterialTheme.typography.labelSmall,
-                maxLines = 1
+                minFontSize = 8.sp
             )
         }
     }
@@ -1188,12 +1204,11 @@ private fun TaskDeadlineBadge(dueAtMillis: Long, nowMillis: Long) {
         contentColor = if (urgent) MaterialTheme.appAccents.urgent.onContainer
         else MaterialTheme.colorScheme.onSurfaceVariant
     ) {
-        Text(
+        FittedSingleLineText(
             text = text,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
             style = MaterialTheme.typography.labelSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            minFontSize = 8.sp
         )
     }
 }
@@ -1292,6 +1307,7 @@ private fun SleepPlanWithCat(
     val isSleeping = catState.showsSleepingPose()
     BoxWithConstraints(modifier = modifier) {
         val densePlan = maxHeight < 300.dp
+        val sleepPlanWidth = maxWidth
         val cardEdge = calculateSleepCatCardEdgeDp(maxWidth.value).dp
         val catOverlapInset = if (densePlan) {
             26.dp
@@ -1313,37 +1329,43 @@ private fun SleepPlanWithCat(
             }
         }
 
-        PlanSummaryCard(
-            plan = plan,
-            activeSession = activeSession,
-            compact = compact,
-            dense = densePlan,
-            catOverlapInset = catOverlapInset,
-            modifier = Modifier.padding(top = cardEdge)
-        )
-        // The cat and the plan card now share the same coordinate system. Any
-        // content above this box moves them together instead of separating them.
-        val catModifier = Modifier
+        // Keep the cat and its card as one bottom-anchored group so flexible
+        // height is absorbed above them, directly against the context card below.
+        Box(
+            modifier = Modifier
                 .fillMaxWidth()
-                .height(catCanvasHeight + 8.dp)
-                .offset(y = (-8).dp)
-                .graphicsLayer {
-                    scaleX = pulseScale
-                    scaleY = pulseScale
-                }
-                .then(
-                    if (catState == SleepCatState.AWAKE) Modifier
-                    else Modifier.pointerInput(catState) {
-                        detectTapGestures(onTap = { catPulse = true })
+                .align(Alignment.BottomCenter)
+        ) {
+            PlanSummaryCard(
+                plan = plan,
+                activeSession = activeSession,
+                compact = compact,
+                dense = densePlan,
+                catOverlapInset = catOverlapInset,
+                modifier = Modifier.padding(top = cardEdge)
+            )
+            val catModifier = Modifier
+                    .fillMaxWidth()
+                    .height(catCanvasHeight + 8.dp)
+                    .offset(y = (-8).dp)
+                    .graphicsLayer {
+                        scaleX = pulseScale
+                        scaleY = pulseScale
                     }
-                )
-        GeometricCatBackdrop(
-            modifier = catModifier,
-            cardEdgeFromTop = cardEdge + 8.dp,
-            isSleeping = isSleeping
-        )
+                    .then(
+                        if (catState == SleepCatState.AWAKE) Modifier
+                        else Modifier.pointerInput(catState) {
+                            detectTapGestures(onTap = { catPulse = true })
+                        }
+                    )
+            GeometricCatBackdrop(
+                modifier = catModifier,
+                cardEdgeFromTop = cardEdge + 8.dp,
+                isSleeping = isSleeping
+            )
 
-        if (isSleeping) SleepCatZzz(cardEdge = cardEdge, canvasWidth = maxWidth)
+            if (isSleeping) SleepCatZzz(cardEdge = cardEdge, canvasWidth = sleepPlanWidth)
+        }
     }
 }
 
@@ -1984,7 +2006,7 @@ private fun PlanSummaryCard(
                     start = if (dense) 14.dp else if (compact) 16.dp else 20.dp,
                     end = if (dense) 10.dp else if (compact) 12.dp else 16.dp,
                     top = catOverlapInset,
-                    bottom = if (dense) 6.dp else if (compact) 10.dp else 14.dp
+                    bottom = if (dense) 4.dp else if (compact) 7.dp else 10.dp
                 ),
             contentAlignment = Alignment.Center
         ) {
@@ -2023,10 +2045,10 @@ private fun PlanSummaryCard(
                 start = if (dense) 14.dp else if (compact) 16.dp else 20.dp,
                 end = if (dense) 10.dp else if (compact) 12.dp else 16.dp,
                 top = catOverlapInset,
-                bottom = if (dense) 6.dp else if (compact) 10.dp else 14.dp
+                bottom = if (dense) 4.dp else if (compact) 7.dp else 10.dp
             ),
         verticalArrangement = Arrangement.spacedBy(
-            if (dense) 4.dp else if (compact) 6.dp else 9.dp,
+            if (dense) 3.dp else if (compact) 4.dp else 6.dp,
             Alignment.CenterVertically
         )
     ) {
@@ -2036,30 +2058,32 @@ private fun PlanSummaryCard(
                     .fillMaxWidth()
                     .padding(start = 8.dp)
             ) {
-                Text(
+                FittedSingleLineText(
                     text = stringResource(R.string.home_sleep_plan_title),
-                    style = if (dense) MaterialTheme.typography.labelLarge
-                    else if (compact) MaterialTheme.typography.titleSmall
-                    else MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = if (dense) MaterialTheme.typography.labelMedium
+                    else if (compact) MaterialTheme.typography.labelLarge
+                    else MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    minFontSize = 10.sp
                 )
-                Text(
+                FittedSingleLineText(
                     text = wakeText,
                     style = when {
-                        dense -> MaterialTheme.typography.displaySmall.copy(fontSize = 42.sp)
-                        compact -> MaterialTheme.typography.displayMedium.copy(fontSize = 52.sp)
-                        else -> MaterialTheme.typography.displayLarge.copy(fontSize = 64.sp)
+                        dense -> MaterialTheme.typography.displaySmall.copy(fontSize = 38.sp)
+                        compact -> MaterialTheme.typography.displayMedium.copy(fontSize = 46.sp)
+                        else -> MaterialTheme.typography.displayLarge.copy(fontSize = 56.sp)
                     },
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.appAccents.sleep.color,
-                    maxLines = 1
+                    minFontSize = if (dense) 32.sp else if (compact) 38.sp else 46.sp
                 )
-                Text(
+                FittedSingleLineText(
                     text = stringResource(R.string.home_sleep_wake_label),
-                    style = if (dense) MaterialTheme.typography.labelMedium
-                    else if (compact) MaterialTheme.typography.bodyMedium
-                    else MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = if (dense) MaterialTheme.typography.labelSmall
+                    else if (compact) MaterialTheme.typography.labelMedium
+                    else MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    minFontSize = 9.sp
                 )
             }
         }
@@ -2128,27 +2152,25 @@ private fun PlanDetail(
             .background(MaterialTheme.colorScheme.background.copy(alpha = 0.48f))
             .padding(
                 horizontal = if (dense) 5.dp else if (compact) 6.dp else 10.dp,
-                vertical = if (dense) 3.dp else if (compact) 5.dp else 8.dp
+                vertical = if (dense) 2.dp else if (compact) 3.dp else 5.dp
             ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
+        FittedSingleLineText(
             text = label,
             style = if (dense) MaterialTheme.typography.labelSmall
             else MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            minFontSize = 8.sp
         )
         if (!compact && !dense) Spacer(Modifier.height(2.dp))
-        Text(
+        FittedSingleLineText(
             text = value,
-            style = if (dense) MaterialTheme.typography.titleSmall
-            else if (compact) MaterialTheme.typography.titleMedium
-            else MaterialTheme.typography.titleLarge,
+            style = if (dense) MaterialTheme.typography.labelLarge
+            else if (compact) MaterialTheme.typography.titleSmall
+            else MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            minFontSize = 9.sp
         )
     }
 }
@@ -2163,6 +2185,8 @@ private fun StartButtons(
 ) {
     val automationArmed = activeSession?.isAutomationArmed() == true
     val cancellableSession = activeSession != null && !automationArmed
+    val sleepContainerColor = MaterialTheme.appAccents.sleep.action
+    val sleepContentColor = MaterialTheme.appAccents.sleep.onAction
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = if (cancellableSession) onCancelActive else onStart,
@@ -2177,7 +2201,10 @@ private fun StartButtons(
                     contentColor = MaterialTheme.appAccents.urgent.onColor
                 )
             } else {
-                ButtonDefaults.buttonColors()
+                ButtonDefaults.buttonColors(
+                    containerColor = sleepContainerColor,
+                    contentColor = sleepContentColor
+                )
             }
         ) {
             Text(
@@ -2186,7 +2213,7 @@ private fun StartButtons(
                     else R.string.action_go_to_sleep_now
                 ),
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center
             )
         }
@@ -2263,11 +2290,10 @@ private fun HomeDockAction(
             verticalArrangement = Arrangement.Center
         ) {
             Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
-            Text(
+            FittedSingleLineText(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                minFontSize = 8.sp
             )
         }
     }
@@ -2308,14 +2334,10 @@ private fun HomeToolTile(
 private fun QuickAccessPill(
     label: String,
     onClick: () -> Unit,
-    accent: Color,
+    containerColor: Color,
+    contentColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val containerColor = lerp(MaterialTheme.colorScheme.surface, accent, 0.72f)
-    val contentColor = ensureContrast(
-        foreground = MaterialTheme.colorScheme.onSurface,
-        background = containerColor
-    )
     Box(
         modifier = modifier
             .clickable(onClick = onClick),
@@ -2330,13 +2352,12 @@ private fun QuickAccessPill(
                 .padding(horizontal = 16.dp, vertical = 7.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
+            FittedSingleLineText(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
                 color = contentColor,
                 fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                minFontSize = 11.sp
             )
         }
     }

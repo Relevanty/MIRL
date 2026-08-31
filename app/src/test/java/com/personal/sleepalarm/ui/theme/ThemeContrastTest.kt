@@ -55,7 +55,12 @@ class ThemeContrastTest {
             val scheme = buildColorScheme(preset)
             val palette = buildAppAccentPalette(preset, scheme)
             preset.id to palette.all.flatMap { tone ->
-                listOf(tone.color.toArgb(), tone.fill.toArgb(), tone.container.toArgb())
+                listOf(
+                    tone.color.toArgb(),
+                    tone.fill.toArgb(),
+                    tone.container.toArgb(),
+                    tone.action.toArgb()
+                )
             } + listOf(
                 palette.chrome.navigation.toArgb(),
                 palette.chrome.onNavigation.toArgb(),
@@ -295,9 +300,32 @@ class ThemeContrastTest {
                 assertReadable(preset.id, "accent/$index/onColor", tone.onColor, tone.color)
                 assertReadable(preset.id, "accent/$index/onFill", tone.onFill, tone.fill)
                 assertReadable(preset.id, "accent/$index/onContainer", tone.onContainer, tone.container)
+                assertContrastAtLeast(
+                    preset.id,
+                    "accent/$index/onAction",
+                    tone.onAction,
+                    tone.action,
+                    3.5f
+                )
                 assertTrue(
                     "${preset.id}: accent/$index container must be visibly tinted",
                     tone.container != scheme.background
+                )
+                val actionHsl = tone.action.toThemeHsl()
+                val fillHsl = tone.fill.toThemeHsl()
+                assertTrue(
+                    "${preset.id}: accent/$index action is more saturated than its fill",
+                    actionHsl.saturation <= fillHsl.saturation + 0.001f
+                )
+                assertTrue(
+                    "${preset.id}: accent/$index action tone is outside its restrained range",
+                    if (preset.isDark) actionHsl.lightness in 0.20f..0.27f
+                    else actionHsl.lightness in 0.80f..0.89f
+                )
+                assertEquals(
+                    "${preset.id}: accent/$index large actions must share neutral theme text",
+                    scheme.onSurfaceVariant,
+                    tone.onAction
                 )
             }
 
