@@ -67,8 +67,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.db.entity.TaskEntity
+import com.personal.sleepalarm.data.db.entity.TaskDemandProfileEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.util.CoverHelper
+import com.personal.sleepalarm.domain.model.primaryLabel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -80,8 +82,11 @@ import kotlin.math.roundToInt
 @Composable
 internal fun TaskEditorScreen(
     initialTask: TaskEntity?,
+    initialDemandProfile: TaskDemandProfileEntity?,
+    availableDependencyTasks: List<TaskEntity>,
+    initialDependencyIds: Set<Int>,
     onBack: () -> Unit,
-    onSave: (TaskEntity) -> Unit,
+    onSave: (TaskEntity, TaskDemandProfileEntity, Set<Int>) -> Unit,
     onImportImage: suspend (Uri) -> String?,
     projects: List<ProjectEntity> = emptyList(),
     modifier: Modifier = Modifier
@@ -113,6 +118,46 @@ internal fun TaskEditorScreen(
     var expectedResult by remember(base.id, base.createdAt) { mutableStateOf(base.expectedResult) }
     var repeatRule by remember(base.id, base.createdAt) { mutableStateOf(base.repeatRule) }
     var quadrant by remember(base.id, base.createdAt) { mutableStateOf(TaskQuadrant.fromStorage(base.matrixQuadrant)) }
+    val initialPreset = remember(base.id, initialDemandProfile) {
+        TaskWorkModePreset.fromStorage(initialDemandProfile?.workMode, base.category)
+    }
+    var workMode by remember(base.id, initialDemandProfile) { mutableStateOf(initialPreset) }
+    var difficulty by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.difficulty ?: initialPreset.difficulty)
+    }
+    var concentrationDemand by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.concentrationDemand ?: initialPreset.concentration)
+    }
+    var executiveDemand by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.executiveDemand ?: initialPreset.executive)
+    }
+    var memoryDemand by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.memoryDemand ?: initialPreset.memory)
+    }
+    var creativeDemand by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.creativeDemand ?: initialPreset.creative)
+    }
+    var socialDemand by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.socialDemand ?: initialPreset.social)
+    }
+    var physicalDemand by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.physicalDemand ?: initialPreset.physical)
+    }
+    var emotionalDemand by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.emotionalDemand ?: initialPreset.emotional)
+    }
+    var startFriction by remember(base.id, initialDemandProfile) {
+        mutableIntStateOf(initialDemandProfile?.startFriction ?: initialPreset.startFriction)
+    }
+    var placeContext by remember(base.id, initialDemandProfile) {
+        mutableStateOf(initialDemandProfile?.placeContext ?: "ANY")
+    }
+    var internetRequirement by remember(base.id, initialDemandProfile) {
+        mutableStateOf(initialDemandProfile?.internetRequirement ?: "ANY")
+    }
+    var selectedDependencyIds by remember(base.id, initialDependencyIds) {
+        mutableStateOf(initialDependencyIds)
+    }
     var expandedPlan by remember { mutableStateOf(
         dependencies.isNotBlank() || obstacle.isNotBlank() || ifThenPlan.isNotBlank() || checklist.isNotBlank()
     ) }
@@ -127,6 +172,18 @@ internal fun TaskEditorScreen(
                 importingImage = false
             }
         }
+    }
+    fun applyWorkMode(preset: TaskWorkModePreset) {
+        workMode = preset
+        difficulty = preset.difficulty
+        concentrationDemand = preset.concentration
+        executiveDemand = preset.executive
+        memoryDemand = preset.memory
+        creativeDemand = preset.creative
+        socialDemand = preset.social
+        physicalDemand = preset.physical
+        emotionalDemand = preset.emotional
+        startFriction = preset.startFriction
     }
 
     BackHandler(onBack = onBack)
@@ -147,8 +204,7 @@ internal fun TaskEditorScreen(
                         enabled = (base.id != 0 || imagePath != null) &&
                             category in setOf("WORK", "STUDY", "OTHER"),
                         onClick = {
-                            onSave(
-                                base.copy(
+                            val savedTask = base.copy(
                                     title = title.trim(),
                                     description = description.trim(),
                                     whyImportant = whyImportant.trim(),
@@ -176,6 +232,30 @@ internal fun TaskEditorScreen(
                                     repeatRule = repeatRule.trim(),
                                     matrixQuadrant = quadrant.storageValue
                                 )
+                            onSave(
+                                savedTask,
+                                (initialDemandProfile ?: TaskDemandProfileEntity(taskId = base.id)).copy(
+                                    taskId = base.id,
+                                    domain = category,
+                                    workMode = workMode.storageValue,
+                                    difficulty = difficulty,
+                                    concentrationDemand = concentrationDemand,
+                                    executiveDemand = executiveDemand,
+                                    memoryDemand = memoryDemand,
+                                    creativeDemand = creativeDemand,
+                                    socialDemand = socialDemand,
+                                    physicalDemand = physicalDemand,
+                                    emotionalDemand = emotionalDemand,
+                                    startFriction = startFriction,
+                                    placeContext = placeContext,
+                                    internetRequirement = internetRequirement,
+                                    minimumBlockMinutes = minOf(estimatedMinutes, 10),
+                                    preferredBlockMinutes = estimatedMinutes,
+                                    provenance = "USER",
+                                    confidence = 1f,
+                                    updatedAt = System.currentTimeMillis()
+                                ),
+                                selectedDependencyIds
                             )
                         }
                     ) { Text(stringResource(R.string.task_save)) }
@@ -311,6 +391,109 @@ internal fun TaskEditorScreen(
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
+                }
+            }
+
+            item {
+                TaskEditorSection(
+                    title = stringResource(R.string.task_adaptive_profile_title),
+                    hint = stringResource(R.string.task_adaptive_profile_hint)
+                ) {
+                    Text(
+                        stringResource(R.string.task_work_mode_label),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TaskWorkModePreset.entries.forEach { preset ->
+                            FilterChip(
+                                selected = workMode == preset,
+                                onClick = { applyWorkMode(preset) },
+                                label = { Text(stringResource(preset.labelRes)) }
+                            )
+                        }
+                    }
+                    Text(
+                        stringResource(R.string.task_profile_autofill_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(stringResource(R.string.task_place_label), style = MaterialTheme.typography.labelLarge)
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "ANY" to R.string.task_place_any,
+                            "INDOOR" to R.string.task_place_indoor,
+                            "OUTDOOR" to R.string.task_place_outdoor
+                        ).forEach { (value, label) ->
+                            FilterChip(
+                                selected = placeContext == value,
+                                onClick = { placeContext = value },
+                                label = { Text(stringResource(label)) }
+                            )
+                        }
+                    }
+                    Text(stringResource(R.string.task_internet_label), style = MaterialTheme.typography.labelLarge)
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "ANY" to R.string.task_internet_any,
+                            "REQUIRED" to R.string.task_internet_required,
+                            "OFFLINE" to R.string.task_internet_offline
+                        ).forEach { (value, label) ->
+                            FilterChip(
+                                selected = internetRequirement == value,
+                                onClick = { internetRequirement = value },
+                                label = { Text(stringResource(label)) }
+                            )
+                        }
+                    }
+                    if (availableDependencyTasks.isNotEmpty()) {
+                        Text(
+                            stringResource(R.string.task_dependency_structured_label),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Text(
+                            stringResource(R.string.task_dependency_structured_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            availableDependencyTasks
+                                .filter { it.id != base.id && !it.isDone }
+                                .forEach { prerequisite ->
+                                    FilterChip(
+                                        selected = prerequisite.id in selectedDependencyIds,
+                                        onClick = {
+                                            selectedDependencyIds = if (prerequisite.id in selectedDependencyIds) {
+                                                selectedDependencyIds - prerequisite.id
+                                            } else {
+                                                selectedDependencyIds + prerequisite.id
+                                            }
+                                        },
+                                        label = { Text(prerequisite.primaryLabel(), maxLines = 1) }
+                                    )
+                                }
+                        }
+                    }
+                    DemandSlider(R.string.task_demand_difficulty, difficulty) { difficulty = it }
+                    DemandSlider(R.string.task_demand_concentration, concentrationDemand) { concentrationDemand = it }
+                    DemandSlider(R.string.task_demand_executive, executiveDemand) { executiveDemand = it }
+                    DemandSlider(R.string.task_demand_memory, memoryDemand) { memoryDemand = it }
+                    DemandSlider(R.string.task_demand_creativity, creativeDemand) { creativeDemand = it }
+                    DemandSlider(R.string.task_demand_social, socialDemand) { socialDemand = it }
+                    DemandSlider(R.string.task_demand_physical, physicalDemand) { physicalDemand = it }
+                    DemandSlider(R.string.task_demand_emotional, emotionalDemand) { emotionalDemand = it }
+                    DemandSlider(R.string.task_demand_start_friction, startFriction) { startFriction = it }
                 }
             }
 
@@ -603,6 +786,62 @@ private fun TaskEditorSection(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             content()
         }
+    }
+}
+
+@Composable
+private fun DemandSlider(
+    labelRes: Int,
+    value: Int,
+    onValueChange: (Int) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(labelRes), style = MaterialTheme.typography.labelLarge)
+            Text(
+                stringResource(R.string.task_demand_value, value + 1),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onValueChange(it.roundToInt().coerceIn(0, 4)) },
+            valueRange = 0f..4f,
+            steps = 3,
+            modifier = Modifier.weight(1.2f)
+        )
+    }
+}
+
+private enum class TaskWorkModePreset(
+    val storageValue: String,
+    val labelRes: Int,
+    val difficulty: Int,
+    val concentration: Int,
+    val executive: Int,
+    val memory: Int,
+    val creative: Int,
+    val social: Int,
+    val physical: Int,
+    val emotional: Int,
+    val startFriction: Int
+) {
+    DEEP("DEEP", R.string.task_mode_deep, 3, 4, 3, 2, 2, 0, 0, 1, 3),
+    LEARNING("LEARNING", R.string.task_mode_learning, 2, 3, 2, 4, 1, 0, 0, 1, 2),
+    CREATIVE("CREATIVE", R.string.task_mode_creative, 2, 3, 2, 1, 4, 0, 0, 2, 2),
+    ADMIN("ADMIN", R.string.task_mode_admin, 1, 1, 3, 1, 0, 1, 0, 0, 1),
+    COMMUNICATION("COMMUNICATION", R.string.task_mode_communication, 2, 2, 2, 1, 1, 4, 0, 3, 2),
+    PHYSICAL("PHYSICAL", R.string.task_mode_physical, 2, 1, 1, 0, 0, 0, 4, 1, 2),
+    RECOVERY("RECOVERY", R.string.task_mode_recovery, 0, 0, 0, 0, 0, 0, 1, 0, 0);
+
+    companion object {
+        fun fromStorage(value: String?, category: String): TaskWorkModePreset =
+            entries.firstOrNull { it.storageValue == value } ?: when (category) {
+                "STUDY" -> LEARNING
+                "WORK" -> DEEP
+                else -> ADMIN
+            }
     }
 }
 

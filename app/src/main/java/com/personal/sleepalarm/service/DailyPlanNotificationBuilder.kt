@@ -15,6 +15,9 @@ import com.personal.sleepalarm.alarm.DailyPlanNudgeReceiver
 import com.personal.sleepalarm.data.preferences.AppSignalPreferences
 import com.personal.sleepalarm.data.preferences.AppSignalType
 import com.personal.sleepalarm.domain.dailyplan.DailyPlanProgressSnapshot
+import com.personal.sleepalarm.domain.dailyplan.DailyPlanTaskProgress
+import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.data.repository.AdaptiveRecommendationRepository
 import com.personal.sleepalarm.service.audio.AppNotificationSoundPlayer
 import com.personal.sleepalarm.ui.MainActivity
 import java.util.Date
@@ -45,18 +48,26 @@ class DailyPlanNotificationBuilder(context: Context) {
             cancel()
             return false
         }
-        val candidateTasks = when (phase) {
+        val policyCandidates = when (phase) {
             DailyPlanNotificationPhase.MORNING -> snapshot.unstartedTasks
             DailyPlanNotificationPhase.URGENCY -> snapshot.tasks.filter { it.remainingMinutes > 0 }
         }
-        if (candidateTasks.isEmpty()) {
+        if (policyCandidates.isEmpty()) {
             cancel()
             return false
         }
+        val adaptiveOrder = runCatching {
+            AdaptiveRecommendationRepository(AppDatabase.getInstance(appContext))
+                .rank(nowMillis = snapshot.nowMillis)
+                .orderedTasks
+                .mapIndexed { index, task -> task.id to index }
+                .toMap()
+        }.getOrDefault(emptyMap())
+        val candidateTasks = policyCandidates.sortedBy { adaptiveOrder[it.taskId] ?: Int.MAX_VALUE }
         return try {
             notificationManager.notify(
                 NOTIFICATION_ID,
-                build(snapshot, phase, candidateTasks.first().taskId)
+                build(snapshot, phase, candidateTasks)
             )
             if (playSound) {
                 AppNotificationSoundPlayer.play(
@@ -82,15 +93,16 @@ class DailyPlanNotificationBuilder(context: Context) {
     private fun build(
         snapshot: DailyPlanProgressSnapshot,
         phase: DailyPlanNotificationPhase,
-        firstTaskId: Int
+        candidateTasks: List<DailyPlanTaskProgress>
     ): android.app.Notification {
+        val firstTaskId = candidateTasks.first().taskId
         val cutoffText = DateFormat.getTimeFormat(appContext).format(Date(snapshot.cutoffMillis))
         val title: String
         val body: String
         when (phase) {
             DailyPlanNotificationPhase.MORNING -> {
                 title = appContext.getString(R.string.daily_plan_morning_title)
-                val names = snapshot.unstartedTasks.take(MAX_MORNING_TASKS)
+                val names = candidateTasks.take(MAX_MORNING_TASKS)
                     .joinToString(", ") { it.title }
                 body = appContext.getString(R.string.daily_plan_morning_body, names)
             }

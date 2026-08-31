@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.alarm.AlarmScheduler
 import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.data.db.entity.DailyCheckInEntity
+import com.personal.sleepalarm.data.db.entity.EnergyObservationEntity
 import com.personal.sleepalarm.data.db.entity.SleepSessionEntity
 import com.personal.sleepalarm.data.repository.MoodRepository
 import com.personal.sleepalarm.data.repository.SleepProfileRepository
@@ -23,6 +25,7 @@ import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.service.BriefingTextBuilder
 import com.personal.sleepalarm.service.SleepForegroundService
 import com.personal.sleepalarm.service.SleepNotificationBuilder
+import com.personal.sleepalarm.ui.mood.MorningCheckInInput
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -31,6 +34,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Состояние экрана будильника.
@@ -127,8 +132,11 @@ class AlarmViewModel(
     // === ДОБАВЛЕНО (v5): настроение + брифинг после подъёма ===
     // Координатор живёт на уровне приложения (ServiceLocator),
     // поэтому TTS переживает пересоздание Activity и готов утром.
-    private val briefingCoordinator =
-        (application as com.personal.sleepalarm.app.App).serviceLocator.briefingCoordinator    // === ДОБАВЛЕНО (v5): настроение + брифинг после подъёма ===(context, briefingPreference)
+    private val serviceLocator =
+        (application as com.personal.sleepalarm.app.App).serviceLocator
+    private val briefingCoordinator = serviceLocator.briefingCoordinator
+    private val dailyCheckInRepository = serviceLocator.dailyCheckInRepository
+    private val energyObservationRepository = serviceLocator.energyObservationRepository
     private val moodRepository = MoodRepository(database.moodEntryDao())
     private val briefingTextBuilder = BriefingTextBuilder(
         calendarEventDao = database.calendarEventDao(),
@@ -641,23 +649,57 @@ class AlarmViewModel(
         _showMoodPicker.value = true
     }
 
-    /**
-     * Пользователь выбрал настроение.
-     * Сохраняем его; если брифинг включён — озвучиваем сводку; затем finish.
-     */
-    fun onMoodSelected(mood: Int) {
+    /** Saves the explicit morning state without conflating mood and energy. */
+    fun onMorningCheckIn(input: MorningCheckInInput) {
         _showMoodPicker.value = false
 
         viewModelScope.launch {
-            moodRepository.saveToday(mood)
+            val now = System.currentTimeMillis()
+            val zone = ZoneId.systemDefault()
 
-            _isBriefingPlaying.value = true
-            val text = briefingTextBuilder.build(context)
-            briefingCoordinator.speak(text, com.personal.sleepalarm.service.audio.VoiceScenario.MORNING) {
-                viewModelScope.launch {
-                    _isBriefingPlaying.value = false
-                    emitFinish()
-                }
+            // Keep the existing five-point mood history populated for legacy statistics.
+            runCatching { moodRepository.saveToday(input.mood) }
+            runCatching {
+                dailyCheckInRepository.save(
+                    DailyCheckInEntity(
+                        localDate = LocalDate.now(zone).toString(),
+                        timestamp = now,
+                        zoneId = zone.id,
+                        energy = input.energy,
+                        mood = input.mood,
+                        clarity = input.clarity?.minus(1),
+                        source = "ALARM"
+                    )
+                )
+            }
+            runCatching {
+                energyObservationRepository.record(
+                    EnergyObservationEntity(
+                        timestamp = now,
+                        absoluteEnergy = input.energy,
+                        context = "MORNING",
+                        source = "MORNING_CHECK_IN"
+                    )
+                )
+            }
+
+            playBriefingAndFinish()
+        }
+    }
+
+    /** Skipping is a missing observation, not an invented neutral value. */
+    fun skipMorningCheckIn() {
+        _showMoodPicker.value = false
+        viewModelScope.launch { playBriefingAndFinish() }
+    }
+
+    private suspend fun playBriefingAndFinish() {
+        _isBriefingPlaying.value = true
+        val text = briefingTextBuilder.build(context)
+        briefingCoordinator.speak(text, com.personal.sleepalarm.service.audio.VoiceScenario.MORNING) {
+            viewModelScope.launch {
+                _isBriefingPlaying.value = false
+                emitFinish()
             }
         }
     }

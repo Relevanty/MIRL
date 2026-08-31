@@ -6,6 +6,7 @@ import com.personal.sleepalarm.ui.system.SystemCheckScreen
 import com.personal.sleepalarm.ui.settings.ThemesScreen
 import android.app.Activity
 import android.media.RingtoneManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -24,14 +25,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -49,8 +53,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import com.personal.sleepalarm.R
 import com.personal.sleepalarm.data.preferences.AppSignalSettings
 import com.personal.sleepalarm.data.preferences.AppSignalType
@@ -58,6 +64,7 @@ import com.personal.sleepalarm.data.preferences.AppSoundMode
 import com.personal.sleepalarm.data.preferences.AppSoundSelection
 import com.personal.sleepalarm.data.preferences.DailyPlanNudgeSettings
 import com.personal.sleepalarm.domain.automation.SleepAutomationWindow
+import com.personal.sleepalarm.domain.externalcontext.ExternalContextSettings
 import com.personal.sleepalarm.domain.model.CueScheduleMode
 import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.ui.components.ChoiceChips
@@ -66,6 +73,8 @@ import com.personal.sleepalarm.ui.components.LabeledSlider
 import com.personal.sleepalarm.ui.components.SectionCard
 import com.personal.sleepalarm.ui.components.SwitchSetting
 import com.personal.sleepalarm.ui.components.TimeStepper
+import com.personal.sleepalarm.ui.misc.BriefingSettingsContent
+import com.personal.sleepalarm.ui.misc.BriefingSettingsViewModel
 import com.personal.sleepalarm.util.AppLanguageManager
 import com.personal.sleepalarm.util.ProfileJsonCodec
 import com.personal.sleepalarm.util.RingtonePickerHelper
@@ -91,15 +100,20 @@ import androidx.compose.material3.TextButton
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    briefingViewModel: BriefingSettingsViewModel = composeViewModel()
 ) {
     var showThemes by remember { mutableStateOf(false) }
     var showLauncherIcons by remember { mutableStateOf(false) }
 
     var showSystemCheck by remember { mutableStateOf(false) }
-    var expandedCategory by rememberSaveable {
+    var selectedPageName by rememberSaveable {
         mutableStateOf<String?>(null)
     }
+    val selectedPage = selectedPageName?.let { saved ->
+        SettingsPage.entries.firstOrNull { it.name == saved }
+    }
+    var settingsQuery by rememberSaveable { mutableStateOf("") }
 
     var showImportConfirm by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -112,6 +126,19 @@ fun SettingsScreen(
     val calendarSignal by viewModel.calendarSignalSettings.collectAsStateWithLifecycle()
     val dailyPlanSignal by viewModel.dailyPlanSignalSettings.collectAsStateWithLifecycle()
     val dailyPlanNudges by viewModel.dailyPlanNudgeSettings.collectAsStateWithLifecycle()
+    val briefingEnabled by briefingViewModel.enabled.collectAsStateWithLifecycle()
+
+    var externalCity by rememberSaveable { mutableStateOf("") }
+    var externalLatitude by rememberSaveable { mutableStateOf("") }
+    var externalLongitude by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(state.externalContext.location) {
+        state.externalContext.location?.let { location ->
+            externalCity = location.cityLabel
+            externalLatitude = location.latitude.toString()
+            externalLongitude = location.longitude.toString()
+        }
+    }
 
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -286,6 +313,10 @@ fun SettingsScreen(
         return
     }
 
+    BackHandler(enabled = selectedPage != null) {
+        selectedPageName = null
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         modifier = modifier.fillMaxSize()
@@ -298,18 +329,27 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(R.string.tab_settings),
-                style = MaterialTheme.typography.headlineMedium
+            if (selectedPage == null) {
+                SettingsRootContent(
+                    query = settingsQuery,
+                    onQueryChange = { settingsQuery = it },
+                    wakeHour = state.profile.preferredWakeHour,
+                    wakeMinute = state.profile.preferredWakeMinute,
+                    cycles = state.profile.cycles,
+                    cuesEnabled = state.profile.cuesEnabled,
+                    externalContextEnabled = state.externalContext.enabled,
+                    briefingEnabled = briefingEnabled,
+                    onOpen = { selectedPageName = it.name }
+                )
+                return@Column
+            }
+
+            SettingsDetailHeader(
+                title = stringResource(selectedPage.titleRes),
+                onBack = { selectedPageName = null }
             )
 
-            SettingsCategoryCard(
-                category = SettingsCategory.BASICS,
-                expandedCategory = expandedCategory,
-                title = stringResource(R.string.settings_category_basics),
-                summary = stringResource(R.string.settings_category_basics_summary),
-                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
-            ) {
+            if (selectedPage == SettingsPage.SLEEP) {
                 TimeSection(
                     wakeHour = state.profile.preferredWakeHour,
                     wakeMinute = state.profile.preferredWakeMinute,
@@ -326,62 +366,7 @@ fun SettingsScreen(
                 )
             }
 
-            SettingsCategoryCard(
-                category = SettingsCategory.CUES,
-                expandedCategory = expandedCategory,
-                title = stringResource(R.string.settings_category_cues),
-                summary = stringResource(R.string.settings_category_cues_summary),
-                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
-            ) {
-                CuesSection(
-                    cuesEnabled = state.profile.cuesEnabled,
-                    cueRingtoneUri = state.profile.cueRingtoneUri,
-                    cueRingtoneName = cueRingtoneDisplayName,
-                    isPreviewPlaying = isPreviewPlaying,
-                    cueScheduleMode = state.profile.cueScheduleMode,
-                    firstCueDelay = state.profile.firstCueDelayMinutes,
-                    cueInterval = state.profile.cueIntervalMinutes,
-                    cueVolume = state.profile.cueVolumePercent,
-                    remOffset = state.profile.remCueOffsetPercent,
-                    cueCount = state.cueSchedule.scheduledCount,
-                    onCuesEnabledChange = { viewModel.setCuesEnabled(it) },
-                    onPickCueSystem = {
-                        viewModel.stopPreview()
-                        cuePickSystemLauncher.launch(
-                            RingtonePickerHelper.createPickerIntent(
-                                title = context.getString(R.string.cue_picker_title),
-                                existingUriString = state.profile.cueRingtoneUri
-                            )
-                        )
-                    },
-                    onPickCueFile = { cuePickFileLauncher.launch(arrayOf("audio/*")) },
-                    onPreviewCueToggle = {
-                        if (isPreviewPlaying) viewModel.stopPreview()
-                        else viewModel.previewRingtone(
-                            state.profile.cueRingtoneUri,
-                            state.profile.cueVolumePercent
-                        )
-                    },
-                    onResetCueRingtone = {
-                        viewModel.stopPreview()
-                        viewModel.setCueRingtoneUri(null)
-                    },
-                    onCueScheduleModeChange = { viewModel.setCueScheduleMode(it) },
-                    onFirstCueDelayChange = { viewModel.setFirstCueDelay(it) },
-                    onCueIntervalChange = { viewModel.setCueInterval(it) },
-                    onCueVolumeChange = { viewModel.setCueVolume(it) },
-                    onRemOffsetChange = { viewModel.setRemCueOffset(it) },
-                    onOpenHelp = { showHelp = true }
-                )
-            }
-
-            SettingsCategoryCard(
-                category = SettingsCategory.ALARM,
-                expandedCategory = expandedCategory,
-                title = stringResource(R.string.settings_category_alarm),
-                summary = stringResource(R.string.settings_category_alarm_summary),
-                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
-            ) {
+            if (selectedPage == SettingsPage.WAKE_AND_DREAMS) {
                 AlarmSection(
                     mathDifficulty = state.profile.mathDifficulty,
                     mathChallengeCount = state.profile.mathChallengeCount,
@@ -425,13 +410,50 @@ fun SettingsScreen(
                 )
             }
 
-            SettingsCategoryCard(
-                category = SettingsCategory.SIGNALS,
-                expandedCategory = expandedCategory,
-                title = stringResource(R.string.settings_category_signals),
-                summary = stringResource(R.string.settings_category_signals_summary),
-                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
-            ) {
+            if (selectedPage == SettingsPage.WAKE_AND_DREAMS) {
+                CuesSection(
+                    cuesEnabled = state.profile.cuesEnabled,
+                    cueRingtoneUri = state.profile.cueRingtoneUri,
+                    cueRingtoneName = cueRingtoneDisplayName,
+                    isPreviewPlaying = isPreviewPlaying,
+                    cueScheduleMode = state.profile.cueScheduleMode,
+                    firstCueDelay = state.profile.firstCueDelayMinutes,
+                    cueInterval = state.profile.cueIntervalMinutes,
+                    cueVolume = state.profile.cueVolumePercent,
+                    remOffset = state.profile.remCueOffsetPercent,
+                    cueCount = state.cueSchedule.scheduledCount,
+                    onCuesEnabledChange = { viewModel.setCuesEnabled(it) },
+                    onPickCueSystem = {
+                        viewModel.stopPreview()
+                        cuePickSystemLauncher.launch(
+                            RingtonePickerHelper.createPickerIntent(
+                                title = context.getString(R.string.cue_picker_title),
+                                existingUriString = state.profile.cueRingtoneUri
+                            )
+                        )
+                    },
+                    onPickCueFile = { cuePickFileLauncher.launch(arrayOf("audio/*")) },
+                    onPreviewCueToggle = {
+                        if (isPreviewPlaying) viewModel.stopPreview()
+                        else viewModel.previewRingtone(
+                            state.profile.cueRingtoneUri,
+                            state.profile.cueVolumePercent
+                        )
+                    },
+                    onResetCueRingtone = {
+                        viewModel.stopPreview()
+                        viewModel.setCueRingtoneUri(null)
+                    },
+                    onCueScheduleModeChange = { viewModel.setCueScheduleMode(it) },
+                    onFirstCueDelayChange = { viewModel.setFirstCueDelay(it) },
+                    onCueIntervalChange = { viewModel.setCueInterval(it) },
+                    onCueVolumeChange = { viewModel.setCueVolume(it) },
+                    onRemOffsetChange = { viewModel.setRemCueOffset(it) },
+                    onOpenHelp = { showHelp = true }
+                )
+            }
+
+            if (selectedPage == SettingsPage.AUDIO_AND_VOICE) {
                 NotificationSoundsSection(
                     legacyVolume = state.profile.notificationVolumePercent,
                     pomodoro = pomodoroSignal,
@@ -474,6 +496,31 @@ fun SettingsScreen(
                     onPreview = viewModel::previewAppNotificationSound
                 )
                 Spacer(modifier = Modifier.height(16.dp))
+                SectionCard(title = stringResource(R.string.briefing_settings_title)) {
+                    BriefingSettingsContent(viewModel = briefingViewModel)
+                }
+            }
+
+            if (selectedPage == SettingsPage.SLEEP) {
+                AutoDetectSection(
+                    automaticStart = state.sleepAutomation.enabled,
+                    windowStartMinutes = state.sleepAutomation.windowStartMinutes,
+                    windowEndMinutes = state.sleepAutomation.windowEndMinutes,
+                    autoDetect = state.profile.autoDetectOnsetEnabled,
+                    autoCorrect = state.profile.autoCorrectWakeEnabled,
+                    minConfidence = state.profile.autoCorrectMinConfidencePercent,
+                    maxShiftMinutes = state.profile.autoCorrectMaxShiftMinutes,
+                    onAutomaticStartChange = viewModel::setAutomaticNightStart,
+                    onWindowStartChange = viewModel::setAutomaticWindowStart,
+                    onWindowEndChange = viewModel::setAutomaticWindowEnd,
+                    onAutoDetectChange = { viewModel.setAutoDetectOnset(it) },
+                    onAutoCorrectChange = { viewModel.setAutoCorrectWake(it) },
+                    onMinConfidenceChange = viewModel::setAutoCorrectMinConfidence,
+                    onMaxShiftChange = viewModel::setAutoCorrectMaxShift
+                )
+            }
+
+            if (selectedPage == SettingsPage.PLANNING) {
                 val now = ZonedDateTime.now()
                 val automationCandidate = SleepAutomationWindow.containing(
                     now,
@@ -498,40 +545,38 @@ fun SettingsScreen(
                     onRepeatIntervalChange = viewModel::setDailyPlanRepeatIntervalMinutes,
                     onCutoffChange = viewModel::setDailyPlanCutoffMinutesOfDay
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                SectionCard(title = stringResource(R.string.settings_category_day_context)) {
+                    ExternalContextSection(
+                        settings = state.externalContext,
+                        city = externalCity,
+                        latitude = externalLatitude,
+                        longitude = externalLongitude,
+                        onCityChange = { externalCity = it },
+                        onLatitudeChange = { externalLatitude = it },
+                        onLongitudeChange = { externalLongitude = it },
+                        onSaveLocation = {
+                            viewModel.saveExternalContextLocation(
+                                externalCity,
+                                externalLatitude,
+                                externalLongitude
+                            )
+                        },
+                        onEnabledChange = viewModel::setExternalContextEnabled,
+                        onWeatherEnabledChange = viewModel::setExternalWeatherEnabled,
+                        onTest = viewModel::testExternalContext,
+                        onClear = {
+                            externalCity = ""
+                            externalLatitude = ""
+                            externalLongitude = ""
+                            viewModel.clearExternalContext()
+                        }
+                    )
+                }
             }
 
-            SettingsCategoryCard(
-                category = SettingsCategory.AUTOMATION,
-                expandedCategory = expandedCategory,
-                title = stringResource(R.string.settings_category_automation),
-                summary = stringResource(R.string.settings_category_automation_summary),
-                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
-            ) {
-                AutoDetectSection(
-                    automaticStart = state.sleepAutomation.enabled,
-                    windowStartMinutes = state.sleepAutomation.windowStartMinutes,
-                    windowEndMinutes = state.sleepAutomation.windowEndMinutes,
-                    autoDetect = state.profile.autoDetectOnsetEnabled,
-                    autoCorrect = state.profile.autoCorrectWakeEnabled,
-                    minConfidence = state.profile.autoCorrectMinConfidencePercent,
-                    maxShiftMinutes = state.profile.autoCorrectMaxShiftMinutes,
-                    onAutomaticStartChange = viewModel::setAutomaticNightStart,
-                    onWindowStartChange = viewModel::setAutomaticWindowStart,
-                    onWindowEndChange = viewModel::setAutomaticWindowEnd,
-                    onAutoDetectChange = { viewModel.setAutoDetectOnset(it) },
-                    onAutoCorrectChange = { viewModel.setAutoCorrectWake(it) },
-                    onMinConfidenceChange = viewModel::setAutoCorrectMinConfidence,
-                    onMaxShiftChange = viewModel::setAutoCorrectMaxShift
-                )
-            }
-
-            SettingsCategoryCard(
-                category = SettingsCategory.APPEARANCE,
-                expandedCategory = expandedCategory,
-                title = stringResource(R.string.settings_category_appearance),
-                summary = stringResource(R.string.settings_category_appearance_summary),
-                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
-            ) {
+            if (selectedPage == SettingsPage.APPEARANCE) {
+                SectionCard(title = stringResource(R.string.settings_category_appearance)) {
                 LanguageSection()
                 Spacer(modifier = Modifier.height(16.dp))
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -570,25 +615,11 @@ fun SettingsScreen(
                         }
                     }
                 }
+                }
             }
 
-            SettingsCategoryCard(
-                category = SettingsCategory.DATA,
-                expandedCategory = expandedCategory,
-                title = stringResource(R.string.settings_category_data),
-                summary = stringResource(R.string.settings_category_data_summary),
-                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
-            ) {
-                OutlinedButton(
-                    onClick = { exportJsonLauncher.launch("sleep_alarm_profile.json") },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(text = stringResource(R.string.action_export_settings)) }
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = { importJsonLauncher.launch(arrayOf("application/json", "*/*")) },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(text = stringResource(R.string.action_import_settings)) }
-                Spacer(modifier = Modifier.height(16.dp))
+            if (selectedPage == SettingsPage.DATA_AND_SYSTEM) {
+                SectionCard(title = stringResource(R.string.settings_category_data)) {
                 OutlinedButton(
                     onClick = { exportAllLauncher.launch("sleep_alarm_full_backup.json") },
                     modifier = Modifier.fillMaxWidth()
@@ -598,19 +629,25 @@ fun SettingsScreen(
                     onClick = { importAllLauncher.launch(arrayOf("application/json", "*/*")) },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(text = stringResource(R.string.action_import_all_data)) }
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = { exportJsonLauncher.launch("sleep_alarm_profile.json") },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(text = stringResource(R.string.action_export_settings)) }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { importJsonLauncher.launch(arrayOf("application/json", "*/*")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(text = stringResource(R.string.action_import_settings)) }
             }
 
-            SettingsCategoryCard(
-                category = SettingsCategory.RELIABILITY,
-                expandedCategory = expandedCategory,
-                title = stringResource(R.string.settings_category_reliability),
-                summary = stringResource(R.string.settings_category_reliability_summary),
-                onToggle = { expandedCategory = toggleCategory(expandedCategory, it) }
-            ) {
-                OutlinedButton(
-                    onClick = { showSystemCheck = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(text = stringResource(R.string.action_system_check)) }
+                Spacer(modifier = Modifier.height(16.dp))
+                SectionCard(title = stringResource(R.string.settings_category_reliability)) {
+                    OutlinedButton(
+                        onClick = { showSystemCheck = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(text = stringResource(R.string.action_system_check)) }
+                }
                 Spacer(modifier = Modifier.height(12.dp))
                 DisclaimerSection()
             }
@@ -650,15 +687,429 @@ fun SettingsScreen(
 
 }
 
-private enum class SettingsCategory {
-    BASICS,
-    CUES,
-    ALARM,
-    SIGNALS,
-    AUTOMATION,
-    APPEARANCE,
-    DATA,
-    RELIABILITY
+private enum class SettingsPage(val titleRes: Int) {
+    SLEEP(R.string.settings_hub_sleep),
+    WAKE_AND_DREAMS(R.string.settings_hub_wake_dreams),
+    PLANNING(R.string.settings_hub_planning),
+    AUDIO_AND_VOICE(R.string.settings_hub_audio_voice),
+    APPEARANCE(R.string.settings_hub_appearance),
+    DATA_AND_SYSTEM(R.string.settings_hub_data_system)
+}
+
+private data class SettingsHubItem(
+    val page: SettingsPage,
+    val title: String,
+    val summary: String
+)
+
+private data class SettingsSearchEntry(
+    val page: SettingsPage,
+    val title: String
+)
+
+@Composable
+private fun SettingsRootContent(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    wakeHour: Int,
+    wakeMinute: Int,
+    cycles: Int,
+    cuesEnabled: Boolean,
+    externalContextEnabled: Boolean,
+    briefingEnabled: Boolean,
+    onOpen: (SettingsPage) -> Unit
+) {
+    Text(
+        text = stringResource(R.string.tab_settings),
+        style = MaterialTheme.typography.headlineMedium
+    )
+
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        label = { Text(stringResource(R.string.settings_search_label)) },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        trailingIcon = if (query.isBlank()) null else {
+            {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = stringResource(R.string.settings_search_clear)
+                    )
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    val hubItems = listOf(
+        SettingsHubItem(
+            page = SettingsPage.SLEEP,
+            title = stringResource(SettingsPage.SLEEP.titleRes),
+            summary = stringResource(
+                R.string.settings_hub_sleep_summary,
+                wakeHour,
+                wakeMinute,
+                cycles
+            )
+        ),
+        SettingsHubItem(
+            page = SettingsPage.WAKE_AND_DREAMS,
+            title = stringResource(SettingsPage.WAKE_AND_DREAMS.titleRes),
+            summary = stringResource(
+                if (cuesEnabled) R.string.settings_hub_wake_summary_on
+                else R.string.settings_hub_wake_summary_off
+            )
+        ),
+        SettingsHubItem(
+            page = SettingsPage.PLANNING,
+            title = stringResource(SettingsPage.PLANNING.titleRes),
+            summary = stringResource(
+                if (externalContextEnabled) R.string.settings_hub_planning_summary_on
+                else R.string.settings_hub_planning_summary_off
+            )
+        ),
+        SettingsHubItem(
+            page = SettingsPage.AUDIO_AND_VOICE,
+            title = stringResource(SettingsPage.AUDIO_AND_VOICE.titleRes),
+            summary = stringResource(
+                if (briefingEnabled) R.string.settings_hub_audio_summary_on
+                else R.string.settings_hub_audio_summary_off
+            )
+        ),
+        SettingsHubItem(
+            page = SettingsPage.APPEARANCE,
+            title = stringResource(SettingsPage.APPEARANCE.titleRes),
+            summary = stringResource(R.string.settings_hub_appearance_summary)
+        ),
+        SettingsHubItem(
+            page = SettingsPage.DATA_AND_SYSTEM,
+            title = stringResource(SettingsPage.DATA_AND_SYSTEM.titleRes),
+            summary = stringResource(R.string.settings_hub_data_system_summary)
+        )
+    )
+
+    if (query.isBlank()) {
+        hubItems.chunked(2).forEach { rowItems ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(112.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                rowItems.forEach { item ->
+                    SettingsHubCard(
+                        item = item,
+                        onClick = { onOpen(item.page) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (rowItems.size == 1) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+        return
+    }
+
+    val searchEntries = settingsSearchEntries()
+    val needle = query.trim()
+    val results = searchEntries.filter { entry ->
+        entry.title.contains(needle, ignoreCase = true) ||
+            hubItems.first { it.page == entry.page }.title.contains(needle, ignoreCase = true) ||
+            hubItems.first { it.page == entry.page }.summary.contains(needle, ignoreCase = true)
+    }
+    if (results.isEmpty()) {
+        Text(
+            text = stringResource(R.string.settings_search_empty),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = 24.dp)
+        )
+    } else {
+        results.forEach { entry ->
+            SettingsSearchResult(
+                entry = entry,
+                category = hubItems.first { it.page == entry.page }.title,
+                onClick = { onOpen(entry.page) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsHubCard(
+    item: SettingsHubItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxSize()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        tonalElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = item.summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSearchResult(
+    entry: SettingsSearchEntry,
+    category: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(entry.title, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    category,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null)
+        }
+    }
+}
+
+@Composable
+private fun SettingsDetailHeader(title: String, onBack: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(R.string.action_back)
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun settingsSearchEntries(): List<SettingsSearchEntry> = listOf(
+    SettingsSearchEntry(SettingsPage.SLEEP, stringResource(R.string.setting_wake_time)),
+    SettingsSearchEntry(SettingsPage.SLEEP, stringResource(R.string.setting_cycles_count)),
+    SettingsSearchEntry(SettingsPage.SLEEP, stringResource(R.string.setting_cycle_length)),
+    SettingsSearchEntry(SettingsPage.SLEEP, stringResource(R.string.setting_onset_latency)),
+    SettingsSearchEntry(SettingsPage.SLEEP, stringResource(R.string.setting_auto_start_sleep)),
+    SettingsSearchEntry(SettingsPage.SLEEP, stringResource(R.string.setting_auto_detect_onset)),
+    SettingsSearchEntry(SettingsPage.SLEEP, stringResource(R.string.setting_auto_correct_wake)),
+    SettingsSearchEntry(SettingsPage.WAKE_AND_DREAMS, stringResource(R.string.setting_ringtone)),
+    SettingsSearchEntry(SettingsPage.WAKE_AND_DREAMS, stringResource(R.string.setting_vibration)),
+    SettingsSearchEntry(SettingsPage.WAKE_AND_DREAMS, stringResource(R.string.setting_math_difficulty)),
+    SettingsSearchEntry(SettingsPage.WAKE_AND_DREAMS, stringResource(R.string.setting_smart_repeat_enabled)),
+    SettingsSearchEntry(SettingsPage.WAKE_AND_DREAMS, stringResource(R.string.setting_cues_enabled)),
+    SettingsSearchEntry(SettingsPage.WAKE_AND_DREAMS, stringResource(R.string.setting_cue_schedule_mode)),
+    SettingsSearchEntry(SettingsPage.PLANNING, stringResource(R.string.daily_plan_settings_title)),
+    SettingsSearchEntry(SettingsPage.PLANNING, stringResource(R.string.daily_plan_buffer)),
+    SettingsSearchEntry(SettingsPage.PLANNING, stringResource(R.string.daily_plan_cutoff)),
+    SettingsSearchEntry(SettingsPage.PLANNING, stringResource(R.string.external_context_city)),
+    SettingsSearchEntry(SettingsPage.PLANNING, stringResource(R.string.external_context_weather_enabled)),
+    SettingsSearchEntry(SettingsPage.AUDIO_AND_VOICE, stringResource(R.string.section_notification_sounds)),
+    SettingsSearchEntry(SettingsPage.AUDIO_AND_VOICE, stringResource(R.string.setting_notification_volume)),
+    SettingsSearchEntry(SettingsPage.AUDIO_AND_VOICE, stringResource(R.string.app_signal_pomodoro)),
+    SettingsSearchEntry(SettingsPage.AUDIO_AND_VOICE, stringResource(R.string.app_signal_reminders)),
+    SettingsSearchEntry(SettingsPage.AUDIO_AND_VOICE, stringResource(R.string.app_signal_calendar)),
+    SettingsSearchEntry(SettingsPage.AUDIO_AND_VOICE, stringResource(R.string.briefing_settings_title)),
+    SettingsSearchEntry(SettingsPage.AUDIO_AND_VOICE, stringResource(R.string.briefing_voice_volume)),
+    SettingsSearchEntry(SettingsPage.AUDIO_AND_VOICE, stringResource(R.string.briefing_voice_rate)),
+    SettingsSearchEntry(SettingsPage.APPEARANCE, stringResource(R.string.setting_app_language)),
+    SettingsSearchEntry(SettingsPage.APPEARANCE, stringResource(R.string.action_choose_theme)),
+    SettingsSearchEntry(SettingsPage.APPEARANCE, stringResource(R.string.action_choose_launcher_icon)),
+    SettingsSearchEntry(SettingsPage.DATA_AND_SYSTEM, stringResource(R.string.action_export_all_data)),
+    SettingsSearchEntry(SettingsPage.DATA_AND_SYSTEM, stringResource(R.string.action_import_all_data)),
+    SettingsSearchEntry(SettingsPage.DATA_AND_SYSTEM, stringResource(R.string.action_system_check))
+)
+
+@Composable
+private fun ExternalContextSection(
+    settings: ExternalContextSettings,
+    city: String,
+    latitude: String,
+    longitude: String,
+    onCityChange: (String) -> Unit,
+    onLatitudeChange: (String) -> Unit,
+    onLongitudeChange: (String) -> Unit,
+    onSaveLocation: () -> Unit,
+    onEnabledChange: (Boolean) -> Unit,
+    onWeatherEnabledChange: (Boolean) -> Unit,
+    onTest: () -> Unit,
+    onClear: () -> Unit
+) {
+    Text(
+        text = stringResource(R.string.external_context_intro),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+
+    OutlinedTextField(
+        value = city,
+        onValueChange = onCityChange,
+        label = { Text(stringResource(R.string.external_context_city)) },
+        supportingText = { Text(stringResource(R.string.external_context_city_hint)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedTextField(
+            value = latitude,
+            onValueChange = onLatitudeChange,
+            label = { Text(stringResource(R.string.external_context_latitude)) },
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+        OutlinedTextField(
+            value = longitude,
+            onValueChange = onLongitudeChange,
+            label = { Text(stringResource(R.string.external_context_longitude)) },
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Text(
+        text = stringResource(R.string.external_context_coordinates_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 6.dp)
+    )
+    OutlinedButton(
+        onClick = onSaveLocation,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+    ) {
+        Text(stringResource(R.string.external_context_save_location))
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+    ) {
+        val location = settings.location
+        val locationLabel = when {
+            location == null -> ""
+            location.cityLabel.isBlank() -> stringResource(R.string.external_context_city_unnamed)
+            else -> location.cityLabel
+        }
+        Text(
+            text = if (location == null) {
+                stringResource(R.string.external_context_not_configured)
+            } else {
+                stringResource(
+                    R.string.external_context_current_configuration,
+                    locationLabel,
+                    location.latitude,
+                    location.longitude,
+                    location.zoneId
+                )
+            },
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(12.dp)
+        )
+    }
+
+    Spacer(modifier = Modifier.height(14.dp))
+    SwitchSetting(
+        label = stringResource(R.string.external_context_enabled),
+        checked = settings.enabled,
+        onCheckedChange = onEnabledChange
+    )
+    Text(
+        text = stringResource(R.string.external_context_enabled_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.height(10.dp))
+    SwitchSetting(
+        label = stringResource(R.string.external_context_weather_enabled),
+        checked = settings.weatherEnabled,
+        onCheckedChange = onWeatherEnabledChange
+    )
+    Text(
+        text = stringResource(R.string.external_context_weather_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.appAccents.calm.container.copy(alpha = 0.62f),
+        contentColor = MaterialTheme.appAccents.calm.onContainer
+    ) {
+        Text(
+            text = stringResource(R.string.external_context_privacy),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(12.dp)
+        )
+    }
+
+    OutlinedButton(
+        onClick = onTest,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+    ) {
+        Text(stringResource(R.string.external_context_test))
+    }
+    TextButton(
+        onClick = onClear,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(stringResource(R.string.external_context_clear))
+    }
 }
 
 @Composable
@@ -675,6 +1126,16 @@ private fun NotificationSoundsSection(
     onVolumeChange: (AppSignalType, Int) -> Unit,
     onPreview: (AppSignalType) -> Unit
 ) {
+    var selectedTypeName by rememberSaveable { mutableStateOf(AppSignalType.POMODORO.name) }
+    val selectedType = AppSignalType.entries.firstOrNull { it.name == selectedTypeName }
+        ?: AppSignalType.POMODORO
+    val selectedSettings = when (selectedType) {
+        AppSignalType.POMODORO -> pomodoro
+        AppSignalType.REMINDER -> reminders
+        AppSignalType.CALENDAR -> calendar
+        AppSignalType.DAILY_PLAN -> dailyPlan
+    }
+
     SectionCard(title = stringResource(R.string.section_notification_sounds)) {
         Text(
             text = stringResource(R.string.app_signals_mixer_hint),
@@ -684,51 +1145,19 @@ private fun NotificationSoundsSection(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        AppSignalControl(
-            type = AppSignalType.POMODORO,
-            settings = pomodoro,
-            legacyVolume = legacyVolume,
-            soundTitle = soundTitle,
-            onChooseSystem = onChooseSystem,
-            onChooseFile = onChooseFile,
-            onSilent = onSilent,
-            onVolumeChange = onVolumeChange,
-            onPreview = onPreview
+        ChoiceChips(
+            label = stringResource(R.string.settings_signal_type),
+            options = AppSignalType.entries,
+            selected = selectedType,
+            optionText = { type -> stringResource(appSignalTitleRes(type)) },
+            onSelect = { selectedTypeName = it.name }
         )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         AppSignalControl(
-            type = AppSignalType.REMINDER,
-            settings = reminders,
-            legacyVolume = legacyVolume,
-            soundTitle = soundTitle,
-            onChooseSystem = onChooseSystem,
-            onChooseFile = onChooseFile,
-            onSilent = onSilent,
-            onVolumeChange = onVolumeChange,
-            onPreview = onPreview
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        AppSignalControl(
-            type = AppSignalType.CALENDAR,
-            settings = calendar,
-            legacyVolume = legacyVolume,
-            soundTitle = soundTitle,
-            onChooseSystem = onChooseSystem,
-            onChooseFile = onChooseFile,
-            onSilent = onSilent,
-            onVolumeChange = onVolumeChange,
-            onPreview = onPreview
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        AppSignalControl(
-            type = AppSignalType.DAILY_PLAN,
-            settings = dailyPlan,
+            type = selectedType,
+            settings = selectedSettings,
             legacyVolume = legacyVolume,
             soundTitle = soundTitle,
             onChooseSystem = onChooseSystem,
@@ -975,66 +1404,6 @@ private fun appSignalDescriptionRes(type: AppSignalType): Int = when (type) {
     AppSignalType.REMINDER -> R.string.app_signal_reminders_description
     AppSignalType.CALENDAR -> R.string.app_signal_calendar_description
     AppSignalType.DAILY_PLAN -> R.string.app_signal_daily_plan_description
-}
-
-private fun toggleCategory(current: String?, category: SettingsCategory): String? {
-    return if (current == category.name) null else category.name
-}
-
-@Composable
-private fun SettingsCategoryCard(
-    category: SettingsCategory,
-    expandedCategory: String?,
-    title: String,
-    summary: String,
-    onToggle: (SettingsCategory) -> Unit,
-    content: @Composable () -> Unit
-) {
-    val expanded = expandedCategory == category.name
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-        tonalElevation = if (expanded) 3.dp else 1.dp
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggle(category) }
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = stringResource(
-                        if (expanded) R.string.settings_collapse else R.string.settings_expand
-                    )
-                )
-            }
-
-            if (expanded) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
-                Column(modifier = Modifier.padding(12.dp)) {
-                    content()
-                }
-            }
-        }
-    }
 }
 
 @Composable

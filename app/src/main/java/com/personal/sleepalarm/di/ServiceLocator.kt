@@ -21,6 +21,11 @@ import com.personal.sleepalarm.data.repository.SleepProfileRepository
 import com.personal.sleepalarm.data.repository.SleepSessionRepository
 import com.personal.sleepalarm.data.repository.TaskRepository
 import com.personal.sleepalarm.data.repository.ActivityRecordRepository
+import com.personal.sleepalarm.data.repository.AdaptiveContextRepository
+import com.personal.sleepalarm.data.repository.DailyCheckInRepository
+import com.personal.sleepalarm.data.repository.EnergyObservationRepository
+import com.personal.sleepalarm.data.repository.RecommendationRepository
+import com.personal.sleepalarm.data.repository.TaskDemandProfileRepository
 import com.personal.sleepalarm.service.audio.BriefingCoordinator
 import com.personal.sleepalarm.service.focus.FocusProtocolManager
 
@@ -109,6 +114,36 @@ class ServiceLocator(
 
     val moodRepository: MoodRepository by lazy {
         MoodRepository(database.moodEntryDao())
+    }
+
+    // Adaptive energy and planning data layer (v28).
+    val dailyCheckInRepository: DailyCheckInRepository by lazy {
+        DailyCheckInRepository(database.dailyCheckInDao())
+    }
+
+    val energyObservationRepository: EnergyObservationRepository by lazy {
+        EnergyObservationRepository(
+            database.energyObservationDao(),
+            database.workEpisodeAssessmentDao()
+        )
+    }
+
+    val taskDemandProfileRepository: TaskDemandProfileRepository by lazy {
+        TaskDemandProfileRepository(
+            database.taskDemandProfileDao(),
+            database.taskDependencyDao()
+        )
+    }
+
+    val adaptiveContextRepository: AdaptiveContextRepository by lazy {
+        AdaptiveContextRepository(
+            database.contextSnapshotDao(),
+            database.externalContextDao()
+        )
+    }
+
+    val recommendationRepository: RecommendationRepository by lazy {
+        RecommendationRepository(database.recommendationDecisionDao())
     }
 
     val reminderScheduler: ReminderScheduler by lazy {

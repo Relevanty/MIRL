@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,8 +40,8 @@ import com.personal.sleepalarm.R
 /**
  * Настройки голосового брифинга.
  *
- * Упрощено: только тумблер включения.
- * Используется системный TTS Android.
+ * Полный редактор системного офлайн-TTS Android. Те же элементы встраиваются
+ * в раздел «Звуки и голос», чтобы настройки не расходились между экранами.
  */
 @Composable
 fun BriefingSettingsScreen(
@@ -50,12 +50,6 @@ fun BriefingSettingsScreen(
     viewModel: BriefingSettingsViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
-    val enabled by viewModel.enabled.collectAsStateWithLifecycle()
-    val voiceSettings by viewModel.voiceSettings.collectAsStateWithLifecycle()
-    val offlineVoices by viewModel.offlineVoices.collectAsStateWithLifecycle()
-    var languageMenu by remember { mutableStateOf(false) }
-    var voiceMenu by remember { mutableStateOf(false) }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -64,7 +58,7 @@ fun BriefingSettingsScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
             }
             Text(
                 text = stringResource(R.string.briefing_settings_title),
@@ -75,111 +69,144 @@ fun BriefingSettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // === Включение ===
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = stringResource(R.string.briefing_enable),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Switch(checked = enabled, onCheckedChange = viewModel::setEnabled)
-        }
+        BriefingSettingsContent(
+            viewModel = viewModel,
+            onOpenDailyPlanAssistant = onOpenDailyPlanAssistant,
+            showDailyPlanAssistantLink = true
+        )
+    }
+}
 
-        Spacer(modifier = Modifier.height(16.dp))
+/**
+ * Reusable briefing controls. The global Settings hub embeds this content so
+ * there is only one implementation of the voice editor and one source of truth.
+ */
+@Composable
+fun BriefingSettingsContent(
+    viewModel: BriefingSettingsViewModel,
+    onOpenDailyPlanAssistant: () -> Unit = {},
+    showDailyPlanAssistantLink: Boolean = false
+) {
+    val enabled by viewModel.enabled.collectAsStateWithLifecycle()
+    val voiceSettings by viewModel.voiceSettings.collectAsStateWithLifecycle()
+    val offlineVoices by viewModel.offlineVoices.collectAsStateWithLifecycle()
+    var languageMenu by remember { mutableStateOf(false) }
+    var voiceMenu by remember { mutableStateOf(false) }
 
+    // === Включение ===
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
         Text(
-            text = stringResource(R.string.briefing_system_tts_info),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = stringResource(R.string.briefing_enable),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f)
         )
+        Switch(checked = enabled, onCheckedChange = viewModel::setEnabled)
+    }
 
-        Spacer(modifier = Modifier.height(20.dp))
+    Spacer(modifier = Modifier.height(12.dp))
 
-        Text("Офлайн-голос", style = MaterialTheme.typography.titleMedium)
-        val languages = offlineVoices.distinctBy { it.languageTag }
-        val selectedLanguage = languages.firstOrNull { it.languageTag == voiceSettings.languageTag }
-            ?: languages.firstOrNull { it.languageTag.substringBefore('-') == voiceSettings.languageTag.substringBefore('-') }
-        Box(modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { languageMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(selectedLanguage?.let { "${it.languageLabel} · ${it.languageTag}" } ?: "Выбрать язык")
-            }
-            DropdownMenu(expanded = languageMenu, onDismissRequest = { languageMenu = false }) {
-                languages.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text("${option.languageLabel} · ${option.languageTag}") },
-                        onClick = {
-                            viewModel.setLanguage(option.languageTag)
-                            languageMenu = false
-                        }
-                    )
-                }
+    Text(
+        text = stringResource(R.string.briefing_system_tts_info),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    if (!enabled) return
+
+    Spacer(modifier = Modifier.height(20.dp))
+
+    Text(stringResource(R.string.briefing_offline_voice), style = MaterialTheme.typography.titleMedium)
+    val languages = offlineVoices.distinctBy { it.languageTag }
+    val selectedLanguage = languages.firstOrNull { it.languageTag == voiceSettings.languageTag }
+        ?: languages.firstOrNull {
+            it.languageTag.substringBefore('-') == voiceSettings.languageTag.substringBefore('-')
+        }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { languageMenu = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                selectedLanguage?.let { "${it.languageLabel} · ${it.languageTag}" }
+                    ?: stringResource(R.string.briefing_choose_language)
+            )
+        }
+        DropdownMenu(expanded = languageMenu, onDismissRequest = { languageMenu = false }) {
+            languages.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text("${option.languageLabel} · ${option.languageTag}") },
+                    onClick = {
+                        viewModel.setLanguage(option.languageTag)
+                        languageMenu = false
+                    }
+                )
             }
         }
-        val voicesForLanguage = offlineVoices.filter {
-            it.languageTag == (selectedLanguage?.languageTag ?: voiceSettings.languageTag)
+    }
+    val voicesForLanguage = offlineVoices.filter {
+        it.languageTag == (selectedLanguage?.languageTag ?: voiceSettings.languageTag)
+    }
+    val selectedVoice = voicesForLanguage.firstOrNull { it.name == voiceSettings.voiceName }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { voiceMenu = true },
+            enabled = voicesForLanguage.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(selectedVoice?.voiceLabel ?: stringResource(R.string.briefing_voice_automatic))
         }
-        val selectedVoice = voicesForLanguage.firstOrNull { it.name == voiceSettings.voiceName }
-        Box(modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = { voiceMenu = true },
-                enabled = voicesForLanguage.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(selectedVoice?.voiceLabel ?: "Автоматически")
-            }
-            DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
-                voicesForLanguage.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option.voiceLabel) },
-                        onClick = {
-                            viewModel.setVoice(option.name, option.languageTag)
-                            voiceMenu = false
-                        }
-                    )
-                }
+        DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
+            voicesForLanguage.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.voiceLabel) },
+                    onClick = {
+                        viewModel.setVoice(option.name, option.languageTag)
+                        voiceMenu = false
+                    }
+                )
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(12.dp))
+    Spacer(modifier = Modifier.height(12.dp))
 
-        VoiceSlider(
-            label = stringResource(R.string.briefing_voice_volume),
-            value = voiceSettings.volumePercent,
-            range = 0..100,
-            onChange = viewModel::setVolume
-        )
-        VoiceSlider(
-            label = stringResource(R.string.briefing_voice_rate),
-            value = voiceSettings.ratePercent,
-            range = 50..150,
-            onChange = viewModel::setRate
-        )
-        VoiceSlider(
-            label = stringResource(R.string.briefing_voice_pitch),
-            value = voiceSettings.pitchPercent,
-            range = 50..150,
-            onChange = viewModel::setPitch
-        )
-        VoiceSlider(
-            label = "Краткость",
-            value = voiceSettings.brevityPercent,
-            range = 0..100,
-            onChange = viewModel::setBrevity
-        )
+    VoiceSlider(
+        label = stringResource(R.string.briefing_voice_volume),
+        value = voiceSettings.volumePercent,
+        range = 0..100,
+        onChange = viewModel::setVolume
+    )
+    VoiceSlider(
+        label = stringResource(R.string.briefing_voice_rate),
+        value = voiceSettings.ratePercent,
+        range = 50..150,
+        onChange = viewModel::setRate
+    )
+    VoiceSlider(
+        label = stringResource(R.string.briefing_voice_pitch),
+        value = voiceSettings.pitchPercent,
+        range = 50..150,
+        onChange = viewModel::setPitch
+    )
+    VoiceSlider(
+        label = stringResource(R.string.briefing_voice_brevity),
+        value = voiceSettings.brevityPercent,
+        range = 0..100,
+        onChange = viewModel::setBrevity
+    )
 
-        Spacer(modifier = Modifier.height(12.dp))
-        Text("Сценарии", style = MaterialTheme.typography.titleMedium)
-        VoiceToggle("Утро и подготовка ко сну", voiceSettings.morningEnabled, viewModel::setMorning)
-        VoiceToggle("Этапы фокуса", voiceSettings.focusEnabled, viewModel::setFocus)
-        VoiceToggle("Напоминания", voiceSettings.reminderEnabled, viewModel::setReminder)
-        VoiceToggle("Ассистент", voiceSettings.assistantEnabled, viewModel::setAssistant)
-        VoiceToggle("Произносить названия задач и событий", voiceSettings.personalDataEnabled, viewModel::setPersonalData)
-        VoiceToggle("Только в наушниках", voiceSettings.headphonesOnly, viewModel::setHeadphonesOnly)
+    Spacer(modifier = Modifier.height(12.dp))
+    Text(stringResource(R.string.briefing_scenarios), style = MaterialTheme.typography.titleMedium)
+    VoiceToggle(stringResource(R.string.briefing_scenario_morning), voiceSettings.morningEnabled, viewModel::setMorning)
+    VoiceToggle(stringResource(R.string.briefing_scenario_focus), voiceSettings.focusEnabled, viewModel::setFocus)
+    VoiceToggle(stringResource(R.string.briefing_scenario_reminders), voiceSettings.reminderEnabled, viewModel::setReminder)
+    VoiceToggle(stringResource(R.string.briefing_scenario_assistant), voiceSettings.assistantEnabled, viewModel::setAssistant)
+    VoiceToggle(stringResource(R.string.briefing_scenario_personal_data), voiceSettings.personalDataEnabled, viewModel::setPersonalData)
+    VoiceToggle(stringResource(R.string.briefing_headphones_only), voiceSettings.headphonesOnly, viewModel::setHeadphonesOnly)
 
+    if (showDailyPlanAssistantLink) {
         Spacer(modifier = Modifier.height(12.dp))
         OutlinedButton(
             onClick = onOpenDailyPlanAssistant,
@@ -192,16 +219,16 @@ fun BriefingSettingsScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
-        OutlinedButton(onClick = viewModel::preview, modifier = Modifier.fillMaxWidth()) {
-            Text("Прослушать пример")
-        }
-        Text(
-            "Используются только установленные офлайн-голоса Android. Если подходящего голоса нет, MIRL оставит текст на экране.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
+
+    OutlinedButton(onClick = viewModel::preview, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.briefing_preview_voice))
+    }
+    Text(
+        stringResource(R.string.briefing_offline_voice_info),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable

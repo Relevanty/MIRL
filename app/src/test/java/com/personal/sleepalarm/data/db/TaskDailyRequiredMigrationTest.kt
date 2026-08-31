@@ -8,7 +8,7 @@ import org.junit.Test
 class TaskDailyRequiredMigrationTest {
     @Test
     fun databaseIncludesDailyTaskMigrationAndCurrentVersion() {
-        assertEquals(27, APP_DATABASE_VERSION)
+        assertEquals(28, APP_DATABASE_VERSION)
         assertEquals(23, AppDatabase.MIGRATION_23_24.startVersion)
         assertEquals(24, AppDatabase.MIGRATION_23_24.endVersion)
     }

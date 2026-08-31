@@ -22,12 +22,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
@@ -94,7 +94,7 @@ import java.time.ZoneId
 fun TasksScreen(
     viewModel: TasksViewModel = viewModel(),
     onAddReminder: (taskId: Int) -> Unit = {},
-    onOpenCalendar: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
     onStartFocus: (TaskEntity) -> Unit = {},
     onOpenLibraryItem: (Int) -> Unit = {},
     openTaskId: Int? = null,
@@ -110,6 +110,8 @@ fun TasksScreen(
     val projects by viewModel.projects.collectAsStateWithLifecycle()
     val libraryItems by viewModel.libraryItems.collectAsStateWithLifecycle()
     val libraryLinks by viewModel.libraryLinks.collectAsStateWithLifecycle()
+    val demandProfiles by viewModel.demandProfiles.collectAsStateWithLifecycle()
+    val taskDependencies by viewModel.taskDependencies.collectAsStateWithLifecycle()
     var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
     var detailTaskId by remember { mutableStateOf<Int?>(null) }
     var showCompletedBoard by remember { mutableStateOf(false) }
@@ -173,11 +175,16 @@ fun TasksScreen(
     } else if (editingTask != null) {
         TaskEditorScreen(
             initialTask = editingTask,
+            initialDemandProfile = demandProfiles.firstOrNull { it.taskId == editingTask?.id },
+            availableDependencyTasks = state.generalTasks,
+            initialDependencyIds = taskDependencies
+                .filter { it.taskId == editingTask?.id }
+                .mapTo(mutableSetOf()) { it.dependsOnTaskId },
             onBack = {
                 editingTask = null
             },
-            onSave = { task ->
-                viewModel.saveTask(task)
+            onSave = { task, profile, dependencyIds ->
+                viewModel.saveTask(task, profile, dependencyIds)
                 editingTask = null
             },
             onImportImage = viewModel::importTaskImage,
@@ -231,7 +238,7 @@ fun TasksScreen(
                     activeCount = state.activeMatrixTasks.size,
                     projectCount = projects.count { !it.isArchived },
                     completedCount = state.completedMatrixTasks.size,
-                    onOpenCalendar = onOpenCalendar,
+                    onOpenLibrary = onOpenLibrary,
                     onOpenBoard = { showCompletedBoard = true },
                     onOpenProjects = { showProjects = true }
                 )
@@ -336,7 +343,7 @@ private fun TaskMatrixHeader(
     activeCount: Int,
     projectCount: Int,
     completedCount: Int,
-    onOpenCalendar: () -> Unit,
+    onOpenLibrary: () -> Unit,
     onOpenBoard: () -> Unit,
     onOpenProjects: () -> Unit
 ) {
@@ -384,12 +391,29 @@ private fun TaskMatrixHeader(
                     }
                 }
             }
-            IconButton(onClick = onOpenCalendar) {
-                Icon(
-                    Icons.Default.CalendarMonth,
-                    stringResource(R.string.task_open_calendar),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Surface(
+                onClick = onOpenLibrary,
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.MenuBook,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.appAccents.study.color
+                    )
+                    Text(
+                        text = stringResource(R.string.misc_library),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
             }
             Surface(
                 onClick = onOpenBoard,

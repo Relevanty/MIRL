@@ -7,7 +7,7 @@ import com.personal.sleepalarm.domain.model.ordinaryTasks
 import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.domain.model.effectiveWorkBudgetMinutes
 import com.personal.sleepalarm.domain.model.effectiveSleepStartMillis
-import com.personal.sleepalarm.domain.model.NextActionRanker
+import com.personal.sleepalarm.data.repository.AdaptiveRecommendationRepository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -28,6 +28,7 @@ class PersonalAssistant(
 
     private val dateFormat = DateTimeFormatter.ISO_LOCAL_DATE
     private val zone = ZoneId.systemDefault()
+    private val adaptiveRecommendations = AdaptiveRecommendationRepository(database)
 
     /** Возвращает текстовый ответ на вопрос. */
     suspend fun answer(question: String): String {
@@ -84,7 +85,7 @@ class PersonalAssistant(
 
     private suspend fun tasksAnswer(): String {
         val tasks = database.taskDao().getAll()
-        val pending = NextActionRanker.rank(tasks)
+        val pending = adaptiveRecommendations.rank(tasks).orderedTasks
         return if (pending.isEmpty()) {
             context.getString(R.string.assistant_no_tasks)
         } else {

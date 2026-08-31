@@ -60,6 +60,42 @@ enum class TimerMode {
     BREAK_PAUSED
 }
 
+internal data class PreparedTaskFocusDuration(
+    val taskId: Int,
+    val minutes: Int,
+    val fallbackMinutesBeforePreparation: Int = minutes
+)
+
+internal fun resolvePomodoroSuggestedFocusMinutes(
+    selectedTaskId: Int?,
+    prepared: PreparedTaskFocusDuration?,
+    taskFocusMinutes: Int?,
+    previousFocusMinutes: Int?,
+    fallbackFocusMinutes: Int
+): Int = prepared
+    ?.takeIf { it.taskId == selectedTaskId }
+    ?.minutes
+    ?: taskFocusMinutes
+    ?: previousFocusMinutes
+    ?: fallbackFocusMinutes
+
+internal fun resolvePomodoroBoutMinutes(
+    taskId: Int?,
+    prepared: PreparedTaskFocusDuration?,
+    defaultBoutMinutes: Int?
+): Int? = prepared
+    ?.takeIf { it.taskId == taskId }
+    ?.minutes
+    ?: defaultBoutMinutes
+
+internal fun resolveFallbackAfterPreparedFocus(
+    currentFocusMinutes: Int,
+    prepared: PreparedTaskFocusDuration?
+): Int = prepared
+    ?.takeIf { it.minutes == currentFocusMinutes }
+    ?.fallbackMinutesBeforePreparation
+    ?: currentFocusMinutes
+
 private data class ActiveFocus(
     val type: FocusActivityType,
     val itemId: Int,
@@ -132,6 +168,9 @@ class PomodoroViewModel(
 
     private val _selectedItemId = MutableStateFlow<Int?>(null)
     val selectedItemId: StateFlow<Int?> = _selectedItemId
+    private val _preparedTaskFocusDuration = MutableStateFlow<PreparedTaskFocusDuration?>(null)
+    internal val preparedTaskFocusDuration: StateFlow<PreparedTaskFocusDuration?> =
+        _preparedTaskFocusDuration
     private val selectedIds = mutableMapOf<FocusActivityType, Int?>()
     private var activeFocus: ActiveFocus? = null
 
@@ -219,6 +258,7 @@ class PomodoroViewModel(
 
     fun selectActivityType(type: FocusActivityType) {
         if (_mode.value != TimerMode.IDLE) return
+        clearPreparedTaskFocusDuration()
         selectedIds[_activityType.value] = _selectedItemId.value
         _activityType.value = type
         _selectedItemId.value = selectedIds[type]
@@ -226,22 +266,49 @@ class PomodoroViewModel(
 
     fun selectItem(id: Int) {
         if (_mode.value != TimerMode.IDLE) return
+        clearPreparedTaskFocusDuration()
         selectedIds[_activityType.value] = id
         _selectedItemId.value = id
     }
 
     /** Подготавливает Pomodoro из карточки задачи в её собственной сфере. */
-    fun prepareWorkTask(task: TaskEntity): Boolean {
+    fun prepareWorkTask(task: TaskEntity, maximumFocusMinutes: Int? = null): Boolean {
         if (_mode.value != TimerMode.IDLE || task.isDone) return false
-        val nextFocusMinutes = task.nextFocusDurationMinutes()
+        val taskFocusMinutes = task.nextFocusDurationMinutes()
+        val nextFocusMinutes = maximumFocusMinutes
+            ?.takeIf { it > 0 }
+            ?.let { minOf(taskFocusMinutes, it) }
+            ?: taskFocusMinutes
         if (nextFocusMinutes <= 0) return false
         selectActivityType(task.focusActivityType())
         selectItem(taskFocusItemId(task.id))
+        val fallbackMinutesBeforePreparation = (_focusDuration.value / MINUTE_MS).toInt()
         // A final task cycle may legitimately be shorter than the generic
         // picker minimum, so do not route it through setFocusDuration().
         _focusDuration.value = nextFocusMinutes * MINUTE_MS
         _remaining.value = _focusDuration.value
+        _preparedTaskFocusDuration.value = PreparedTaskFocusDuration(
+            taskId = task.id,
+            minutes = nextFocusMinutes,
+            fallbackMinutesBeforePreparation = fallbackMinutesBeforePreparation
+        )
         return true
+    }
+
+    internal fun clearPreparedTaskFocusDuration() {
+        val prepared = _preparedTaskFocusDuration.value
+        _preparedTaskFocusDuration.value = null
+        val currentFocusMinutes = (_focusDuration.value / MINUTE_MS).toInt()
+        val restoredFocusMinutes = resolveFallbackAfterPreparedFocus(
+            currentFocusMinutes = currentFocusMinutes,
+            prepared = prepared
+        )
+        if (restoredFocusMinutes != currentFocusMinutes) {
+            _focusDuration.value = restoredFocusMinutes * MINUTE_MS
+            if (_mode.value == TimerMode.IDLE || _mode.value == TimerMode.FOCUS_PAUSED) {
+                _remaining.value = _focusDuration.value
+            }
+        }
     }
 
     fun setResetAfterBreak(value: Boolean) {
@@ -490,6 +557,7 @@ class PomodoroViewModel(
     }
 
     fun setFocusDuration(minutes: Long) {
+        clearPreparedTaskFocusDuration()
         _focusDuration.value = minutes.coerceIn(MIN_FOCUS_MINUTES, MAX_FOCUS_MINUTES) * MINUTE_MS
         if (_mode.value == TimerMode.IDLE || _mode.value == TimerMode.FOCUS_PAUSED) {
             _remaining.value = _focusDuration.value

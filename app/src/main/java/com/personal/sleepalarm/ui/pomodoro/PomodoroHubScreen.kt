@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,7 +36,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.DatePicker
@@ -53,10 +56,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -96,7 +97,6 @@ import com.personal.sleepalarm.ui.focusprotocol.FocusSoundDraft
 import com.personal.sleepalarm.ui.focusprotocol.formatCompactDuration
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import com.personal.sleepalarm.ui.activity.ManualActivitySheet
-import com.personal.sleepalarm.ui.components.DailyFocusProgressCard
 import com.personal.sleepalarm.ui.focusaudio.FocusSoundLayer as FocusSoundUiLayer
 import com.personal.sleepalarm.ui.focusaudio.FocusSoundscapePickerSheet
 import com.personal.sleepalarm.ui.focusaudio.FocusSoundscapeUiState
@@ -142,6 +142,7 @@ fun PomodoroScreen(
     val activityType by viewModel.activityType.collectAsStateWithLifecycle()
     val selectedId by viewModel.selectedItemId.collectAsStateWithLifecycle()
     val fallbackFocusDuration by viewModel.focusDuration.collectAsStateWithLifecycle()
+    val preparedTaskFocusDuration by viewModel.preparedTaskFocusDuration.collectAsStateWithLifecycle()
     val fallbackBreakDuration by viewModel.breakDuration.collectAsStateWithLifecycle()
     val focusSoundSettings by protocolViewModel.focusSoundSettings.collectAsStateWithLifecycle()
     val focusSoundPlayback by protocolViewModel.soundscapePlayback.collectAsStateWithLifecycle()
@@ -533,7 +534,11 @@ fun PomodoroScreen(
             color = item.color,
             maximumFocusMinutes = maximumFocusMinutes,
             dailyProgress = daily,
-            boutMinutes = task?.estimatedMinutes,
+            boutMinutes = resolvePomodoroBoutMinutes(
+                taskId = task?.id,
+                prepared = preparedTaskFocusDuration,
+                defaultBoutMinutes = task?.estimatedMinutes
+            ),
             isDailyRequired = task?.isDailyRequired == true
         )
     }
@@ -586,9 +591,13 @@ fun PomodoroScreen(
     val previousForSelected = latestProtocol?.takeIf {
         it.activityType == activityType && it.itemId == selectedItem?.id
     }
-    val suggestedFocusMinutes = selectedTask?.nextFocusDurationMinutes()
-        ?: previousForSelected?.focusDurationMinutes
-        ?: (fallbackFocusDuration / 60_000L).toInt()
+    val suggestedFocusMinutes = resolvePomodoroSuggestedFocusMinutes(
+        selectedTaskId = selectedTask?.id,
+        prepared = preparedTaskFocusDuration,
+        taskFocusMinutes = selectedTask?.nextFocusDurationMinutes(),
+        previousFocusMinutes = previousForSelected?.focusDurationMinutes,
+        fallbackFocusMinutes = (fallbackFocusDuration / 60_000L).toInt()
+    )
     val (dayStart, dayEnd) = currentDayRange
     val totalsByItem = remember(currentDaySessions, activityType, currentDayRange) {
         currentDaySessions.asSequence()
@@ -639,25 +648,38 @@ fun PomodoroScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp)
-            .padding(top = 30.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(11.dp)
+            .padding(top = 18.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = stringResource(R.string.pomodoro_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = stringResource(R.string.focus_hub_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Text(
+                text = stringResource(R.string.pomodoro_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = { showManualEntry = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.focus_manual_entry),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+                TextButton(
+                    onClick = { showInsights = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.focus_history_button),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
         }
 
@@ -665,43 +687,6 @@ fun PomodoroScreen(
             selected = activityType,
             onSelected = viewModel::selectActivityType
         )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            HubQuickAction(
-                title = "Добавить",
-                subtitle = "время",
-                onClick = { showManualEntry = true },
-                containerColor = MaterialTheme.appAccents.other.container,
-                modifier = Modifier.weight(1f)
-            )
-            HubQuickAction(
-                title = "История",
-                subtitle = "$cyclesToday циклов",
-                onClick = { showInsights = true },
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = categoryTitle(activityType),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = stringResource(R.string.focus_hub_hold_to_edit),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
 
         ActivityCarousel(
             items = activityItems,
@@ -720,6 +705,7 @@ fun PomodoroScreen(
         FocusLaunchCard(
             modifier = Modifier.weight(1f),
             item = selectedItem,
+            task = selectedTask,
             outcome = previousForSelected?.outcome.orEmpty(),
             focusMinutes = suggestedFocusMinutes,
             recoveryMinutes = previousForSelected?.recoveryDurationMinutes
@@ -727,7 +713,6 @@ fun PomodoroScreen(
             cyclesToday = cyclesToday,
             totalToday = totalToday,
             dailyProgress = selectedDailyProgress,
-            boutMinutes = selectedTask?.estimatedMinutes ?: suggestedFocusMinutes,
             dailyRequired = selectedTask?.isDailyRequired == true,
             onStart = {
                 focusSoundTaskId = selectedItem?.taskId
@@ -799,6 +784,7 @@ fun PomodoroScreen(
                     onResult = { started ->
                         focusStartInProgress = false
                         if (started) {
+                            viewModel.clearPreparedTaskFocusDuration()
                             showSetup = false
                         } else {
                             focusStartRejected = true
@@ -808,6 +794,7 @@ fun PomodoroScreen(
             },
             onDismiss = {
                 if (!focusStartInProgress) {
+                    viewModel.clearPreparedTaskFocusDuration()
                     protocolViewModel.cancelSoundDraftLoad()
                     protocolViewModel.stopSoundscapePreview()
                     focusSoundDraftLoading = false
@@ -917,36 +904,6 @@ fun PomodoroScreen(
     }
 }
 
-@Composable
-private fun HubQuickAction(
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    containerColor: Color,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor.copy(alpha = 0.72f))
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ManualFocusDialog(
@@ -1029,12 +986,36 @@ private fun ActivityTypeStrip(
     selected: FocusActivityType,
     onSelected: (FocusActivityType) -> Unit
 ) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(FocusActivityType.entries) { type ->
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FocusActivityType.entries.forEach { type ->
+            val tone = when (type) {
+                FocusActivityType.STUDY -> MaterialTheme.appAccents.study
+                FocusActivityType.WORK -> MaterialTheme.appAccents.work
+                FocusActivityType.OTHER -> MaterialTheme.appAccents.other
+            }
             FilterChip(
                 selected = selected == type,
                 onClick = { onSelected(type) },
-                label = { Text(activityTypeTitle(type)) }
+                label = {
+                    Text(
+                        text = activityTypeTitle(type),
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(40.dp),
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = tone.container,
+                    selectedLabelColor = tone.onContainer
+                )
             )
         }
     }
@@ -1054,30 +1035,30 @@ private fun ActivityCarousel(
         items(items, key = { it.id }) { item ->
             val selected = item.id == selectedId
             val itemColor = pomodoroColorForToken(item.color)
-            val width by animateDpAsState(if (selected) 148.dp else 132.dp, label = "subjectWidth")
+            val width by animateDpAsState(if (selected) 172.dp else 148.dp, label = "subjectWidth")
             val background by animateColorAsState(
-                if (selected) itemColor.copy(alpha = 0.24f)
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+                if (selected) itemColor.copy(alpha = 0.18f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                 label = "subjectColor"
             )
             Column(
                 modifier = Modifier
                     .width(width)
-                    .height(92.dp)
-                    .clip(RoundedCornerShape(22.dp))
+                    .height(68.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(background)
                     .then(
                         if (selected) Modifier.border(
-                            1.5.dp,
+                            1.dp,
                             itemColor,
-                            RoundedCornerShape(22.dp)
+                            RoundedCornerShape(14.dp)
                         ) else Modifier
                     )
                     .combinedClickable(
                         onClick = { onSelect(item) },
                         onLongClick = { onEdit(item) }
                     )
-                    .padding(13.dp),
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
@@ -1092,10 +1073,9 @@ private fun ActivityCarousel(
                             .background(itemColor)
                     )
                     Text(
-                        text = if (item.taskId != null) stringResource(R.string.focus_hub_task_badge)
-                        else if (selected) "ฅ" else "·",
+                        text = formatCompactDuration(totals[item.id] ?: 0L),
                         color = itemColor,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Medium,
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
@@ -1106,33 +1086,28 @@ private fun ActivityCarousel(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                 )
-                Text(
-                    text = formatCompactDuration(totals[item.id] ?: 0L),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
         item {
             Box(
                 modifier = Modifier
-                    .width(72.dp)
-                    .height(92.dp)
-                    .clip(RoundedCornerShape(22.dp))
+                    .width(60.dp)
+                    .height(68.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .border(
                         1.dp,
                         MaterialTheme.colorScheme.outlineVariant,
-                        RoundedCornerShape(22.dp)
+                        RoundedCornerShape(14.dp)
                     )
                     .clickable(onClick = onAdd),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "+\nฅ",
+                    text = "+",
                     textAlign = TextAlign.Center,
-                    fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.appAccents.focus.color,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.headlineSmall
                 )
             }
         }
@@ -1143,21 +1118,37 @@ private fun ActivityCarousel(
 private fun FocusLaunchCard(
     modifier: Modifier = Modifier,
     item: HubActivityItem?,
+    task: TaskEntity?,
     outcome: String,
     focusMinutes: Int,
     recoveryMinutes: Int,
     cyclesToday: Int,
     totalToday: Long,
     dailyProgress: DailyTaskFocusProgress?,
-    boutMinutes: Int,
     dailyRequired: Boolean,
     onStart: () -> Unit,
     onOpenTask: (() -> Unit)? = null
 ) {
     val readyHint = stringResource(R.string.focus_hub_ready_hint)
+    val nextAction = task?.nextAction?.trim().orEmpty()
+        .ifBlank { outcome.trim() }
+        .ifBlank {
+            if (item == null) readyHint
+            else stringResource(R.string.focus_hub_action_fallback)
+        }
+    val description = task?.description?.trim().orEmpty()
+    val benefit = task?.whyImportant?.trim().orEmpty()
+        .ifBlank { task?.expectedResult?.trim().orEmpty() }
+        .ifBlank {
+            if (item == null) ""
+            else stringResource(R.string.focus_hub_benefit_fallback, focusMinutes)
+        }
+    val doneDefinition = task?.definitionOfDone?.trim().orEmpty().ifBlank {
+        if (item == null) "" else stringResource(R.string.focus_hub_done_fallback)
+    }
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.appAccents.focus.container,
             contentColor = MaterialTheme.appAccents.focus.onContainer
@@ -1166,45 +1157,98 @@ private fun FocusLaunchCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item?.name ?: stringResource(R.string.focus_hub_choose_item),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = if (outcome.isBlank()) readyHint else outcome,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                Text(
+                    text = item?.name ?: stringResource(R.string.focus_hub_choose_item),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                onOpenTask?.let { openTask ->
+                    TextButton(
+                        onClick = openTask,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.focus_hub_open_task),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
                 }
             }
 
-            // The animated companion belongs to an active focus protocol. The
-            // decorative idle copy used to be squeezed underneath these controls.
-            Spacer(modifier = Modifier.weight(1f))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                InfoPill(stringResource(R.string.focus_block_focus_pill, focusMinutes))
-                InfoPill(stringResource(R.string.focus_block_rest_pill, recoveryMinutes))
+            if (description.isNotBlank()) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
+            ) {
+                FocusBriefItem(
+                    label = stringResource(R.string.focus_hub_action_now),
+                    text = nextAction,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (benefit.isNotBlank() || doneDefinition.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (benefit.isNotBlank()) {
+                            FocusBriefItem(
+                                label = stringResource(R.string.focus_hub_benefit),
+                                text = benefit,
+                                maxLines = 3,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (doneDefinition.isNotBlank()) {
+                            FocusBriefItem(
+                                label = stringResource(R.string.focus_hub_done_when),
+                                text = doneDefinition,
+                                maxLines = 3,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = String.format(Locale.getDefault(), "%02d:00", focusMinutes),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.appAccents.focus.color,
+                fontWeight = FontWeight.Medium
+            )
+
+            FocusMetricsRow(
+                focusMinutes = focusMinutes,
+                recoveryMinutes = recoveryMinutes,
+                cyclesToday = cyclesToday,
+                totalToday = totalToday
+            )
+
             dailyProgress?.let { progress ->
-                DailyFocusProgressCard(
+                CompactDailyFocusProgress(
                     progress = progress,
-                    boutElapsedMillis = 0L,
-                    boutMinutes = boutMinutes,
                     requiredToday = dailyRequired
                 )
             }
@@ -1216,25 +1260,38 @@ private fun FocusLaunchCard(
             ) {
                 Text(stringResource(R.string.focus_block_begin))
             }
-
-            onOpenTask?.let { openTask ->
-                TextButton(onClick = openTask, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.focus_hub_open_task))
-                }
-            }
-
-            Text(
-                text = stringResource(
-                    R.string.focus_hub_today_summary,
-                    cyclesToday,
-                    formatCompactDuration(totalToday)
-                ),
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
+    }
+}
+
+@Composable
+private fun FocusBriefItem(
+    label: String,
+    text: String,
+    maxLines: Int,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.52f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.appAccents.focus.color,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1258,15 +1315,117 @@ private fun currentBoutElapsedMillis(
 }
 
 @Composable
-private fun InfoPill(text: String) {
-    Text(
-        text = text,
+private fun FocusMetricsRow(
+    focusMinutes: Int,
+    recoveryMinutes: Int,
+    cyclesToday: Int,
+    totalToday: Long
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FocusMetric(
+            value = stringResource(R.string.focus_protocol_minutes_value, focusMinutes),
+            label = stringResource(R.string.focus_protocol_phase_focus),
+            modifier = Modifier.weight(1f)
+        )
+        FocusMetricDivider()
+        FocusMetric(
+            value = stringResource(R.string.focus_protocol_minutes_value, recoveryMinutes),
+            label = stringResource(R.string.focus_protocol_phase_recovery),
+            modifier = Modifier.weight(1f)
+        )
+        FocusMetricDivider()
+        FocusMetric(
+            value = formatCompactDuration(totalToday),
+            label = "$cyclesToday ${stringResource(R.string.focus_block_cycles_label)}",
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun FocusMetric(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun FocusMetricDivider() {
+    Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-        style = MaterialTheme.typography.labelMedium
+            .width(1.dp)
+            .height(34.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant)
     )
+}
+
+@Composable
+private fun CompactDailyFocusProgress(
+    progress: DailyTaskFocusProgress,
+    requiredToday: Boolean
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.daily_focus_today_title),
+                    style = MaterialTheme.typography.labelMedium
+                )
+                if (requiredToday) {
+                    Text(
+                        text = stringResource(R.string.daily_focus_required_badge),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.appAccents.warning.color,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Text(
+                text = stringResource(
+                    R.string.daily_focus_today_value,
+                    progress.spentMinutes,
+                    progress.targetMinutes
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        LinearProgressIndicator(
+            progress = { progress.progressFraction },
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.appAccents.work.color,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
 }
 
 @Composable
@@ -1374,15 +1533,6 @@ private fun ActivityEditorDialog(
         }
     )
 }
-
-@Composable
-private fun categoryTitle(type: FocusActivityType): String = stringResource(
-    when (type) {
-        FocusActivityType.STUDY -> R.string.pomodoro_study_targets
-        FocusActivityType.WORK -> R.string.pomodoro_tasks
-        FocusActivityType.OTHER -> R.string.pomodoro_other_targets
-    }
-)
 
 @Composable
 private fun activityTypeTitle(type: FocusActivityType): String = stringResource(

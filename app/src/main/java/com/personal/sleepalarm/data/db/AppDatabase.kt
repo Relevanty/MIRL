@@ -32,6 +32,14 @@ import com.personal.sleepalarm.data.db.dao.ProjectDao
 import com.personal.sleepalarm.data.db.dao.TaskAttachmentDao
 import com.personal.sleepalarm.data.db.dao.TaskLibraryLinkDao
 import com.personal.sleepalarm.data.db.dao.TaskSubtaskDao
+import com.personal.sleepalarm.data.db.dao.ContextSnapshotDao
+import com.personal.sleepalarm.data.db.dao.DailyCheckInDao
+import com.personal.sleepalarm.data.db.dao.EnergyObservationDao
+import com.personal.sleepalarm.data.db.dao.ExternalContextDao
+import com.personal.sleepalarm.data.db.dao.RecommendationDecisionDao
+import com.personal.sleepalarm.data.db.dao.TaskDemandProfileDao
+import com.personal.sleepalarm.data.db.dao.TaskDependencyDao
+import com.personal.sleepalarm.data.db.dao.WorkEpisodeAssessmentDao
 import com.personal.sleepalarm.data.db.entity.AlarmProfileEntity
 import com.personal.sleepalarm.data.db.entity.CueEventEntity
 import com.personal.sleepalarm.data.db.entity.DDayEntity
@@ -63,8 +71,16 @@ import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskAttachmentEntity
 import com.personal.sleepalarm.data.db.entity.TaskLibraryLinkEntity
 import com.personal.sleepalarm.data.db.entity.TaskSubtaskEntity
+import com.personal.sleepalarm.data.db.entity.ContextSnapshotEntity
+import com.personal.sleepalarm.data.db.entity.DailyCheckInEntity
+import com.personal.sleepalarm.data.db.entity.EnergyObservationEntity
+import com.personal.sleepalarm.data.db.entity.ExternalContextEntity
+import com.personal.sleepalarm.data.db.entity.RecommendationDecisionEntity
+import com.personal.sleepalarm.data.db.entity.TaskDemandProfileEntity
+import com.personal.sleepalarm.data.db.entity.TaskDependencyEntity
+import com.personal.sleepalarm.data.db.entity.WorkEpisodeAssessmentEntity
 
-internal const val APP_DATABASE_VERSION = 27
+internal const val APP_DATABASE_VERSION = 28
 
 /**
  * Главная база приложения.
@@ -127,11 +143,21 @@ internal const val APP_DATABASE_VERSION = 27
         EnglishWordDirectionalProgressEntity::class,
         EnglishStudySetEntity::class,
         EnglishStudyCardEntity::class,
-        EnglishCardProgressEntity::class
+        EnglishCardProgressEntity::class,
+
+        // Adaptive energy and planning history (v28).
+        DailyCheckInEntity::class,
+        EnergyObservationEntity::class,
+        TaskDemandProfileEntity::class,
+        TaskDependencyEntity::class,
+        WorkEpisodeAssessmentEntity::class,
+        ExternalContextEntity::class,
+        ContextSnapshotEntity::class,
+        RecommendationDecisionEntity::class
 
     ],
     version = APP_DATABASE_VERSION,
-    exportSchema = false
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -166,6 +192,16 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun diaryDao(): DiaryDao
     abstract fun englishStudyDao(): EnglishStudyDao
+
+    // Adaptive energy and planning (v28).
+    abstract fun dailyCheckInDao(): DailyCheckInDao
+    abstract fun energyObservationDao(): EnergyObservationDao
+    abstract fun taskDemandProfileDao(): TaskDemandProfileDao
+    abstract fun taskDependencyDao(): TaskDependencyDao
+    abstract fun workEpisodeAssessmentDao(): WorkEpisodeAssessmentDao
+    abstract fun externalContextDao(): ExternalContextDao
+    abstract fun contextSnapshotDao(): ContextSnapshotDao
+    abstract fun recommendationDecisionDao(): RecommendationDecisionDao
 
     companion object {
         private const val DATABASE_NAME = "sleep-alarm.db"
@@ -213,7 +249,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_23_24,
                     MIGRATION_24_25,
                     MIGRATION_25_26,
-                    MIGRATION_26_27
+                    MIGRATION_26_27,
+                    MIGRATION_27_28
                 )
                 .build()
         }
@@ -1003,6 +1040,270 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeSecondaryId TEXT")
                 db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeSecondaryVolume INTEGER NOT NULL DEFAULT 20")
                 db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapePlayDuringRecovery INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `daily_check_ins` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `localDate` TEXT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        `zoneId` TEXT NOT NULL,
+                        `energy` INTEGER,
+                        `mood` INTEGER,
+                        `clarity` INTEGER,
+                        `focus` INTEGER,
+                        `social` INTEGER,
+                        `physical` INTEGER,
+                        `stress` INTEGER,
+                        `source` TEXT NOT NULL,
+                        `unusualDayFlags` TEXT NOT NULL,
+                        `unusualDayNote` TEXT NOT NULL,
+                        `excludedFromLearning` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_daily_check_ins_localDate` ON `daily_check_ins` (`localDate`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_daily_check_ins_timestamp` ON `daily_check_ins` (`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_daily_check_ins_localDate_timestamp` ON `daily_check_ins` (`localDate`, `timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_daily_check_ins_source` ON `daily_check_ins` (`source`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `energy_observations` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        `absoluteEnergy` INTEGER,
+                        `relativeDelta` INTEGER,
+                        `context` TEXT NOT NULL,
+                        `taskId` INTEGER,
+                        `activityRecordId` INTEGER,
+                        `focusProtocolSessionId` INTEGER,
+                        `source` TEXT NOT NULL,
+                        `quality` TEXT NOT NULL,
+                        `confidence` REAL NOT NULL,
+                        `excludedFromLearning` INTEGER NOT NULL,
+                        `legacyEnergySampleId` INTEGER,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`activityRecordId`) REFERENCES `activity_records`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`focusProtocolSessionId`) REFERENCES `focus_protocol_sessions`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_energy_observations_timestamp` ON `energy_observations` (`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_energy_observations_taskId` ON `energy_observations` (`taskId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_energy_observations_activityRecordId` ON `energy_observations` (`activityRecordId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_energy_observations_focusProtocolSessionId` ON `energy_observations` (`focusProtocolSessionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_energy_observations_context` ON `energy_observations` (`context`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_energy_observations_legacyEnergySampleId` ON `energy_observations` (`legacyEnergySampleId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `task_demand_profiles` (
+                        `taskId` INTEGER NOT NULL,
+                        `domain` TEXT NOT NULL,
+                        `workMode` TEXT NOT NULL,
+                        `difficulty` INTEGER NOT NULL,
+                        `concentrationDemand` INTEGER NOT NULL,
+                        `executiveDemand` INTEGER NOT NULL,
+                        `memoryDemand` INTEGER NOT NULL,
+                        `creativeDemand` INTEGER NOT NULL,
+                        `socialDemand` INTEGER NOT NULL,
+                        `physicalDemand` INTEGER NOT NULL,
+                        `emotionalDemand` INTEGER NOT NULL,
+                        `startFriction` INTEGER NOT NULL,
+                        `minimumBlockMinutes` INTEGER NOT NULL,
+                        `preferredBlockMinutes` INTEGER NOT NULL,
+                        `interruptibility` INTEGER NOT NULL,
+                        `placeContext` TEXT NOT NULL,
+                        `toolContext` TEXT NOT NULL,
+                        `internetRequirement` TEXT NOT NULL,
+                        `peopleContext` TEXT NOT NULL,
+                        `canDoPartially` INTEGER NOT NULL,
+                        `fixedTime` INTEGER NOT NULL,
+                        `provenance` TEXT NOT NULL,
+                        `confidence` REAL NOT NULL,
+                        `userLockMask` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`taskId`),
+                        FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_demand_profiles_domain` ON `task_demand_profiles` (`domain`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_demand_profiles_workMode` ON `task_demand_profiles` (`workMode`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `task_dependencies` (
+                        `taskId` INTEGER NOT NULL,
+                        `dependsOnTaskId` INTEGER NOT NULL,
+                        `dependencyType` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`taskId`, `dependsOnTaskId`),
+                        FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`dependsOnTaskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_dependencies_taskId` ON `task_dependencies` (`taskId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_dependencies_dependsOnTaskId` ON `task_dependencies` (`dependsOnTaskId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `work_episode_assessments` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `activityRecordId` INTEGER NOT NULL,
+                        `beforeObservationId` INTEGER,
+                        `afterObservationId` INTEGER,
+                        `recoveryObservationId` INTEGER,
+                        `goalOutcome` TEXT NOT NULL,
+                        `perceivedDifficulty` INTEGER,
+                        `interruptionReason` TEXT,
+                        `profileMismatchFlags` TEXT NOT NULL,
+                        `modelEligible` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`activityRecordId`) REFERENCES `activity_records`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`beforeObservationId`) REFERENCES `energy_observations`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`afterObservationId`) REFERENCES `energy_observations`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`recoveryObservationId`) REFERENCES `energy_observations`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_work_episode_assessments_activityRecordId` ON `work_episode_assessments` (`activityRecordId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_work_episode_assessments_beforeObservationId` ON `work_episode_assessments` (`beforeObservationId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_work_episode_assessments_afterObservationId` ON `work_episode_assessments` (`afterObservationId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_work_episode_assessments_recoveryObservationId` ON `work_episode_assessments` (`recoveryObservationId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `external_contexts` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `localDate` TEXT NOT NULL,
+                        `regionKey` TEXT NOT NULL,
+                        `source` TEXT NOT NULL,
+                        `daylightMinutes` INTEGER,
+                        `daylightChangeMinutes` INTEGER,
+                        `weatherCode` TEXT,
+                        `temperatureCelsius` REAL,
+                        `cloudCoverPercent` INTEGER,
+                        `precipitationProbability` INTEGER,
+                        `outdoorSuitability` REAL,
+                        `publicBackgroundSummary` TEXT,
+                        `fetchedAt` INTEGER NOT NULL,
+                        `expiresAt` INTEGER NOT NULL,
+                        `provenance` TEXT NOT NULL,
+                        `rawPayloadHash` TEXT,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_external_contexts_localDate` ON `external_contexts` (`localDate`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_external_contexts_localDate_regionKey_source` ON `external_contexts` (`localDate`, `regionKey`, `source`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_external_contexts_expiresAt` ON `external_contexts` (`expiresAt`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `context_snapshots` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        `zoneId` TEXT NOT NULL,
+                        `localDate` TEXT NOT NULL,
+                        `minutesSinceWake` INTEGER,
+                        `hoursAwake` REAL,
+                        `sleepDurationMinutes` INTEGER,
+                        `sleepDeviationMinutes` INTEGER,
+                        `sleepDebtMinutes` INTEGER,
+                        `sleepRegularity` REAL,
+                        `dayOfWeek` INTEGER NOT NULL,
+                        `isFreeDay` INTEGER NOT NULL,
+                        `calendarWindowMinutes` INTEGER,
+                        `recentFocusMinutes` INTEGER NOT NULL,
+                        `recentWorkModes` TEXT NOT NULL,
+                        `recentBreakMinutes` INTEGER NOT NULL,
+                        `dailyCheckInId` INTEGER,
+                        `lastObservationAgeMinutes` INTEGER,
+                        `personalPeriodFlags` TEXT NOT NULL,
+                        `externalContextId` INTEGER,
+                        `version` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`dailyCheckInId`) REFERENCES `daily_check_ins`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`externalContextId`) REFERENCES `external_contexts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_context_snapshots_timestamp` ON `context_snapshots` (`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_context_snapshots_localDate` ON `context_snapshots` (`localDate`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_context_snapshots_dailyCheckInId` ON `context_snapshots` (`dailyCheckInId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_context_snapshots_externalContextId` ON `context_snapshots` (`externalContextId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `recommendation_decisions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `generatedAt` INTEGER NOT NULL,
+                        `modelVersion` TEXT NOT NULL,
+                        `strategy` TEXT NOT NULL,
+                        `contextSnapshotId` INTEGER,
+                        `stateSnapshotJson` TEXT NOT NULL,
+                        `selectedTaskId` INTEGER,
+                        `candidateTaskIds` TEXT NOT NULL,
+                        `componentScores` TEXT NOT NULL,
+                        `reasonCodes` TEXT NOT NULL,
+                        `confidence` REAL NOT NULL,
+                        `accepted` INTEGER NOT NULL,
+                        `dismissed` INTEGER NOT NULL,
+                        `reordered` INTEGER NOT NULL,
+                        `feedbackReason` TEXT,
+                        `resultingActivityRecordId` INTEGER,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`contextSnapshotId`) REFERENCES `context_snapshots`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`selectedTaskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`resultingActivityRecordId`) REFERENCES `activity_records`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recommendation_decisions_generatedAt` ON `recommendation_decisions` (`generatedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recommendation_decisions_contextSnapshotId` ON `recommendation_decisions` (`contextSnapshotId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recommendation_decisions_selectedTaskId` ON `recommendation_decisions` (`selectedTaskId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recommendation_decisions_resultingActivityRecordId` ON `recommendation_decisions` (`resultingActivityRecordId`)")
+
+                // Preserve every historical focus reading while keeping the old table intact for
+                // existing UI code. Invalid legacy session ids are deliberately detached.
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO `energy_observations` (
+                        `id`, `timestamp`, `absoluteEnergy`, `relativeDelta`, `context`,
+                        `taskId`, `activityRecordId`, `focusProtocolSessionId`, `source`,
+                        `quality`, `confidence`, `excludedFromLearning`, `legacyEnergySampleId`,
+                        `createdAt`
+                    )
+                    SELECT
+                        e.`id`, e.`timestamp`,
+                        CASE WHEN e.`energy` < 1 THEN 1 WHEN e.`energy` > 10 THEN 10 ELSE e.`energy` END,
+                        NULL,
+                        CASE
+                            WHEN e.`context` = 'BEFORE_FOCUS' THEN 'BEFORE_TASK'
+                            WHEN e.`context` = 'AFTER_FOCUS' THEN 'AFTER_TASK'
+                            ELSE e.`context`
+                        END,
+                        NULL, NULL,
+                        CASE WHEN EXISTS (
+                            SELECT 1 FROM `focus_protocol_sessions` f
+                            WHERE f.`id` = e.`protocolSessionId`
+                        ) THEN e.`protocolSessionId` ELSE NULL END,
+                        'LEGACY_ENERGY_SAMPLE', 'EXACT', 1.0, 0, e.`id`, e.`timestamp`
+                    FROM `energy_samples` e
+                    """.trimIndent()
+                )
             }
         }
     }

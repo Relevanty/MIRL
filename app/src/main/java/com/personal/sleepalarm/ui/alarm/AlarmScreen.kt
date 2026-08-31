@@ -36,7 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.sleepalarm.R
-import com.personal.sleepalarm.ui.mood.MoodPickerDialog
+import com.personal.sleepalarm.ui.mood.MorningCheckInDialog
 import com.personal.sleepalarm.ui.math.MathChallengeCard
 import com.personal.sleepalarm.util.TimeFormatter
 import kotlinx.coroutines.delay
@@ -277,7 +277,10 @@ fun AlarmScreen(
 
     // === ДОБАВЛЕНО (v5): диалог настроения ===
     if (showMoodPicker) {
-        MoodPickerDialog(onSelect = { mood -> viewModel.onMoodSelected(mood) })
+        MorningCheckInDialog(
+            onSubmit = viewModel::onMorningCheckIn,
+            onSkip = viewModel::skipMorningCheckIn
+        )
     }
 }
 

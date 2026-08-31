@@ -17,6 +17,9 @@ class FocusProtocolRepository(
     fun observeRecentCompleted(limit: Int = 30): Flow<List<FocusProtocolSessionEntity>> =
         protocolDao.observeRecentCompleted(limit)
 
+    fun observeCompletedFrom(fromTimestamp: Long): Flow<List<FocusProtocolSessionEntity>> =
+        protocolDao.observeCompletedFrom(fromTimestamp)
+
     fun observeEnergyFrom(from: Long): Flow<List<EnergySampleEntity>> =
         energyDao.observeFrom(from)
 

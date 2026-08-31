@@ -9,6 +9,8 @@ import com.personal.sleepalarm.data.db.dao.DDayDao
 import com.personal.sleepalarm.data.db.dao.SleepSessionDao
 import com.personal.sleepalarm.data.db.dao.StudySessionDao
 import com.personal.sleepalarm.data.db.dao.TaskDao
+import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.data.repository.AdaptiveRecommendationRepository
 import com.personal.sleepalarm.data.preferences.DailyPlanNudgePreferences
 import com.personal.sleepalarm.data.preferences.SleepAutomationPreference
 import com.personal.sleepalarm.domain.dailyplan.DailyPlanScheduleCalculator
@@ -18,7 +20,7 @@ import com.personal.sleepalarm.domain.calculator.StudyTimeInterval
 import com.personal.sleepalarm.domain.calculator.effectiveActivityEndMillis
 import com.personal.sleepalarm.domain.model.FocusActivityType
 import com.personal.sleepalarm.domain.model.snapshotActivityType
-import com.personal.sleepalarm.domain.model.NextActionRanker
+import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.ui.calendar.eventsOn
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
@@ -140,9 +142,22 @@ class BriefingTextBuilder(
             sb.append(' ')
         }
 
+        val adaptive = AdaptiveRecommendationRepository(AppDatabase.getInstance(context))
+            .rank(taskDao.getAll(), System.currentTimeMillis())
+        adaptive.orderedTasks.firstOrNull()?.let { next ->
+            sb.append(
+                context.getString(
+                    if (adaptive.ranking.isAdaptive) R.string.briefing_adaptive_next
+                    else R.string.briefing_default_next,
+                    next.primaryLabel(),
+                    adaptive.personalState.estimatedEnergy.toInt().coerceIn(1, 10)
+                )
+            ).append(' ')
+        }
+
         // 6. Required daily focus plan. Planning uses the civil local day
         // (00:00–00:00); the separate 04:00 analytics boundary is untouched.
-        appendDailyPlanStatus(context, sb, today, zone)
+        appendDailyPlanStatus(context, sb, today, zone, adaptive.orderedTasks)
 
         return sb.toString().trim()
     }
@@ -151,7 +166,8 @@ class BriefingTextBuilder(
         context: Context,
         sb: StringBuilder,
         today: LocalDate,
-        zone: ZoneId
+        zone: ZoneId,
+        tasks: List<com.personal.sleepalarm.data.db.entity.TaskEntity>
     ) {
         val nowMillis = System.currentTimeMillis()
         val now = Instant.ofEpochMilli(nowMillis).atZone(zone)
@@ -171,7 +187,6 @@ class BriefingTextBuilder(
                 skippedWindowStartEpochDay = automation.skippedWindowStartEpochDay
             )
         ).at.toInstant().toEpochMilli()
-        val tasks = NextActionRanker.rank(taskDao.getAll(), nowMillis)
         val records = activityRecordDao.observeOverlapping(dayStartMillis, nextMidnightMillis).first()
         val plan = calculateDailyBriefingPlan(
             tasks = tasks,

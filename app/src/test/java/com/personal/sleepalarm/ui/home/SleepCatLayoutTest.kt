@@ -8,17 +8,30 @@ class SleepCatLayoutTest {
 
     @Test
     fun `uses minimum edge on narrow screen`() {
-        assertEquals(96f, calculateSleepCatCardEdgeDp(280f), 0.0001f)
+        assertEquals(84f, calculateSleepCatCardEdgeDp(280f), 0.0001f)
     }
 
     @Test
     fun `scales edge with ordinary phone width`() {
-        assertEquals(108f, calculateSleepCatCardEdgeDp(360f), 0.0001f)
+        assertEquals(93.6f, calculateSleepCatCardEdgeDp(360f), 0.0001f)
     }
 
     @Test
     fun `caps edge on wide screen`() {
-        assertEquals(124f, calculateSleepCatCardEdgeDp(500f), 0.0001f)
+        assertEquals(108f, calculateSleepCatCardEdgeDp(500f), 0.0001f)
+    }
+
+    @Test
+    fun `manual sleep preparation immediately uses sleeping cat pose`() {
+        assertTrue(SleepCatState.PREPARING.showsSleepingPose())
+        assertTrue(SleepCatState.DETECTING.showsSleepingPose())
+        assertTrue(SleepCatState.SLEEPING.showsSleepingPose())
+    }
+
+    @Test
+    fun `awake and morning states keep cat awake`() {
+        assertTrue(!SleepCatState.AWAKE.showsSleepingPose())
+        assertTrue(!SleepCatState.MORNING.showsSleepingPose())
     }
 
     @Test
