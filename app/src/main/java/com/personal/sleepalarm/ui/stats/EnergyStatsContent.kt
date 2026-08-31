@@ -29,14 +29,16 @@ fun EnergyStatsContent(
     analytics: EnergyAnalytics,
     modifier: Modifier = Modifier
 ) {
+    val energyTone = MaterialTheme.appAccents.energy
+    val infoTone = MaterialTheme.appAccents.info
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Surface(
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.appAccents.focus.container,
-            contentColor = MaterialTheme.appAccents.focus.onContainer
+            color = energyTone.container,
+            contentColor = energyTone.onContainer
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(18.dp),
@@ -139,7 +141,7 @@ fun EnergyStatsContent(
         Text(
             text = stringResource(R.string.energy_stats_disclaimer),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = infoTone.color,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
     }
@@ -151,9 +153,11 @@ private fun EnergyChartCard(
     subtitle: String,
     content: @Composable () -> Unit
 ) {
+    val tone = MaterialTheme.appAccents.energy
     Surface(
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        color = tone.container,
+        contentColor = tone.onContainer
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -164,7 +168,7 @@ private fun EnergyChartCard(
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = tone.onContainer.copy(alpha = 0.72f)
                 )
             }
             content()
@@ -174,7 +178,8 @@ private fun EnergyChartCard(
 
 @Composable
 private fun AverageEnergyRow(label: String, bucket: EnergyAverageBucket) {
-    val accent = MaterialTheme.appAccents.focus.color
+    val tone = MaterialTheme.appAccents.energy
+    val accent = tone.color
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -193,7 +198,7 @@ private fun AverageEnergyRow(label: String, bucket: EnergyAverageBucket) {
                 .fillMaxWidth()
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(tone.onContainer.copy(alpha = 0.14f))
         ) {
             Box(
                 Modifier
@@ -211,10 +216,11 @@ private fun AverageEnergyRow(label: String, bucket: EnergyAverageBucket) {
 
 @Composable
 private fun DeltaRow(label: String, bucket: EnergyDeltaBucket) {
+    val energyTone = MaterialTheme.appAccents.energy
     val deltaColor = when {
-        bucket.averageDelta > 0.15f -> MaterialTheme.colorScheme.tertiary
-        bucket.averageDelta < -0.15f -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        bucket.averageDelta > 0.15f -> MaterialTheme.appAccents.success.color
+        bucket.averageDelta < -0.15f -> MaterialTheme.appAccents.urgent.color
+        else -> energyTone.onContainer.copy(alpha = 0.72f)
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -222,7 +228,7 @@ private fun DeltaRow(label: String, bucket: EnergyDeltaBucket) {
             Text(
                 text = stringResource(R.string.energy_stats_samples_short, bucket.sampleCount),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = energyTone.onContainer.copy(alpha = 0.72f)
             )
             if (bucket.sampleCount < EnergyAnalytics.MIN_BUCKET_SAMPLES) LowSampleLabel()
         }
@@ -237,19 +243,21 @@ private fun DeltaRow(label: String, bucket: EnergyDeltaBucket) {
 
 @Composable
 private fun LowSampleLabel() {
+    val tone = MaterialTheme.appAccents.energy
     Text(
         text = stringResource(R.string.energy_stats_few_samples),
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = tone.onContainer.copy(alpha = 0.64f)
     )
 }
 
 @Composable
 private fun InfoCard(title: String, body: String) {
+    val tone = MaterialTheme.appAccents.info
     Surface(
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        color = tone.container,
+        contentColor = tone.onContainer
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(15.dp),

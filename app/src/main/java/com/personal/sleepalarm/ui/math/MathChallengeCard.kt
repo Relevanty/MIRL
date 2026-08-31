@@ -15,11 +15,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -34,6 +37,7 @@ import com.personal.sleepalarm.domain.model.MathAnswerSpec
 import com.personal.sleepalarm.domain.model.MathChallenge
 import com.personal.sleepalarm.domain.model.MathChallengeKind
 import com.personal.sleepalarm.ui.alarm.ChallengeVisualRenderer
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 
 /** Shared challenge body used by both the wake-up alarm and free maths practice. */
 @Composable
@@ -48,13 +52,15 @@ fun MathChallengeCard(
     onCheck: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val studyTone = MaterialTheme.appAccents.study
+    val infoTone = MaterialTheme.appAccents.info
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            color = MaterialTheme.appAccents.study.container,
-            contentColor = MaterialTheme.appAccents.study.onContainer,
+            color = studyTone.action,
+            contentColor = studyTone.onAction,
             shape = RoundedCornerShape(50)
         ) {
             Text(
@@ -74,6 +80,7 @@ fun MathChallengeCard(
                 challenge.question.length > 36 -> MaterialTheme.typography.headlineSmall
                 else -> MaterialTheme.typography.headlineLarge
             },
+            color = studyTone.color,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
@@ -98,6 +105,21 @@ fun MathChallengeCard(
             singleLine = challenge.answerSpec is MathAnswerSpec.Integer,
             maxLines = 3,
             enabled = enabled && !answerAccepted,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = studyTone.action,
+                unfocusedContainerColor = studyTone.action,
+                disabledContainerColor = studyTone.action.copy(alpha = 0.62f),
+                focusedTextColor = studyTone.onAction,
+                unfocusedTextColor = studyTone.onAction,
+                disabledTextColor = studyTone.onAction.copy(alpha = 0.68f),
+                focusedLabelColor = studyTone.onAction,
+                unfocusedLabelColor = studyTone.onAction.copy(alpha = 0.74f),
+                disabledLabelColor = studyTone.onAction.copy(alpha = 0.58f),
+                cursorColor = studyTone.color,
+                focusedIndicatorColor = studyTone.color,
+                unfocusedIndicatorColor = studyTone.onAction.copy(alpha = 0.38f),
+                disabledIndicatorColor = studyTone.onAction.copy(alpha = 0.24f)
+            ),
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -105,35 +127,31 @@ fun MathChallengeCard(
 
         Text(
             text = stringResource(challenge.answerSpec.formatHintRes()),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = infoTone.color,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.fillMaxWidth()
         )
 
         if (challenge.answerSpec is MathAnswerSpec.IntervalSet && enabled && !answerAccepted) {
-            IntervalAnswerTokens { token -> onInputChanged(userInput + token) }
+            IntervalAnswerTokens(studyTone) { token -> onInputChanged(userInput + token) }
         }
 
         errorMessage?.let { error ->
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
+            StatusMessage(
                 text = error,
-                color = MaterialTheme.appAccents.urgent.color,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.fillMaxWidth()
+                tone = MaterialTheme.appAccents.urgent
             )
         }
 
         if (showHint) {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
+            StatusMessage(
                 text = stringResource(
                     R.string.alarm_hint_answer,
                     MathAnswerParser.canonical(challenge.answerSpec)
                 ),
-                color = MaterialTheme.appAccents.warning.color,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.fillMaxWidth()
+                tone = MaterialTheme.appAccents.warning
             )
         }
 
@@ -143,6 +161,12 @@ fun MathChallengeCard(
             Button(
                 onClick = onCheck,
                 enabled = enabled && userInput.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = studyTone.action,
+                    contentColor = studyTone.onAction,
+                    disabledContainerColor = studyTone.action.copy(alpha = 0.46f),
+                    disabledContentColor = studyTone.onAction.copy(alpha = 0.54f)
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
@@ -150,10 +174,9 @@ fun MathChallengeCard(
                 Text(text = stringResource(R.string.alarm_action_check))
             }
         } else {
-            Text(
+            StatusMessage(
                 text = stringResource(R.string.alarm_answer_correct),
-                color = MaterialTheme.appAccents.success.color,
-                style = MaterialTheme.typography.bodyLarge
+                tone = MaterialTheme.appAccents.success
             )
         }
     }
@@ -207,7 +230,7 @@ private fun MathAnswerSpec.keyboardType(): KeyboardType = when (this) {
 }
 
 @Composable
-private fun IntervalAnswerTokens(onToken: (String) -> Unit) {
+private fun IntervalAnswerTokens(tone: AppAccentTone, onToken: (String) -> Unit) {
     val tokens = remember { listOf("[", "]", "(", ")", "; ", " ∪ ", "-∞", "+∞") }
     Row(
         modifier = Modifier
@@ -218,8 +241,29 @@ private fun IntervalAnswerTokens(onToken: (String) -> Unit) {
         tokens.forEach { token ->
             AssistChip(
                 onClick = { onToken(token) },
-                label = { Text(token.trim()) }
+                label = { Text(token.trim()) },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = tone.action,
+                    labelColor = tone.onAction
+                )
             )
         }
+    }
+}
+
+@Composable
+private fun StatusMessage(text: String, tone: AppAccentTone) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = tone.container,
+        contentColor = tone.onContainer,
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text(
+            text = text,
+            color = tone.onContainer,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+        )
     }
 }

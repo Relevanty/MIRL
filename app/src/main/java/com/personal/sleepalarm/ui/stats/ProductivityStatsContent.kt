@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,6 +35,7 @@ import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.calculator.ActivityProgressCalculator
 import com.personal.sleepalarm.domain.model.effectiveWorkBudgetMinutes
 import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -117,14 +119,31 @@ fun ProductivityStatsContent(
                 StatCard(
                     title = project.title,
                     subtitle = "${projectTasks.count(TaskEntity::isDone)}/${projectTasks.size} задач · ${formatMinutes(spent / 60_000L)} из ${formatMinutes(budget.toLong())}",
-                    progress = if (budget > 0) (spent / 60_000f / budget).coerceIn(0f, 1f) else 0f
+                    progress = if (budget > 0) (spent / 60_000f / budget).coerceIn(0f, 1f) else 0f,
+                    tone = MaterialTheme.appAccents.progress
                 )
             }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = !showDone, onClick = { showDone = false }, label = { Text("В работе") })
-            FilterChip(selected = showDone, onClick = { showDone = true }, label = { Text("Завершённые") })
+            FilterChip(
+                selected = !showDone,
+                onClick = { showDone = false },
+                label = { Text("В работе") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.appAccents.work.container,
+                    selectedLabelColor = MaterialTheme.appAccents.work.onContainer
+                )
+            )
+            FilterChip(
+                selected = showDone,
+                onClick = { showDone = true },
+                label = { Text("Завершённые") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.appAccents.success.container,
+                    selectedLabelColor = MaterialTheme.appAccents.success.onContainer
+                )
+            )
         }
         shownTasks.take(20).forEach { task ->
             val activities = state.activities.filter { it.taskId == task.id }
@@ -147,19 +166,38 @@ fun ProductivityStatsContent(
                         task.matrixQuadrant
                     )
                 },
-                progress = if (budget > 0) (actual / 60_000f / budget).coerceIn(0f, 1f) else 0f
+                progress = if (budget > 0) (actual / 60_000f / budget).coerceIn(0f, 1f) else 0f,
+                tone = if (showDone) MaterialTheme.appAccents.success else MaterialTheme.appAccents.work
             )
         }
     }
 }
 
 @Composable
-private fun StatCard(title: String, subtitle: String, progress: Float) {
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+private fun StatCard(
+    title: String,
+    subtitle: String,
+    progress: Float,
+    tone: AppAccentTone
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = tone.container,
+        contentColor = tone.onContainer
+    ) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(),
+                color = tone.color,
+                trackColor = tone.onContainer.copy(alpha = 0.14f)
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = tone.onContainer.copy(alpha = 0.72f)
+            )
         }
     }
 }

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.personal.sleepalarm.ui.theme.appAccents
 
 private sealed class MdBlock {
     data class Heading(val level: Int, val text: String) : MdBlock()
@@ -255,6 +256,7 @@ fun ThemedMarkdownText(
     maxLines: Int = Int.MAX_VALUE
 ) {
     val scheme = MaterialTheme.colorScheme
+    val accents = MaterialTheme.appAccents
     val typo = MaterialTheme.typography
     val blocks = remember(markdown) {
         try {
@@ -275,7 +277,7 @@ fun ThemedMarkdownText(
                                 1 -> typo.headlineMedium
                                 2 -> typo.headlineSmall
                                 else -> typo.titleLarge
-                            }.copy(color = scheme.primary, fontWeight = FontWeight.Bold),
+                            }.copy(color = accents.creative.color, fontWeight = FontWeight.Bold),
                             maxLines = maxLines,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -284,7 +286,7 @@ fun ThemedMarkdownText(
                             Modifier
                                 .fillMaxWidth()
                                 .height(1.dp)
-                                .background(scheme.onSurface.copy(alpha = 0.3f))
+                                .background(accents.creative.color.copy(alpha = 0.38f))
                         )
                     }
                 }
@@ -300,13 +302,13 @@ fun ThemedMarkdownText(
                                 .width(4.dp)
                                 .fillMaxHeight()
                                 .clip(RoundedCornerShape(2.dp))
-                                .background(scheme.primary.copy(alpha = 0.6f))
+                                .background(accents.info.color.copy(alpha = 0.72f))
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
                             text = buildInline(block.text, scheme),
                             style = typo.bodyLarge.copy(
-                                color = scheme.onSurfaceVariant,
+                                color = accents.info.color,
                                 fontStyle = FontStyle.Italic
                             ),
                             maxLines = maxLines,
@@ -320,7 +322,7 @@ fun ThemedMarkdownText(
                     Text(
                         text = buildInline(block.text, scheme),
                         style = typo.bodyLarge.copy(
-                            color = scheme.onSurfaceVariant,
+                            color = accents.info.color,
                             fontStyle = FontStyle.Italic
                         ),
                         modifier = Modifier.padding(start = 16.dp),
@@ -333,7 +335,7 @@ fun ThemedMarkdownText(
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             "•  ",
-                            color = scheme.tertiary,
+                            color = accents.leisure.color,
                             style = typo.bodyLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -358,13 +360,13 @@ fun ThemedMarkdownText(
                                 .size(19.dp)
                                 .clip(RoundedCornerShape(5.dp))
                                 .background(
-                                    if (block.checked) scheme.primary
-                                    else scheme.surfaceVariant.copy(alpha = 0.45f)
+                                    if (block.checked) accents.success.color
+                                    else accents.creative.action
                                 )
                                 .border(
                                     width = 1.25.dp,
-                                    color = if (block.checked) scheme.primary
-                                    else scheme.outline.copy(alpha = 0.7f),
+                                    color = if (block.checked) accents.success.color
+                                    else accents.creative.color.copy(alpha = 0.7f),
                                     shape = RoundedCornerShape(5.dp)
                                 ),
                             contentAlignment = Alignment.Center
@@ -372,7 +374,7 @@ fun ThemedMarkdownText(
                             if (block.checked) {
                                 Text(
                                     text = "✓",
-                                    color = scheme.onPrimary,
+                                    color = accents.success.onColor,
                                     style = typo.labelSmall,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -397,7 +399,7 @@ fun ThemedMarkdownText(
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             "${block.number}. ",
-                            color = scheme.tertiary,
+                            color = accents.schedule.color,
                             style = typo.bodyLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -416,14 +418,14 @@ fun ThemedMarkdownText(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(scheme.surfaceVariant.copy(alpha = 0.6f))
+                            .background(accents.info.container)
                             .padding(12.dp)
                     ) {
                         Text(
                             block.code,
                             style = typo.bodyMedium.copy(
                                 fontFamily = FontFamily.Monospace,
-                                color = scheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                color = accents.info.onContainer.copy(alpha = 0.82f),
                                 fontSize = 14.sp
                             )
                         )
@@ -438,7 +440,7 @@ fun ThemedMarkdownText(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = renderLatex(block.code, scheme.tertiary),
+                            text = renderLatex(block.code, accents.study.color),
                             style = typo.bodyLarge,
                             textAlign = TextAlign.Center
                         )
@@ -451,7 +453,7 @@ fun ThemedMarkdownText(
                             .fillMaxWidth()
                             .padding(vertical = 6.dp)
                             .height(1.5.dp)
-                            .background(scheme.onSurface.copy(alpha = 0.55f))
+                            .background(accents.creative.color.copy(alpha = 0.55f))
                     )
                 }
                 is MdBlock.Paragraph -> {

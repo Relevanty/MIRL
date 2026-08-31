@@ -111,7 +111,7 @@ fun LibraryEditScreen(
             )
             CatText(
                 text = "=^..^=",
-            color = MaterialTheme.appAccents.study.color,
+            color = MaterialTheme.appAccents.leisure.color,
                 fontSize = 16.sp
             )
         }
@@ -122,7 +122,7 @@ fun LibraryEditScreen(
         Text(
             text = stringResource(R.string.library_section_main),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.appAccents.study.color,
+            color = MaterialTheme.appAccents.leisure.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -130,7 +130,7 @@ fun LibraryEditScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(MaterialTheme.appAccents.leisure.container)
                 .padding(12.dp)
         ) {
             Column {
@@ -157,7 +157,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
+                        focusedIndicatorColor = MaterialTheme.appAccents.leisure.color
                     )
                 )
 
@@ -174,7 +174,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
+                        focusedIndicatorColor = MaterialTheme.appAccents.leisure.color
                     )
                 )
             }
@@ -192,7 +192,7 @@ fun LibraryEditScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(MaterialTheme.appAccents.study.container)
                 .padding(12.dp)
         ) {
             Row(
@@ -237,7 +237,7 @@ fun LibraryEditScreen(
             Text(
                 text = "Файлы копируются в MIRL и доступны без интернета. Ресурс можно прикрепить к задаче.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.appAccents.study.onContainer.copy(alpha = 0.78f)
             )
         }
 
@@ -247,7 +247,7 @@ fun LibraryEditScreen(
         Text(
             text = stringResource(R.string.library_section_cover),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.appAccents.other.color,
+            color = MaterialTheme.appAccents.creative.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -255,7 +255,7 @@ fun LibraryEditScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(MaterialTheme.appAccents.creative.container)
                 .padding(12.dp)
         ) {
             Row(
@@ -293,7 +293,7 @@ fun LibraryEditScreen(
         Text(
             text = stringResource(R.string.library_section_notes),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.appAccents.calm.color,
+            color = MaterialTheme.appAccents.creative.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -301,7 +301,7 @@ fun LibraryEditScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(MaterialTheme.appAccents.creative.container)
                 .padding(12.dp)
         ) {
             Column {
@@ -314,7 +314,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
+                        focusedIndicatorColor = MaterialTheme.appAccents.creative.color
                     )
                 )
 
@@ -329,7 +329,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
+                        focusedIndicatorColor = MaterialTheme.appAccents.creative.color
                     )
                 )
 
@@ -344,7 +344,7 @@ fun LibraryEditScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
+                        focusedIndicatorColor = MaterialTheme.appAccents.creative.color
                     )
                 )
             }
@@ -356,7 +356,7 @@ fun LibraryEditScreen(
         Text(
             text = stringResource(R.string.library_section_rating_tags),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.appAccents.study.color,
+            color = MaterialTheme.appAccents.progress.color,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
@@ -364,7 +364,7 @@ fun LibraryEditScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(MaterialTheme.appAccents.progress.container)
                 .padding(12.dp)
         ) {
             Column {
@@ -373,14 +373,14 @@ fun LibraryEditScreen(
                     Text(
                         text = stringResource(R.string.library_field_rating),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.appAccents.progress.onContainer.copy(alpha = 0.78f)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     repeat(5) { index ->
                         IconButton(onClick = { viewModel.setRating(index + 1) }) {
                             Text(
                                 text = if (index < state.rating) "★" else "☆",
-                color = MaterialTheme.appAccents.study.color,
+                color = MaterialTheme.appAccents.progress.onContainer,
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -401,7 +401,7 @@ fun LibraryEditScreen(
                             unfocusedContainerColor = Color.Transparent,
                             focusedContainerColor = Color.Transparent,
                             unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.appAccents.study.color
+                        focusedIndicatorColor = MaterialTheme.appAccents.progress.color
                         )
                     )
                     IconButton(onClick = { viewModel.addTag() }) {

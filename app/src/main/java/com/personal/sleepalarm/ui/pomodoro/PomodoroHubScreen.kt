@@ -1189,7 +1189,7 @@ private fun FocusLaunchCard(
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.appAccents.focus.onContainer.copy(alpha = 0.78f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1235,7 +1235,7 @@ private fun FocusLaunchCard(
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.appAccents.focus.color,
+                color = MaterialTheme.appAccents.focus.onContainer,
                 fontWeight = FontWeight.Medium
             )
 
@@ -1274,14 +1274,14 @@ private fun FocusBriefItem(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.52f))
+            .background(MaterialTheme.appAccents.focus.action)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.appAccents.focus.color,
+            color = MaterialTheme.appAccents.focus.onAction,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -1289,6 +1289,7 @@ private fun FocusBriefItem(
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.appAccents.focus.onAction,
             maxLines = maxLines,
             overflow = TextOverflow.Ellipsis
         )
@@ -1364,7 +1365,7 @@ private fun FocusMetric(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.appAccents.focus.onContainer.copy(alpha = 0.78f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -1377,7 +1378,7 @@ private fun FocusMetricDivider() {
         modifier = Modifier
             .width(1.dp)
             .height(34.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant)
+            .background(MaterialTheme.appAccents.focus.color.copy(alpha = 0.42f))
     )
 }
 
@@ -1404,7 +1405,7 @@ private fun CompactDailyFocusProgress(
                     Text(
                         text = stringResource(R.string.daily_focus_required_badge),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.appAccents.warning.color,
+                        color = MaterialTheme.appAccents.focus.onContainer,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1422,8 +1423,8 @@ private fun CompactDailyFocusProgress(
         LinearProgressIndicator(
             progress = { progress.progressFraction },
             modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.appAccents.work.color,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant
+            color = MaterialTheme.appAccents.progress.color,
+            trackColor = MaterialTheme.appAccents.progress.action
         )
     }
 }

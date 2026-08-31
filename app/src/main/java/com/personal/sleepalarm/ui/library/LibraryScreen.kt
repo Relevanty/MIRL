@@ -165,7 +165,7 @@ fun LibraryScreen(
                 }
                 CatText(
                     text = "=^..^=",
-                    color = MaterialTheme.appAccents.study.color,
+                    color = MaterialTheme.appAccents.leisure.color,
                     fontSize = 16.sp
                 )
             }
@@ -177,7 +177,7 @@ fun LibraryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    .background(MaterialTheme.appAccents.leisure.container)
                     .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
                 TextField(
@@ -190,7 +190,12 @@ fun LibraryScreen(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent
+                        focusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = MaterialTheme.appAccents.leisure.onContainer,
+                        unfocusedTextColor = MaterialTheme.appAccents.leisure.onContainer,
+                        focusedPlaceholderColor = MaterialTheme.appAccents.leisure.onContainer.copy(alpha = 0.68f),
+                        unfocusedPlaceholderColor = MaterialTheme.appAccents.leisure.onContainer.copy(alpha = 0.68f),
+                        cursorColor = MaterialTheme.appAccents.leisure.color
                     )
                 )
             }
@@ -221,7 +226,7 @@ fun LibraryScreen(
                             lineHeight = 46.sp,
                             fontWeight = FontWeight.Bold
                         ),
-                        color = MaterialTheme.appAccents.other.color
+                        color = MaterialTheme.appAccents.leisure.color
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -353,12 +358,17 @@ private fun LibraryCard(
 ) {
     val tags by tagsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val bitmap = remember(item.coverUri) { CoverHelper.loadBitmap(item.coverUri) }
+    val tone = when (item.type) {
+        LibraryItemType.BOOK -> MaterialTheme.appAccents.study
+        LibraryItemType.MOVIE -> MaterialTheme.appAccents.creative
+        LibraryItemType.MUSIC -> MaterialTheme.appAccents.leisure
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .background(tone.container)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -376,10 +386,10 @@ private fun LibraryCard(
                 modifier = Modifier
                     .size(56.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(tone.action),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "☰", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = "☰", color = tone.onAction)
             }
         }
 
@@ -389,20 +399,20 @@ private fun LibraryCard(
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                color = tone.onContainer
             )
             if (item.author.isNotBlank()) {
                 Text(
                     text = item.author,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = tone.onContainer.copy(alpha = 0.78f)
                 )
             }
             if (tags.isNotEmpty()) {
                 Text(
                     text = tags.joinToString(" · ") { "#${it.name}" },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.appAccents.study.color
+                    color = tone.onContainer
                 )
             }
             if (linkedTaskLabels.isNotEmpty()) {
@@ -413,7 +423,7 @@ private fun LibraryCard(
                     ),
                     maxLines = 2,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.appAccents.calm.color
+                    color = tone.onContainer.copy(alpha = 0.84f)
                 )
             }
             val resourceLabel = when {
@@ -426,7 +436,7 @@ private fun LibraryCard(
                     text = resourceLabel,
                     maxLines = 1,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.appAccents.other.color
+                    color = tone.onContainer.copy(alpha = 0.72f)
                 )
             }
         }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,7 @@ fun SystemCheckScreen(
 
     var refreshKey by remember { mutableStateOf(0) }
     val state = remember(refreshKey) { PermissionChecker.state(context) }
+    val infoTone = MaterialTheme.appAccents.info
 
     Column(
         modifier = modifier
@@ -66,12 +68,16 @@ fun SystemCheckScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                    tint = infoTone.color
+                )
             }
             Text(
                 text = stringResource(R.string.system_check_title),
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                color = infoTone.color
             )
         }
 
@@ -80,7 +86,7 @@ fun SystemCheckScreen(
         Text(
             text = stringResource(R.string.system_check_subtitle),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = infoTone.color
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -154,19 +160,19 @@ fun SystemCheckScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.appAccents.success.container)
+                .background(infoTone.container)
                 .padding(12.dp)
         ) {
             Text(
                 text = stringResource(R.string.system_check_hyperos_title),
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.appAccents.success.onContainer
+                color = infoTone.onContainer
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = stringResource(R.string.system_check_hyperos_body),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.appAccents.success.onContainer
+                color = infoTone.onContainer
             )
         }
 
@@ -174,7 +180,11 @@ fun SystemCheckScreen(
 
         OutlinedButton(
             onClick = { refreshKey++ },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = infoTone.action,
+                contentColor = infoTone.onAction
+            )
         ) {
             Text(stringResource(R.string.system_check_refresh))
         }
@@ -188,11 +198,18 @@ private fun CheckRow(
     ok: Boolean,
     onFix: () -> Unit
 ) {
+    val infoTone = MaterialTheme.appAccents.info
+    val statusTone = if (ok) {
+        MaterialTheme.appAccents.success
+    } else {
+        MaterialTheme.appAccents.urgent
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .background(infoTone.container)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -201,16 +218,14 @@ private fun CheckRow(
                 .size(28.dp)
                 .clip(CircleShape)
                 .background(
-                    if (ok) MaterialTheme.appAccents.success.color
-                    else MaterialTheme.appAccents.urgent.color
+                    statusTone.action
                 ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = if (ok) Icons.Default.CheckCircle else Icons.Default.Error,
                 contentDescription = null,
-                tint = if (ok) MaterialTheme.appAccents.success.onColor
-                else MaterialTheme.appAccents.urgent.onColor,
+                tint = statusTone.onAction,
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -221,17 +236,23 @@ private fun CheckRow(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
+                color = infoTone.onContainer
             )
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = infoTone.onContainer
             )
         }
 
         if (!ok) {
-            OutlinedButton(onClick = onFix) {
+            OutlinedButton(
+                onClick = onFix,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = statusTone.action,
+                    contentColor = statusTone.onAction
+                )
+            ) {
                 Text(stringResource(R.string.system_check_fix))
             }
         }

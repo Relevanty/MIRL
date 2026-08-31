@@ -1,5 +1,6 @@
 package com.personal.sleepalarm.ui.components
 
+import com.personal.sleepalarm.ui.theme.appAccents
 import androidx.compose.material3.Text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -85,7 +86,7 @@ fun NumberWheel(
         }
     }
 
-    val lineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+    val lineColor = MaterialTheme.appAccents.schedule.color.copy(alpha = 0.55f)
 
     Box(
         modifier = modifier.height(containerHeight),
@@ -140,7 +141,7 @@ fun NumberWheel(
                             fontWeight = if (abs(fraction) < 0.5f) FontWeight.SemiBold
                             else FontWeight.Normal
                         ),
-                        color = MaterialTheme.colorScheme.onBackground,
+                        color = MaterialTheme.appAccents.schedule.color,
                         textAlign = TextAlign.Center
                     )
                 }

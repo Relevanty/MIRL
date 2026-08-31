@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.ui.english
 
 import com.personal.sleepalarm.ui.theme.appAccents
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -308,7 +309,11 @@ private fun EnglishTopBar(
 ) {
     val compactBadge = LocalConfiguration.current.screenWidthDp < 360 ||
         LocalDensity.current.fontScale >= 1.3f
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+    Surface(
+        color = MaterialTheme.appAccents.study.container,
+        contentColor = MaterialTheme.appAccents.study.onContainer,
+        tonalElevation = 2.dp
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -328,7 +333,7 @@ private fun EnglishTopBar(
                     text = stringResource(R.string.english_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.appAccents.study.onContainer
                 )
                 if (inSession) {
                     Text(
@@ -338,7 +343,7 @@ private fun EnglishTopBar(
                             sessionTotal
                         ),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.appAccents.study.onContainer.copy(alpha = 0.76f)
                     )
                 }
             }
@@ -617,14 +622,15 @@ private fun EnglishModeCard(
     onClick: (EnglishLearningMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val tone = englishModeTone(mode)
     Card(
         onClick = { onClick(mode) },
         enabled = enabled,
         modifier = modifier.heightIn(min = 152.dp),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            containerColor = tone.container,
+            contentColor = tone.onContainer
         )
     ) {
         Column(
@@ -767,9 +773,13 @@ private fun EnglishWordCard(
     onSubmitAnswer: () -> Unit,
     onSelfReport: (Boolean) -> Unit
 ) {
+    val tone = englishModeTone(mode)
     Card(
         shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(
+            containerColor = tone.container,
+            contentColor = tone.onContainer
+        )
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(22.dp),
@@ -781,7 +791,7 @@ private fun EnglishWordCard(
                     frequencyLevelLabel(word.level)
                 ),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.appAccents.study.color
+                color = tone.onContainer.copy(alpha = 0.76f)
             )
             Spacer(Modifier.height(18.dp))
 
@@ -802,7 +812,7 @@ private fun EnglishWordCard(
                     Text(
                         text = word.translation,
                         style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = tone.onContainer,
                         textAlign = TextAlign.Center,
                         fontWeight = FontWeight.Bold
                     )
@@ -831,7 +841,7 @@ private fun EnglishWordCard(
                     Spacer(Modifier.height(10.dp))
                     Text(
                         stringResource(R.string.english_listen_prompt),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = tone.onContainer,
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(Modifier.height(12.dp))
@@ -847,13 +857,21 @@ private fun EnglishWordCard(
                         Text(
                             text = word.translation,
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = tone.onContainer.copy(alpha = 0.82f)
                         )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun englishModeTone(mode: EnglishLearningMode): AppAccentTone = when (mode) {
+    EnglishLearningMode.CARDS -> MaterialTheme.appAccents.study
+    EnglishLearningMode.WRITING -> MaterialTheme.appAccents.creative
+    EnglishLearningMode.PRONUNCIATION -> MaterialTheme.appAccents.energy
+    EnglishLearningMode.LISTENING -> MaterialTheme.appAccents.info
 }
 
 @Composable
@@ -866,15 +884,13 @@ private fun EnglishWordHeading(
     Text(
         text = word.word,
         style = MaterialTheme.typography.displaySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
         fontWeight = FontWeight.Bold
     )
     if (word.pronunciation.isNotBlank()) {
         Text(
             text = word.pronunciation,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.bodyLarge
         )
     }
     IconButton(
@@ -898,7 +914,6 @@ private fun TranslationAndHint(word: EnglishWordEntity) {
         Text(
             word.translation,
             style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
         )
@@ -914,13 +929,11 @@ private fun WordHint(word: EnglishWordEntity) {
     Spacer(Modifier.height(12.dp))
     Text(
         text = stringResource(R.string.english_hint),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        style = MaterialTheme.typography.labelMedium
     )
     Text(
         text = word.hint,
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center
     )
 }

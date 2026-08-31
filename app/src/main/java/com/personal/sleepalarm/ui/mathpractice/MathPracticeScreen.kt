@@ -3,6 +3,7 @@ package com.personal.sleepalarm.ui.mathpractice
 import com.personal.sleepalarm.ui.theme.appAccents
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,11 +13,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,9 +30,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,7 +53,9 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.domain.model.MathDifficulty
 import com.personal.sleepalarm.ui.components.ChoiceChips
 import com.personal.sleepalarm.ui.components.LabeledSlider
+import com.personal.sleepalarm.ui.components.SectionCard
 import com.personal.sleepalarm.ui.math.MathChallengeCard
+import com.personal.sleepalarm.ui.theme.AppAccentTone
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,6 +66,8 @@ fun MathPracticeScreen(
     viewModel: MathPracticeViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val studyTone = MaterialTheme.appAccents.study
+    val progressTone = MaterialTheme.appAccents.progress
     BackHandler(onBack = onBack)
 
     Scaffold(
@@ -66,6 +75,11 @@ fun MathPracticeScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.math_practice_title)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = studyTone.color,
+                    navigationIconContentColor = studyTone.color
+                ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -84,7 +98,7 @@ fun MathPracticeScreen(
                     .padding(paddingValues),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = progressTone.color)
             }
             return@Scaffold
         }
@@ -126,6 +140,8 @@ private fun MathPracticeSetup(
     onStart: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val studyTone = MaterialTheme.appAccents.study
+    val infoTone = MaterialTheme.appAccents.info
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -133,59 +149,52 @@ private fun MathPracticeSetup(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.appAccents.study.container,
-                contentColor = MaterialTheme.appAccents.study.onContainer
-            )
+        SectionCard(
+            title = stringResource(R.string.math_practice_setup_title),
+            tone = studyTone
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Calculate,
-                    contentDescription = null,
-                    tint = MaterialTheme.appAccents.study.color
-                )
-                Text(
-                    text = stringResource(R.string.math_practice_setup_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = stringResource(R.string.math_practice_setup_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.appAccents.study.onContainer
-                )
-            }
+            Icon(
+                imageVector = Icons.Default.Calculate,
+                contentDescription = null,
+                tint = studyTone.onContainer
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.math_practice_setup_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = studyTone.onContainer.copy(alpha = 0.80f)
+            )
+            Spacer(Modifier.height(18.dp))
+            ChoiceChips(
+                label = stringResource(R.string.setting_math_difficulty),
+                options = MathDifficulty.entries,
+                selected = difficulty,
+                optionText = { it.localizedName() },
+                onSelect = onDifficultyChange
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(difficulty.hintRes()),
+                style = MaterialTheme.typography.bodySmall,
+                color = studyTone.onContainer.copy(alpha = 0.76f)
+            )
+            Spacer(Modifier.height(18.dp))
+            LabeledSlider(
+                label = stringResource(R.string.math_practice_count),
+                value = challengeCount,
+                valueText = challengeCount.toString(),
+                valueRange = 1f..10f,
+                steps = 8,
+                onValueChange = onCountChange
+            )
         }
-
-        ChoiceChips(
-            label = stringResource(R.string.setting_math_difficulty),
-            options = MathDifficulty.entries,
-            selected = difficulty,
-            optionText = { it.localizedName() },
-            onSelect = onDifficultyChange
-        )
-
-        Text(
-            text = stringResource(difficulty.hintRes()),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        LabeledSlider(
-            label = stringResource(R.string.math_practice_count),
-            value = challengeCount,
-            valueText = challengeCount.toString(),
-            valueRange = 1f..10f,
-            steps = 8,
-            onValueChange = onCountChange
-        )
 
         Button(
             onClick = onStart,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = studyTone.action,
+                contentColor = studyTone.onAction
+            ),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp)
@@ -193,13 +202,20 @@ private fun MathPracticeSetup(
             Text(stringResource(R.string.math_practice_start))
         }
 
-        Text(
-            text = stringResource(R.string.math_practice_offline_note),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = infoTone.action,
+            contentColor = infoTone.onAction,
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.math_practice_offline_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = infoTone.onAction,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
     }
 }
 
@@ -211,6 +227,8 @@ private fun MathPracticeRun(
     modifier: Modifier = Modifier
 ) {
     val run = state.run ?: return
+    val progressTone = MaterialTheme.appAccents.progress
+    val infoTone = MaterialTheme.appAccents.info
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -233,22 +251,31 @@ private fun MathPracticeRun(
                 run.challengeCount
             ),
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.appAccents.study.color
+            color = progressTone.color
         )
         Spacer(Modifier.height(6.dp))
         LinearProgressIndicator(
             progress = { run.currentNumber.toFloat() / run.challengeCount.toFloat() },
+            color = progressTone.color,
+            trackColor = progressTone.action,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = stringResource(
-                R.string.math_practice_elapsed,
-                formatElapsed((now - state.startedAtMillis).coerceAtLeast(0L))
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Surface(
+            color = infoTone.action,
+            contentColor = infoTone.onAction,
+            shape = RoundedCornerShape(50)
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.math_practice_elapsed,
+                    formatElapsed((now - state.startedAtMillis).coerceAtLeast(0L))
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = infoTone.onAction,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+            )
+        }
         Spacer(Modifier.height(18.dp))
 
         MathChallengeCard(
@@ -273,6 +300,10 @@ private fun MathPracticeResult(
     modifier: Modifier = Modifier
 ) {
     val run = state.run ?: return
+    val successTone = MaterialTheme.appAccents.success
+    val progressTone = MaterialTheme.appAccents.progress
+    val studyTone = MaterialTheme.appAccents.study
+    val infoTone = MaterialTheme.appAccents.info
     val duration = ((state.finishedAtMillis ?: System.currentTimeMillis()) - state.startedAtMillis)
         .coerceAtLeast(0L)
 
@@ -287,13 +318,14 @@ private fun MathPracticeResult(
         Icon(
             imageVector = Icons.Default.Calculate,
             contentDescription = null,
-            tint = MaterialTheme.appAccents.success.color
+            tint = successTone.color
         )
         Spacer(Modifier.height(12.dp))
         Text(
             text = stringResource(R.string.math_practice_result_title),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
+            color = successTone.color,
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(20.dp))
@@ -301,7 +333,8 @@ private fun MathPracticeResult(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+                containerColor = progressTone.container,
+                contentColor = progressTone.onContainer
             )
         ) {
             Column(
@@ -310,19 +343,23 @@ private fun MathPracticeResult(
             ) {
                 ResultLine(
                     stringResource(R.string.math_practice_result_solved),
-                    "${run.completedCount}/${run.challengeCount}"
+                    "${run.completedCount}/${run.challengeCount}",
+                    progressTone
                 )
                 ResultLine(
                     stringResource(R.string.math_practice_result_attempts),
-                    run.totalAttempts.toString()
+                    run.totalAttempts.toString(),
+                    progressTone
                 )
                 ResultLine(
                     stringResource(R.string.math_practice_result_errors),
-                    run.totalWrongAttempts.toString()
+                    run.totalWrongAttempts.toString(),
+                    progressTone
                 )
                 ResultLine(
                     stringResource(R.string.math_practice_result_time),
-                    formatElapsed(duration)
+                    formatElapsed(duration),
+                    progressTone
                 )
             }
         }
@@ -330,6 +367,10 @@ private fun MathPracticeResult(
         Spacer(Modifier.height(24.dp))
         Button(
             onClick = onRetry,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = studyTone.action,
+                contentColor = studyTone.onAction
+            ),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp)
@@ -339,24 +380,29 @@ private fun MathPracticeResult(
         Spacer(Modifier.height(10.dp))
         OutlinedButton(
             onClick = onEditParameters,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = progressTone.color),
+            border = BorderStroke(1.dp, progressTone.color),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(stringResource(R.string.math_practice_change_parameters))
         }
-        TextButton(onClick = onClose) {
+        TextButton(
+            onClick = onClose,
+            colors = ButtonDefaults.textButtonColors(contentColor = infoTone.color)
+        ) {
             Text(stringResource(R.string.action_close))
         }
     }
 }
 
 @Composable
-private fun ResultLine(label: String, value: String) {
+private fun ResultLine(label: String, value: String, tone: AppAccentTone) {
     androidx.compose.foundation.layout.Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontWeight = FontWeight.SemiBold)
+        Text(label, color = tone.onContainer.copy(alpha = 0.76f))
+        Text(value, color = tone.onContainer, fontWeight = FontWeight.SemiBold)
     }
 }
 

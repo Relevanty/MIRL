@@ -321,13 +321,13 @@ fun DiaryScreen(
                     Icon(
                         Icons.Default.Delete,
                         null,
-                        tint = MaterialTheme.appAccents.urgent.color
+                        tint = MaterialTheme.appAccents.urgent.onContainer
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         stringResource(R.string.library_delete),
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.appAccents.urgent.color
+                        color = MaterialTheme.appAccents.urgent.onContainer
                     )
                 }
 
@@ -365,14 +365,18 @@ private fun DiaryRow(
     val dateText = date.format(DateTimeFormatter.ofPattern("d MMMM yyyy, EEE", Locale.getDefault()))
     val emptyPreview = stringResource(R.string.diary_empty_short)
     val preview = entry.text.take(100).ifEmpty { emptyPreview }
+    val tone = when {
+        isSelected || isIdea -> MaterialTheme.appAccents.creative
+        isDream -> MaterialTheme.appAccents.sleep
+        else -> MaterialTheme.appAccents.leisure
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(
-                if (isSelected) MaterialTheme.appAccents.calm.container
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                tone.container
             )
             .combinedClickable(
                 onClick = onClick,
@@ -393,7 +397,7 @@ private fun DiaryRow(
                 Text(
                     dateText,
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = tone.onContainer
                 )
             }
             Spacer(Modifier.height(4.dp))
@@ -447,17 +451,18 @@ private fun DiaryEditor(
     val scope = rememberCoroutineScope()
 
     val colorScheme = MaterialTheme.colorScheme
+    val accents = MaterialTheme.appAccents
 
-    val markdownTransformation = remember(colorScheme) {
+    val markdownTransformation = remember(colorScheme, accents) {
         MarkdownVisualTransformation(
-            headingColor = colorScheme.primary,
-            quoteColor = colorScheme.onSurfaceVariant,
-            listColor = colorScheme.tertiary,
-            codeColor = colorScheme.error,
-            codeBackground = colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            headingColor = accents.creative.color,
+            quoteColor = accents.info.color,
+            listColor = accents.leisure.color,
+            codeColor = accents.urgent.color,
+            codeBackground = accents.info.container,
             boldColor = colorScheme.onBackground,
             italicColor = colorScheme.onSurfaceVariant,
-            mathColor = colorScheme.tertiary
+            mathColor = accents.study.color
         )
     }
 
@@ -533,7 +538,7 @@ private fun DiaryEditor(
                             contentDescription = stringResource(
                                 if (isPreviewMode) R.string.diary_edit else R.string.diary_preview
                             ),
-                            tint = MaterialTheme.appAccents.calm.color
+                            tint = MaterialTheme.appAccents.creative.color
                         )
                     }
                 }
@@ -573,7 +578,7 @@ private fun DiaryEditor(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onBackground
                 ),
-                cursorBrush = SolidColor(MaterialTheme.appAccents.calm.color),
+                cursorBrush = SolidColor(MaterialTheme.appAccents.creative.color),
                 visualTransformation = markdownTransformation,
                 decorationBox = { innerTextField ->
                     if (textFieldValue.text.isEmpty()) {

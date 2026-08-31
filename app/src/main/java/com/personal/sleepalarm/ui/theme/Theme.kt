@@ -187,7 +187,17 @@ internal fun buildColorScheme(p: ThemePreset): ColorScheme {
         secondaryContainer,
         tertiaryContainer
     )
-    val readableOnSurface = ensureContrast(Color(p.onBackground), contentSurfaces, MIN_TEXT_CONTRAST)
+    // Most labels intentionally inherit Material's content colour. Give that
+    // shared ink a restrained cast from the selected preset so ordinary copy,
+    // field labels and icons belong to the theme as clearly as accent controls
+    // do. Contrast normalization below keeps the tint safe on every surface.
+    val themedInkSeed = lerp(
+        Color(p.onBackground),
+        identityTint,
+        if (p.isDark) 0.16f + direction.fingerprint * 0.055f
+        else 0.10f + direction.fingerprint * 0.035f
+    )
+    val readableOnSurface = ensureContrast(themedInkSeed, contentSurfaces, MIN_TEXT_CONTRAST)
     val onSurface = ensureContrastAtAlpha(
         foreground = readableOnSurface,
         backgrounds = contentSurfaces,

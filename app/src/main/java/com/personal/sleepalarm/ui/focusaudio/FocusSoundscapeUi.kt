@@ -52,17 +52,22 @@ import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -181,6 +186,7 @@ fun FocusSoundscapeSetupRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
+    val focusTone = MaterialTheme.appAccents.focus
     val primary = state.primaryItem
     val hasAudibleSound = primary != null && !primary.isSilence
     val summary = when {
@@ -207,9 +213,9 @@ fun FocusSoundscapeSetupRow(
                 stateDescription = summary
             },
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+        color = focusTone.action,
+        contentColor = focusTone.onAction,
+        border = BorderStroke(1.dp, focusTone.color.copy(alpha = 0.48f))
     ) {
         Row(
             modifier = Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
@@ -226,7 +232,7 @@ fun FocusSoundscapeSetupRow(
                 Text(
                     text = stringResource(R.string.focus_soundscape_title),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = focusTone.onAction.copy(alpha = 0.76f)
                 )
                 Text(
                     text = summary,
@@ -248,14 +254,14 @@ fun FocusSoundscapeSetupRow(
                             if (state.isPlaying) R.string.focus_sound_pause
                             else R.string.focus_sound_play
                         ),
-                        tint = MaterialTheme.appAccents.focus.color
+                        tint = focusTone.onAction
                     )
                 }
             } else {
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = focusTone.onAction.copy(alpha = 0.76f),
                     modifier = Modifier.padding(12.dp)
                 )
             }
@@ -291,6 +297,7 @@ fun FocusSoundscapePickerSheet(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var sessionOptionsExpanded by rememberSaveable { mutableStateOf(false) }
+    val focusTone = MaterialTheme.appAccents.focus
     val selectedCategory = state.selectedCategoryId
     val categoryItems = remember(state.items, state.recentItemIds, selectedCategory) {
         when (selectedCategory) {
@@ -342,21 +349,22 @@ fun FocusSoundscapePickerSheet(
                         Text(
                             text = stringResource(R.string.focus_soundscape_title),
                             style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = focusTone.color
                         )
                         Text(
                             text = stringResource(R.string.focus_sound_library_count, state.items.count { !it.isSilence }),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = focusTone.color.copy(alpha = 0.78f)
                         )
                     }
                     Text(
                         text = stringResource(R.string.focus_sound_offline_badge),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.appAccents.focus.color,
+                        color = focusTone.onAction,
                         modifier = Modifier
                             .clip(CircleShape)
-                            .background(MaterialTheme.appAccents.focus.container.copy(alpha = 0.78f))
+                            .background(focusTone.action)
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }
@@ -378,7 +386,22 @@ fun FocusSoundscapePickerSheet(
                             }
                         }
                     } else null,
-                    placeholder = { Text(stringResource(R.string.focus_sound_search_hint)) }
+                    placeholder = { Text(stringResource(R.string.focus_sound_search_hint)) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = focusTone.action.copy(alpha = 0.72f),
+                        unfocusedContainerColor = focusTone.action.copy(alpha = 0.52f),
+                        focusedTextColor = focusTone.onAction,
+                        unfocusedTextColor = focusTone.onAction,
+                        cursorColor = focusTone.color,
+                        focusedBorderColor = focusTone.color,
+                        unfocusedBorderColor = focusTone.color.copy(alpha = 0.42f),
+                        focusedLeadingIconColor = focusTone.onAction,
+                        unfocusedLeadingIconColor = focusTone.onAction.copy(alpha = 0.76f),
+                        focusedTrailingIconColor = focusTone.onAction,
+                        unfocusedTrailingIconColor = focusTone.onAction.copy(alpha = 0.76f),
+                        focusedPlaceholderColor = focusTone.onAction.copy(alpha = 0.64f),
+                        unfocusedPlaceholderColor = focusTone.onAction.copy(alpha = 0.64f)
+                    )
                 )
 
                 if (state.isImportingCustomSounds) {
@@ -386,9 +409,13 @@ fun FocusSoundscapePickerSheet(
                         Text(
                             stringResource(R.string.focus_sound_importing),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = focusTone.color
                         )
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = focusTone.color,
+                            trackColor = focusTone.action
+                        )
                     }
                 }
 
@@ -414,6 +441,7 @@ fun FocusSoundscapePickerSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(quickCategories, key = { it.id }) { category ->
+                    val tone = focusSoundTone(category.id)
                     val selected = if (category.id == FocusSoundscapeUiState.CATEGORY_ALL) {
                         isCatalogueSection
                     } else {
@@ -439,7 +467,15 @@ fun FocusSoundscapePickerSheet(
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
-                        } else null
+                        } else null,
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = tone.action,
+                            labelColor = tone.onAction,
+                            iconColor = tone.onAction,
+                            selectedContainerColor = tone.container,
+                            selectedLabelColor = tone.onContainer,
+                            selectedLeadingIconColor = tone.onContainer
+                        )
                     )
                 }
             }
@@ -451,10 +487,17 @@ fun FocusSoundscapePickerSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(catalogueCategories, key = { it.id }) { category ->
+                        val tone = focusSoundTone(category.id)
                         FilterChip(
                             selected = category.id == selectedCategory,
                             onClick = { onCategorySelected(category.id) },
-                            label = { Text(category.title) }
+                            label = { Text(category.title) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = tone.action,
+                                labelColor = tone.onAction,
+                                selectedContainerColor = tone.container,
+                                selectedLabelColor = tone.onContainer
+                            )
                         )
                     }
                 }
@@ -470,6 +513,7 @@ fun FocusSoundscapePickerSheet(
                     EmptyCategory(
                         isFavorites = selectedCategory == FocusSoundscapeUiState.CATEGORY_FAVORITES,
                         searchQuery = query,
+                        tone = focusSoundTone(selectedCategory),
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -519,12 +563,13 @@ fun FocusSoundscapePickerSheet(
             }
 
             Surface(
-                color = MaterialTheme.colorScheme.surface,
+                color = focusTone.action,
+                contentColor = focusTone.onAction,
                 tonalElevation = 3.dp,
                 shadowElevation = 6.dp,
                 border = BorderStroke(
                     1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    focusTone.color.copy(alpha = 0.45f)
                 )
             ) {
                 Column(
@@ -540,7 +585,8 @@ fun FocusSoundscapePickerSheet(
                     )
                     TextButton(
                         onClick = { sessionOptionsExpanded = !sessionOptionsExpanded },
-                        modifier = Modifier.align(Alignment.End)
+                        modifier = Modifier.align(Alignment.End),
+                        colors = ButtonDefaults.textButtonColors(contentColor = focusTone.onAction)
                     ) {
                         Text(stringResource(R.string.focus_sound_session_options))
                         Spacer(Modifier.width(4.dp))
@@ -553,7 +599,8 @@ fun FocusSoundscapePickerSheet(
                     AnimatedVisibility(visible = sessionOptionsExpanded) {
                         Surface(
                             shape = RoundedCornerShape(18.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+                            color = focusTone.container,
+                            contentColor = focusTone.onContainer
                         ) {
                             Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 5.dp)) {
                                 if (showRememberForTask) {
@@ -586,6 +633,7 @@ private fun SoundscapeOptionSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val focusTone = MaterialTheme.appAccents.focus
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -598,12 +646,21 @@ private fun SoundscapeOptionSwitch(
             Text(
                 subtitle,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = focusTone.onContainer.copy(alpha = 0.76f),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = focusTone.onColor,
+                checkedTrackColor = focusTone.color,
+                uncheckedThumbColor = focusTone.onAction,
+                uncheckedTrackColor = focusTone.action
+            )
+        )
     }
 }
 
@@ -684,7 +741,10 @@ private fun FocusSoundMiniPlayer(
                 TextButton(
                     onClick = { onMixEnabledChange(true) },
                     enabled = hasAudibleSound && state.canMix,
-                    modifier = Modifier.align(Alignment.End)
+                    modifier = Modifier.align(Alignment.End),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.appAccents.focus.onContainer
+                    )
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(5.dp))
@@ -701,7 +761,12 @@ private fun FocusSoundMiniPlayer(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = { onMixEnabledChange(false) }) {
+                    TextButton(
+                        onClick = { onMixEnabledChange(false) },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.appAccents.focus.onContainer
+                        )
+                    ) {
                         Text(stringResource(R.string.focus_sound_single_mode))
                     }
                 }
@@ -754,6 +819,11 @@ private fun CompactVolumeRow(
             value = volume.coerceIn(0f, 1f),
             onValueChange = onVolumeChange,
             enabled = enabled,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.appAccents.focus.color,
+                activeTrackColor = MaterialTheme.appAccents.focus.color,
+                inactiveTrackColor = MaterialTheme.appAccents.focus.action
+            ),
             modifier = Modifier.weight(1f)
         )
         Text(
@@ -773,17 +843,19 @@ private fun MixLayerControl(
     onSelect: () -> Unit,
     onVolumeChange: (Float) -> Unit
 ) {
+    val focusTone = MaterialTheme.appAccents.focus
     val layerNumber = if (layer == FocusSoundLayer.PRIMARY) "1" else "2"
     val label = item?.title ?: stringResource(R.string.focus_sound_add_second_layer)
     Surface(
         onClick = onSelect,
         shape = RoundedCornerShape(16.dp),
         color = if (selected) {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.80f)
+            focusTone.action
         } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.36f)
+            focusTone.container
         },
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.appAccents.focus.color) else null,
+        contentColor = if (selected) focusTone.onAction else focusTone.onContainer,
+        border = if (selected) BorderStroke(1.dp, focusTone.color) else null,
         modifier = Modifier
             .fillMaxWidth()
             .semantics { this.selected = selected }
@@ -792,10 +864,8 @@ private fun MixLayerControl(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = CircleShape,
-                    color = if (selected) MaterialTheme.appAccents.focus.color
-                    else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (selected) MaterialTheme.appAccents.focus.onColor
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (selected) focusTone.color else focusTone.action,
+                    contentColor = if (selected) focusTone.onColor else focusTone.onAction,
                     modifier = Modifier.size(25.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -820,6 +890,11 @@ private fun MixLayerControl(
                 value = volume.coerceIn(0f, 1f),
                 onValueChange = onVolumeChange,
                 enabled = item != null,
+                colors = SliderDefaults.colors(
+                    thumbColor = focusTone.color,
+                    activeTrackColor = focusTone.color,
+                    inactiveTrackColor = focusTone.action
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(32.dp)
@@ -833,12 +908,12 @@ private fun SoundLibraryNotice(text: String, isError: Boolean) {
     val container = if (isError) {
         MaterialTheme.appAccents.warning.container
     } else {
-        MaterialTheme.appAccents.calm.container
+        MaterialTheme.appAccents.info.container
     }
     val content = if (isError) {
         MaterialTheme.appAccents.warning.onContainer
     } else {
-        MaterialTheme.appAccents.calm.onContainer
+        MaterialTheme.appAccents.info.onContainer
     }
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -867,6 +942,8 @@ private fun FocusSoundLibraryRow(
     onRemoveCustomSound: (() -> Unit)?
 ) {
     val selected = selectedLayer != null
+    val tone = focusSoundTone(item.categoryId)
+    val rowContentColor = if (selected) tone.onContainer else tone.onAction
     val selectedDescription = when (selectedLayer) {
         FocusSoundLayer.PRIMARY -> stringResource(R.string.focus_sound_primary_selected)
         FocusSoundLayer.SECONDARY -> stringResource(R.string.focus_sound_secondary_selected)
@@ -877,14 +954,15 @@ private fun FocusSoundLibraryRow(
         enabled = item.isAvailable,
         shape = RoundedCornerShape(18.dp),
         color = if (selected) {
-            MaterialTheme.appAccents.focus.container
+            tone.container
         } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
+            tone.action
         },
+        contentColor = rowContentColor,
         border = if (selected) {
-            BorderStroke(1.25.dp, MaterialTheme.appAccents.focus.color.copy(alpha = 0.86f))
+            BorderStroke(1.25.dp, tone.color.copy(alpha = 0.86f))
         } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
+            BorderStroke(1.dp, tone.color.copy(alpha = 0.34f))
         },
         modifier = Modifier
             .fillMaxWidth()
@@ -917,7 +995,7 @@ private fun FocusSoundLibraryRow(
                     Text(
                         text = item.subtitle,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = rowContentColor.copy(alpha = 0.78f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -926,8 +1004,8 @@ private fun FocusSoundLibraryRow(
             if (selectedLayer != null) {
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.appAccents.focus.color,
-                    contentColor = MaterialTheme.appAccents.focus.onColor,
+                    color = tone.color,
+                    contentColor = tone.onColor,
                     modifier = Modifier.size(27.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -951,7 +1029,7 @@ private fun FocusSoundLibraryRow(
                             else R.string.focus_sound_add_favorite
                         ),
                         tint = if (item.isFavorite) MaterialTheme.appAccents.warning.color
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        else rowContentColor.copy(alpha = 0.74f),
                         modifier = Modifier.size(19.dp)
                     )
                 }
@@ -964,7 +1042,7 @@ private fun FocusSoundLibraryRow(
                     Icon(
                         Icons.Default.DeleteOutline,
                         contentDescription = stringResource(R.string.focus_sound_remove_custom),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MaterialTheme.appAccents.urgent.color,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -975,18 +1053,23 @@ private fun FocusSoundLibraryRow(
 
 @Composable
 private fun AddCustomSoundRow(hasImportedItems: Boolean, onClick: () -> Unit) {
+    val focusTone = MaterialTheme.appAccents.focus
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 70.dp),
         shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, MaterialTheme.appAccents.focus.color.copy(alpha = 0.55f))
+        border = BorderStroke(1.dp, focusTone.color.copy(alpha = 0.55f)),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = focusTone.action,
+            contentColor = focusTone.onAction
+        )
     ) {
         Surface(
             shape = RoundedCornerShape(13.dp),
-            color = MaterialTheme.appAccents.focus.container,
-            contentColor = MaterialTheme.appAccents.focus.onContainer,
+            color = focusTone.container,
+            contentColor = focusTone.onContainer,
             modifier = Modifier.size(42.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -1006,7 +1089,7 @@ private fun AddCustomSoundRow(hasImportedItems: Boolean, onClick: () -> Unit) {
                     else R.string.focus_sound_add_files_hint
                 ),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = focusTone.onAction.copy(alpha = 0.76f),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1019,6 +1102,7 @@ private fun AddCustomSoundRow(hasImportedItems: Boolean, onClick: () -> Unit) {
 private fun EmptyCategory(
     isFavorites: Boolean,
     searchQuery: String = "",
+    tone: AppAccentTone,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1029,7 +1113,7 @@ private fun EmptyCategory(
         Icon(
             if (isFavorites) Icons.Default.FavoriteBorder else Icons.Default.VolumeOff,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = tone.color,
             modifier = Modifier.size(36.dp)
         )
         Spacer(Modifier.height(10.dp))
@@ -1042,7 +1126,7 @@ private fun EmptyCategory(
                 }
             ),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = tone.color
         )
     }
 }
@@ -1103,22 +1187,27 @@ private fun AppAccentTone.toSoundArtworkAccent() = SoundArtworkAccent(
 /** Keeps every sound category expressive while separating artwork fill from foreground ink. */
 @Composable
 private fun focusSoundArtworkAccent(categoryId: String?): SoundArtworkAccent {
+    return focusSoundTone(categoryId).toSoundArtworkAccent()
+}
+
+@Composable
+private fun focusSoundTone(categoryId: String?): AppAccentTone {
     val accents = MaterialTheme.appAccents
     return when (categoryId) {
-        FocusSoundCategory.SILENCE.id -> SoundArtworkAccent(
-            fill = MaterialTheme.colorScheme.surfaceVariant,
-            foreground = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        FocusSoundCategory.NOISE.id -> accents.other.toSoundArtworkAccent()
-        FocusSoundCategory.STUDY.id -> accents.study.toSoundArtworkAccent()
-        FocusSoundCategory.SPACES.id -> accents.work.toSoundArtworkAccent()
-        FocusSoundCategory.WEATHER.id -> accents.calm.toSoundArtworkAccent()
-        FocusSoundCategory.NATURE.id -> accents.success.toSoundArtworkAccent()
-        FocusSoundCategory.COZY.id -> accents.warning.toSoundArtworkAccent()
-        FocusSoundCategory.TRAVEL.id -> accents.focus.toSoundArtworkAccent()
-        FocusSoundCategory.MELODY.id -> accents.sleep.toSoundArtworkAccent()
-        FocusSoundCategory.CUSTOM.id -> accents.focus.toSoundArtworkAccent()
-        else -> accents.focus.toSoundArtworkAccent()
+        FocusSoundscapeUiState.CATEGORY_ALL -> accents.focus
+        FocusSoundscapeUiState.CATEGORY_RECENT -> accents.schedule
+        FocusSoundscapeUiState.CATEGORY_FAVORITES -> accents.warning
+        FocusSoundCategory.SILENCE.id -> accents.calm
+        FocusSoundCategory.NOISE.id -> accents.other
+        FocusSoundCategory.STUDY.id -> accents.study
+        FocusSoundCategory.SPACES.id -> accents.work
+        FocusSoundCategory.WEATHER.id -> accents.info
+        FocusSoundCategory.NATURE.id -> accents.leisure
+        FocusSoundCategory.COZY.id -> accents.calm
+        FocusSoundCategory.TRAVEL.id -> accents.schedule
+        FocusSoundCategory.MELODY.id -> accents.creative
+        FocusSoundCategory.CUSTOM.id -> accents.creative
+        else -> accents.focus
     }
 }
 
@@ -1168,6 +1257,7 @@ fun ActiveFocusSoundButton(
     onTogglePlayback: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val focusTone = MaterialTheme.appAccents.focus
     val title = state.primaryItem?.title ?: stringResource(R.string.focus_sound_off)
     val action = stringResource(
         if (state.isPlaying) R.string.focus_sound_long_press_pause
@@ -1187,18 +1277,18 @@ fun ActiveFocusSoundButton(
             .semantics {
                 contentDescription = buttonDescription
                 stateDescription = action
-            },
+        },
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-        contentColor = MaterialTheme.appAccents.focus.color,
+        color = focusTone.action,
+        contentColor = focusTone.onAction,
         tonalElevation = 5.dp,
         shadowElevation = 3.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
+        border = BorderStroke(1.dp, focusTone.color.copy(alpha = 0.72f))
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (state.isPlaying) {
                 SoundWave(
-                    color = MaterialTheme.appAccents.focus.color,
+                    color = focusTone.onAction,
                     animated = state.animationsEnabled,
                     modifier = Modifier.size(width = 25.dp, height = 22.dp)
                 )
@@ -1208,7 +1298,7 @@ fun ActiveFocusSoundButton(
                         .padding(5.dp)
                         .size(7.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.appAccents.focus.color)
+                        .background(focusTone.color)
                 )
             } else {
                 Icon(

@@ -24,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -48,22 +47,23 @@ internal fun QuickNotesDialog(
     val accents = MaterialTheme.appAccents
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    val noteAccent = accents.calm.color
-    val noteSurface = lerp(colors.surface, noteAccent, 0.13f)
+    val noteTone = accents.creative
+    val noteAccent = noteTone.color
+    val noteSurface = noteTone.container
     val noteButtonColors = ButtonDefaults.textButtonColors(
         contentColor = noteAccent,
         disabledContentColor = colors.onSurfaceVariant.copy(alpha = 0.48f)
     )
     val markdownTransformation = remember(colors, accents) {
         MarkdownVisualTransformation(
-            headingColor = accents.study.color,
-            quoteColor = colors.onSurfaceVariant,
-            listColor = accents.other.color,
+            headingColor = accents.creative.color,
+            quoteColor = accents.info.color,
+            listColor = accents.leisure.color,
             codeColor = accents.urgent.color,
             codeBackground = colors.surfaceVariant.copy(alpha = 0.55f),
             boldColor = colors.onSurface,
             italicColor = colors.onSurfaceVariant,
-            mathColor = accents.focus.color
+            mathColor = accents.study.color
         )
     }
 
@@ -120,7 +120,7 @@ internal fun QuickNotesDialog(
                         if (value.text.isBlank()) {
                             Text(
                                 text = stringResource(R.string.quick_notes_empty),
-                                color = colors.onSurfaceVariant
+                                color = noteTone.onContainer.copy(alpha = 0.78f)
                             )
                         } else {
                             ThemedMarkdownText(
@@ -136,16 +136,16 @@ internal fun QuickNotesDialog(
                             onValueChange = { value = it },
                             modifier = Modifier.fillMaxSize(),
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                color = colors.onSurface
+                                color = noteTone.onContainer
                             ),
-                            cursorBrush = SolidColor(accents.calm.color),
+                            cursorBrush = SolidColor(noteTone.color),
                             visualTransformation = markdownTransformation,
                             decorationBox = { field ->
                                 if (value.text.isEmpty()) {
                                     Text(
                                         text = stringResource(R.string.quick_notes_placeholder),
                                         style = MaterialTheme.typography.bodyLarge,
-                                        color = colors.onSurfaceVariant.copy(alpha = 0.62f)
+                                        color = noteTone.onContainer.copy(alpha = 0.62f)
                                     )
                                 }
                                 field()

@@ -308,11 +308,13 @@ private fun CategoryHeader(title: String, count: Int) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.appAccents.creative.color,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f)
         )
         Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = MaterialTheme.appAccents.creative.action,
+            contentColor = MaterialTheme.appAccents.creative.onAction,
             shape = CircleShape
         ) {
             Text(
@@ -336,10 +338,11 @@ private fun ThemeCard(
     val previewAccents = remember(preset, previewColors) {
         buildAppAccentPalette(preset, previewColors)
     }
+    val shellTone = MaterialTheme.appAccents.leisure
     val borderColor = if (isSelected) {
         previewColors.primary
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        shellTone.color.copy(alpha = 0.72f)
     }
 
     Column(
@@ -347,7 +350,7 @@ private fun ThemeCard(
             .fillMaxWidth()
             .heightIn(min = 146.dp)
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f))
+            .background(shellTone.container)
             .border(if (isSelected) 2.dp else 1.dp, borderColor, shape)
             .clickable(onClick = onSelect)
     ) {
@@ -360,6 +363,7 @@ private fun ThemeCard(
         Text(
             text = preset.localizedName(resources),
             style = MaterialTheme.typography.bodyMedium,
+            color = shellTone.onContainer,
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -459,14 +463,22 @@ private fun CandidateThemePreview(
 
                 Column(
                     modifier = Modifier
-                        .width(22.dp)
+                        .width(30.dp)
                         .fillMaxHeight(),
                     verticalArrangement = Arrangement.SpaceEvenly,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    PaletteDot(accents.sleep.fill, colors.outline)
-                    PaletteDot(accents.success.fill, colors.outline)
-                    PaletteDot(accents.urgent.fill, colors.outline)
+                    accents.all.chunked(3).forEach { rowTones ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            rowTones.forEach { tone ->
+                                PaletteDot(
+                                    tone.fill,
+                                    colors.outline,
+                                    Modifier.size(7.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
