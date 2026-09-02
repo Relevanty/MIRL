@@ -80,7 +80,7 @@ import com.personal.sleepalarm.data.db.entity.TaskDemandProfileEntity
 import com.personal.sleepalarm.data.db.entity.TaskDependencyEntity
 import com.personal.sleepalarm.data.db.entity.WorkEpisodeAssessmentEntity
 
-internal const val APP_DATABASE_VERSION = 28
+internal const val APP_DATABASE_VERSION = 29
 
 /**
  * Главная база приложения.
@@ -250,7 +250,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_24_25,
                     MIGRATION_25_26,
                     MIGRATION_26_27,
-                    MIGRATION_27_28
+                    MIGRATION_27_28,
+                    MIGRATION_28_29
                 )
                 .build()
         }
@@ -1040,6 +1041,13 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeSecondaryId TEXT")
                 db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapeSecondaryVolume INTEGER NOT NULL DEFAULT 20")
                 db.execSQL("ALTER TABLE focus_protocol_sessions ADD COLUMN soundscapePlayDuringRecovery INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE dday_events ADD COLUMN linksJson TEXT NOT NULL DEFAULT '[]'")
+                migrateCanonicalTaskDeadlines(db)
             }
         }
 

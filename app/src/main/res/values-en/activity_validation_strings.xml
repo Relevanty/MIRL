@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="activity_actual_only_hint">Record only work already done here. Plan future activity in Calendar; it will not count as actual time spent.</string>
+    <string name="activity_end_next_day">Ends the next day</string>
+    <string name="activity_actual_end_at">Ends: %1$s</string>
+    <string name="activity_actual_future_error">That time has not occurred yet. Actual work must start and end no later than now. Use Calendar planning for future activity.</string>
+    <string name="activity_actual_duration_error">The end must be after the start and the duration must be positive. For overnight work, explicitly select an end on the next day.</string>
+    <string name="activity_actual_too_long_error">A single actual-work record cannot exceed 24 hours. Split the period into separate records.</string>
+    <string name="activity_actual_time_format_error">Check the time in HH:MM format and the duration in minutes.</string>
+    <string name="activity_actual_title_error">Describe what you did or choose a task.</string>
+    <string name="activity_actual_missing_record_error">This record can no longer be edited. Close the form and reopen the current history record.</string>
+    <string name="activity_actual_missing_task_error">The linked task is no longer available. Select another task or an unlinked activity.</string>
+</resources>

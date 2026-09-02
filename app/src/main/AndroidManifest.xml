@@ -31,13 +31,24 @@
         android:name="android.hardware.microphone"
         android:required="false" />
 
-    <!-- Package visibility for installed system TTS engines. -->
+    <!-- Only discover speech services and browsers used by app features. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <intent>
             <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <!-- Deadline links deliberately open in the default browser, not in App Links. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" />
         </intent>
     </queries>
 

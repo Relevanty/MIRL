@@ -25,7 +25,7 @@ class AdaptiveEnergyMigrationTest {
 
         AppDatabase.MIGRATION_27_28.migrate(database)
 
-        assertEquals(28, APP_DATABASE_VERSION)
+        assertTrue(APP_DATABASE_VERSION >= 28)
         assertEquals(27, AppDatabase.MIGRATION_27_28.startVersion)
         assertEquals(28, AppDatabase.MIGRATION_27_28.endVersion)
 

@@ -32,8 +32,6 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Button
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -49,7 +47,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,6 +54,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,11 +70,12 @@ import com.personal.sleepalarm.data.db.entity.TaskDemandProfileEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.util.CoverHelper
 import com.personal.sleepalarm.domain.model.primaryLabel
-import java.time.Instant
+import com.personal.sleepalarm.domain.calculator.TaskDeadlinePlanCalculator
+import com.personal.sleepalarm.ui.components.DeadlineDateTimeField
+import com.personal.sleepalarm.ui.components.TaskDeadlinePlanSummary
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -100,6 +99,12 @@ internal fun TaskEditorScreen(
     var nextAction by remember(base.id, base.createdAt) { mutableStateOf(base.nextAction) }
     var imagePath by remember(base.id, base.createdAt) { mutableStateOf(base.imagePath) }
     var dueAtMillis by remember(base.id, base.createdAt) { mutableStateOf(base.dueAtMillis) }
+    val deadlineNow by produceState(initialValue = System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(30_000L)
+        }
+    }
     var estimatedMinutes by remember(base.id, base.createdAt) { mutableIntStateOf(base.estimatedMinutes) }
     var energy by remember(base.id, base.createdAt) { mutableStateOf(TaskEnergy.fromStorage(base.energyLevel)) }
     var contextTag by remember(base.id, base.createdAt) { mutableStateOf(base.contextTag) }
@@ -162,7 +167,6 @@ internal fun TaskEditorScreen(
     var expandedPlan by remember { mutableStateOf(
         dependencies.isNotBlank() || obstacle.isNotBlank() || ifThenPlan.isNotBlank() || checklist.isNotBlank()
     ) }
-    var showDatePicker by remember { mutableStateOf(false) }
     var importingImage by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -506,26 +510,15 @@ internal fun TaskEditorScreen(
 
             item {
                 TaskEditorSection(
-                    title = stringResource(R.string.task_section_conditions),
-                    hint = stringResource(R.string.task_section_conditions_hint),
+                    title = stringResource(R.string.task_deadline_workload_title),
+                    hint = stringResource(R.string.task_deadline_workload_hint),
                     tone = MaterialTheme.appAccents.schedule
                 ) {
-                    Text(stringResource(R.string.task_field_quadrant), style = MaterialTheme.typography.labelLarge)
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        TaskQuadrant.entries.forEach { item ->
-                            FilterChip(
-                                selected = quadrant == item,
-                                onClick = { quadrant = item },
-                                label = { Text(item.shortName(), maxLines = 1) }
-                            )
-                        }
-                    }
-
+                    DeadlineDateTimeField(
+                        value = dueAtMillis,
+                        onValueChange = { dueAtMillis = it },
+                        tone = MaterialTheme.appAccents.schedule
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(stringResource(R.string.daily_focus_bout_label), style = MaterialTheme.typography.labelLarge)
@@ -566,6 +559,11 @@ internal fun TaskEditorScreen(
                             modifier = Modifier.weight(1.4f)
                         )
                     }
+                    Text(
+                        stringResource(R.string.task_deadline_total_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -609,6 +607,43 @@ internal fun TaskEditorScreen(
                             onCheckedChange = { isDailyRequired = it }
                         )
                     }
+                    TaskDeadlinePlanSummary(
+                        plan = TaskDeadlinePlanCalculator.calculate(
+                            base.copy(
+                                dueAtMillis = dueAtMillis,
+                                workBudgetMinutes = workBudgetMinutes,
+                                plannedFocusMinutes = plannedFocusMinutes,
+                                estimatedMinutes = estimatedMinutes
+                            ),
+                            nowMillis = deadlineNow,
+                            zone = ZoneId.systemDefault()
+                        )
+                    )
+                }
+            }
+
+            item {
+                TaskEditorSection(
+                    title = stringResource(R.string.task_section_conditions),
+                    hint = stringResource(R.string.task_section_conditions_hint),
+                    tone = MaterialTheme.appAccents.schedule
+                ) {
+                    Text(stringResource(R.string.task_field_quadrant), style = MaterialTheme.typography.labelLarge)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TaskQuadrant.entries.forEach { item ->
+                            FilterChip(
+                                selected = quadrant == item,
+                                onClick = { quadrant = item },
+                                label = { Text(item.shortName(), maxLines = 1) }
+                            )
+                        }
+                    }
+
 
                     Text(stringResource(R.string.task_field_energy), style = MaterialTheme.typography.labelLarge)
                     Row(
@@ -634,17 +669,6 @@ internal fun TaskEditorScreen(
                         placeholder = { Text(stringResource(R.string.task_field_context_hint)) },
                         singleLine = true
                     )
-
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
-                            Text(dueAtMillis?.let(::formatTaskDate) ?: stringResource(R.string.task_pick_deadline))
-                        }
-                        if (dueAtMillis != null) {
-                            IconButton(onClick = { dueAtMillis = null }) {
-                                Icon(Icons.Default.Close, stringResource(R.string.task_clear_deadline))
-                            }
-                        }
-                    }
 
                     if (projects.isNotEmpty()) {
                         Text(stringResource(R.string.task_field_project), style = MaterialTheme.typography.labelLarge)
@@ -756,21 +780,6 @@ internal fun TaskEditorScreen(
         }
     }
 
-    if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dueAtMillis)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    dueAtMillis = datePickerState.selectedDateMillis
-                    showDatePicker = false
-                }) { Text(stringResource(R.string.task_date_apply)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.action_cancel)) }
-            }
-        ) { DatePicker(state = datePickerState) }
-    }
 }
 
 @Composable
@@ -875,11 +884,6 @@ private fun TaskEnergy.displayName(): String = when (this) {
     TaskEnergy.MEDIUM -> stringResource(R.string.task_energy_medium)
     TaskEnergy.HIGH -> stringResource(R.string.task_energy_high)
 }
-
-private fun formatTaskDate(millis: Long): String = Instant.ofEpochMilli(millis)
-    .atZone(ZoneId.systemDefault())
-    .toLocalDate()
-    .format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
 
 private fun formatBudget(minutes: Int): String {
     if (minutes <= 0) return "—"

@@ -9,6 +9,8 @@ import com.personal.sleepalarm.data.db.dao.EnglishProgressWithWordProjection
 import com.personal.sleepalarm.data.db.dao.EnglishDirectionalProgressWithWordProjection
 import com.personal.sleepalarm.data.db.dao.EnglishStudyCardBackupProjection
 import com.personal.sleepalarm.data.db.entity.*
+import com.personal.sleepalarm.data.repository.CANONICAL_DEADLINE_MODEL_VERSION
+import com.personal.sleepalarm.data.repository.canonicalizeTaskDeadlines
 import com.personal.sleepalarm.data.english.EnglishDictionaryAssetSource
 import com.personal.sleepalarm.data.english.toDirectionalProgressTracks
 import com.personal.sleepalarm.domain.english.EnglishStudyDirection
@@ -100,6 +102,7 @@ class BackupManager(private val context: Context) {
             )
             JSONObject().apply {
                 put("version", BACKUP_VERSION)
+                put("deadlineModelVersion", CANONICAL_DEADLINE_MODEL_VERSION)
                 put("exportedAt", System.currentTimeMillis())
 
             // Профиль (одна запись или пусто)
@@ -570,10 +573,19 @@ class BackupManager(private val context: Context) {
                 if (list.isNotEmpty()) db.reminderDao().insertAll(list)
             }
 
-            root.optJSONArray("ddays")?.let { arr ->
-                val list = (0 until arr.length()).mapNotNull { ddayFromJson(arr.getJSONObject(it)) }
-                if (list.isNotEmpty()) db.ddayDao().insertAll(list)
-            }
+            val importedDeadlineRows = root.optJSONArray("ddays")?.let { arr ->
+                (0 until arr.length()).mapNotNull { ddayFromJson(arr.getJSONObject(it)) }
+            }.orEmpty()
+            val deadlineTasks = db.taskDao().getAll()
+            val canonicalDeadlines = canonicalizeTaskDeadlines(
+                deadlineTasks,
+                importedDeadlineRows,
+                adoptLegacyDates = root.optInt("deadlineModelVersion", 0) < CANONICAL_DEADLINE_MODEL_VERSION
+            )
+            val originalTasks = deadlineTasks.associateBy { it.id }
+            canonicalDeadlines.tasks.filter { it.dueAtMillis != originalTasks[it.id]?.dueAtMillis }
+                .forEach { db.taskDao().update(it) }
+            if (canonicalDeadlines.deadlines.isNotEmpty()) db.ddayDao().insertAll(canonicalDeadlines.deadlines)
 
             root.optJSONArray("diary")?.let { arr ->
                 val list =
@@ -806,12 +818,7 @@ class BackupManager(private val context: Context) {
         put("createdAt", r.createdAt)
     }
 
-    private fun ddayToJson(d: DDayEntity) = JSONObject().apply {
-        put("id", d.id); put("title", d.title); put("targetDate", d.targetDate)
-        put("projectId", d.projectId ?: JSONObject.NULL); put("taskId", d.taskId ?: JSONObject.NULL)
-        put("notes", d.notes)
-        put("createdAt", d.createdAt)
-    }
+    private fun ddayToJson(d: DDayEntity) = deadlineToBackupJson(d)
 
     private fun projectToJson(p: ProjectEntity) = JSONObject().apply {
         put("id", p.id); put("title", p.title); put("description", p.description); put("goal", p.goal)
@@ -1383,15 +1390,7 @@ class BackupManager(private val context: Context) {
     }
 
     private fun ddayFromJson(o: JSONObject): DDayEntity? = try {
-        DDayEntity(
-            id = o.optInt("id", 0),
-            title = o.optString("title"),
-            targetDate = o.optString("targetDate"),
-            projectId = if (o.isNull("projectId")) null else o.optInt("projectId"),
-            taskId = if (o.isNull("taskId")) null else o.optInt("taskId"),
-            notes = o.optString("notes", ""),
-            createdAt = o.optLong("createdAt", System.currentTimeMillis())
-        )
+        deadlineFromBackupJson(o)
     } catch (e: Exception) {
         Log.e(TAG, "Ошибка парсинга D-Day", e); null
     }

@@ -15,6 +15,9 @@ interface CalendarEventDao {
     @Query("SELECT * FROM events")
     suspend fun getAll(): List<CalendarEventEntity>
 
+    @Query("SELECT * FROM events WHERE id = :id")
+    suspend fun getById(id: Int): CalendarEventEntity?
+
     @Query("SELECT * FROM events WHERE taskId = :taskId")
     suspend fun getLinkedToTask(taskId: Int): List<CalendarEventEntity>
 

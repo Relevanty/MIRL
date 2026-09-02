@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="activity_actual_only_hint">Здесь учитывается только уже выполненная работа. Будущую активность запланируйте в календаре — она не добавится к фактически затраченному времени.</string>
+    <string name="activity_end_next_day">Окончание на следующий день</string>
+    <string name="activity_actual_end_at">Окончание: %1$s</string>
+    <string name="activity_actual_future_error">Это время ещё не наступило. Начало и окончание фактической работы должны быть не позже текущего момента. Для будущей активности используйте планирование в календаре.</string>
+    <string name="activity_actual_duration_error">Окончание должно быть позже начала, а длительность — больше нуля. Для работы через полночь явно укажите окончание на следующий день.</string>
+    <string name="activity_actual_too_long_error">Одна запись фактической работы не может превышать 24 часа. Разделите период на несколько записей.</string>
+    <string name="activity_actual_time_format_error">Проверьте время в формате ЧЧ:ММ и длительность в минутах.</string>
+    <string name="activity_actual_title_error">Укажите, чем занимались, или выберите задачу.</string>
+    <string name="activity_actual_missing_record_error">Эту запись уже нельзя изменить. Закройте форму и откройте актуальную запись истории.</string>
+    <string name="activity_actual_missing_task_error">Связанная задача больше недоступна. Выберите другую задачу или запись без задачи.</string>
+</resources>

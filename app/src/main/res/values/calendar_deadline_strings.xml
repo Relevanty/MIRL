@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calendar_deadlines_title">Дедлайны</string>
+    <string name="calendar_deadlines_count">Дедлайны · %1$d</string>
+    <string name="calendar_create_deadline">Дедлайн</string>
+    <string name="calendar_deadline_on_date">Создать дедлайн на эту дату</string>
+    <string name="calendar_deadlines_upcoming">Все · %1$d</string>
+    <string name="calendar_deadlines_past">История · %1$d</string>
+    <string name="calendar_deadlines_empty">Дедлайнов пока нет. Нажмите +, чтобы задать срок, описать результат и добавить ссылки.</string>
+    <string name="calendar_deadlines_empty_past">Здесь появятся прошедшие сроки и дедлайны завершённых задач. Их можно открыть и изменить.</string>
+    <string name="calendar_deadline_task_done">Связанная задача завершена</string>
+    <string name="calendar_deadline_invalid">Проверьте название и дату дедлайна</string>
+    <string name="calendar_deadline_stale">Дедлайн или связанная задача были удалены. Вернитесь в календарь и откройте редактор заново.</string>
+    <string name="calendar_deadline_save_failed">Не удалось сохранить дедлайн. Попробуйте ещё раз.</string>
+    <string name="calendar_deadline_delete_failed">Не удалось удалить дедлайн. Попробуйте ещё раз.</string>
+    <string name="calendar_deadline_alarm_failed">Дедлайн сохранён, но обновить уведомления задачи не удалось. Проверьте разрешения на будильники.</string>
+</resources>

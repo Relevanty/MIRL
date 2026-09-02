@@ -1,6 +1,7 @@
 package com.personal.sleepalarm.ui.dday
 
 import android.app.Application
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.sleepalarm.data.db.AppDatabase
@@ -8,13 +9,22 @@ import com.personal.sleepalarm.data.db.entity.DDayEntity
 import com.personal.sleepalarm.data.db.entity.ProjectEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.data.repository.DDayRepository
+import com.personal.sleepalarm.data.repository.TaskEcosystemRepository
+import com.personal.sleepalarm.domain.coordinator.TaskLifecycleCoordinator
+import com.personal.sleepalarm.R
 import com.personal.sleepalarm.domain.model.primaryLabel
+import com.personal.sleepalarm.domain.model.calendarDeadlineItems
+import com.personal.sleepalarm.domain.calculator.TaskDeadlinePlan
+import com.personal.sleepalarm.domain.calculator.TaskDeadlinePlanCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 
 /**
  * Ближайшее событие + сколько дней осталось.
@@ -32,7 +42,9 @@ data class DDayUiState(
     val nearest: NearestDDay? = null,
     val projects: List<ProjectEntity> = emptyList(),
     val tasks: List<TaskEntity> = emptyList(),
-    val plans: Map<Int, DDayPlanInfo> = emptyMap()
+    val plans: Map<Int, DDayPlanInfo> = emptyMap(),
+    val isLoaded: Boolean = false,
+    val metadata: List<DDayEntity> = emptyList()
 )
 
 data class DDayPlanInfo(
@@ -40,8 +52,12 @@ data class DDayPlanInfo(
     val remainingMinutes: Int,
     val minutesPerDay: Int,
     val readinessPercent: Int,
-    val isOnTrack: Boolean
+    val isOnTrack: Boolean,
+    val hasWorkBudget: Boolean = false,
+    val taskPlan: TaskDeadlinePlan? = null
 )
+
+data class DeadlineMutationResult(val id: Int, val targetDate: String? = null)
 
 /**
  * ViewModel D-Day: список, CRUD, ближайшее событие для бейджей и брифинга.
@@ -55,6 +71,14 @@ class DDayViewModel(
 
     private val database = AppDatabase.getInstance(application.applicationContext)
     private val repository = DDayRepository(database.ddayDao())
+    private val ecosystem = TaskEcosystemRepository(database)
+    private val taskLifecycle = TaskLifecycleCoordinator(application.applicationContext, database)
+    private val clock = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(30_000L)
+        }
+    }
 
     /** Только ближайшее событие с днями — для бейджей и брифинга. */
     val nearest: StateFlow<NearestDDay?> = repository.observeNearest()
@@ -68,11 +92,13 @@ class DDayViewModel(
         )
 
     val uiState: StateFlow<DDayUiState> = combine(
-        repository.observeAll(),
+        repository.observeMetadata(),
         nearest,
         database.projectDao().observeAll(),
-        database.taskDao().observeAll()
-    ) { events, nearest, projects, tasks ->
+        database.taskDao().observeAll(),
+        clock
+    ) { metadata, nearest, projects, tasks, nowMillis ->
+        val events = calendarDeadlineItems(metadata, tasks)
         val projectById = projects.associateBy { it.id }
         val taskById = tasks.associateBy { it.id }
         val plans = events.mapNotNull { event ->
@@ -83,32 +109,28 @@ class DDayViewModel(
             val spentMillis = task?.spentMillis ?: project?.spentMillis ?: 0L
             val spentMinutes = (spentMillis / 60_000L).toInt()
             val remaining = (budgetMinutes - spentMinutes).coerceAtLeast(0)
-            val days = repository.daysUntil(event)
-            val safeDays = (days + 1).coerceAtLeast(1)
-            val createdDate = java.time.Instant.ofEpochMilli(event.createdAt)
-                .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-            val targetDate = runCatching { java.time.LocalDate.parse(event.targetDate) }
-                .getOrDefault(java.time.LocalDate.now())
-            val totalDays = java.time.temporal.ChronoUnit.DAYS
-                .between(createdDate, targetDate).toInt().coerceAtLeast(1)
-            val elapsedDays = java.time.temporal.ChronoUnit.DAYS
-                .between(createdDate, java.time.LocalDate.now()).toInt().coerceAtLeast(0)
+            val taskPlan = task?.let {
+                TaskDeadlinePlanCalculator.calculate(it, nowMillis, java.time.ZoneId.systemDefault())
+            }
             val progress = if (budgetMinutes > 0) spentMinutes.toFloat() / budgetMinutes else 0f
-            val expectedProgress = elapsedDays.toFloat() / totalDays
             event.id to DDayPlanInfo(
                 linkedTitle = title,
                 remainingMinutes = remaining,
-                minutesPerDay = if (remaining == 0) 0 else kotlin.math.ceil(remaining / safeDays.toDouble()).toInt(),
+                minutesPerDay = taskPlan?.requiredMinutesPerDay ?: 0,
                 readinessPercent = (progress.coerceIn(0f, 1f) * 100).toInt(),
-                isOnTrack = remaining == 0 || (days >= 0 && progress + 0.05f >= expectedProgress)
+                isOnTrack = taskPlan?.isManualDailyGoalSufficient == true,
+                hasWorkBudget = budgetMinutes > 0,
+                taskPlan = taskPlan
             )
         }.toMap()
         DDayUiState(
             events = events,
             nearest = nearest,
             projects = projects.filterNot { it.isArchived },
-            tasks = tasks.filterNot { it.isDone || it.isMorningRoutine },
-            plans = plans
+            tasks = tasks.filterNot { it.isMorningRoutine },
+            plans = plans,
+            isLoaded = true,
+            metadata = metadata
         )
     }.stateIn(
         scope = viewModelScope,
@@ -120,24 +142,83 @@ class DDayViewModel(
     // CRUD
     // =====================================================================
 
-    fun addEvent(
-        title: String,
-        targetDate: String,
-        projectId: Int? = null,
-        taskId: Int? = null,
-        notes: String = ""
-    ): Boolean {
-        if (title.isBlank() || !repository.isValidDate(targetDate)) return false
-        viewModelScope.launch { repository.addEvent(title, targetDate, projectId, taskId, notes) }
-        return true
+    private val _saving = MutableStateFlow(false)
+    val saving: StateFlow<Boolean> = _saving
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError
+    private val _mutationResult = MutableStateFlow<DeadlineMutationResult?>(null)
+    val mutationResult: StateFlow<DeadlineMutationResult?> = _mutationResult
+
+    fun consumeMutationResult(result: DeadlineMutationResult) {
+        if (_mutationResult.value == result) _mutationResult.value = null
     }
 
-    fun updateEvent(event: DDayEntity) {
-        viewModelScope.launch { repository.update(event) }
+    fun clearSaveError() { _saveError.value = null }
+
+    /** Keep the editor open until the database confirms the change. */
+    fun saveEvent(event: DDayEntity, taskDueAtMillis: Long? = null) {
+        if (_saving.value || _mutationResult.value != null) return
+        if (event.title.isBlank() || !repository.isValidDate(event.targetDate)) {
+            _saveError.value = getApplication<Application>().getString(R.string.calendar_deadline_invalid)
+            return
+        }
+        _saving.value = true
+        _saveError.value = null
+        viewModelScope.launch {
+            try {
+                val saved = ecosystem.saveDeadline(event, taskDueAtMillis)
+                if (saved == null) {
+                    _saveError.value = getApplication<Application>().getString(R.string.calendar_deadline_stale)
+                    return@launch
+                }
+                saved.taskId?.let { taskId ->
+                    try {
+                        taskLifecycle.synchronize(taskId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The write has committed. Do not invite a second insert on retry.
+                        Toast.makeText(
+                            getApplication(), R.string.calendar_deadline_alarm_failed, Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+                _mutationResult.value = DeadlineMutationResult(saved.id, saved.targetDate)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _saveError.value = getApplication<Application>().getString(R.string.calendar_deadline_save_failed)
+            } finally {
+                _saving.value = false
+            }
+        }
     }
 
     fun deleteEvent(id: Int) {
-        viewModelScope.launch { repository.delete(id) }
+        if (_saving.value || _mutationResult.value != null) return
+        _saving.value = true
+        _saveError.value = null
+        viewModelScope.launch {
+            try {
+                val taskId = ecosystem.deleteDeadline(id)
+                taskId?.let {
+                    try {
+                        taskLifecycle.synchronize(it)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        Toast.makeText(getApplication(), R.string.calendar_deadline_alarm_failed, Toast.LENGTH_LONG).show()
+                    }
+                }
+                _mutationResult.value = DeadlineMutationResult(id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _saveError.value = getApplication<Application>().getString(R.string.calendar_deadline_delete_failed)
+            } finally {
+                _saving.value = false
+            }
+        }
     }
 
     fun daysUntil(event: DDayEntity): Int = repository.daysUntil(event)

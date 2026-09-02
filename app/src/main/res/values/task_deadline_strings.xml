@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="task_deadline_workload_title">Срок и объём работы</string>
+    <string name="task_deadline_workload_hint">Один срок задачи — здесь и в календаре. Ниже отдельно настраиваются общая оценка, одно занятие и дневная цель.</string>
+    <string name="task_deadline_total_help">Общая оценка всей задачи, а не одного занятия. Из неё вычитается всё учтённое время. Без оценки приложение не рассчитывает темп до дедлайна.</string>
+    <string name="task_deadline_plan_title">Расчёт по единому сроку</string>
+    <string name="task_deadline_no_estimate">Общий объём работы не задан. Без этой оценки темп в минутах в день не рассчитывается.</string>
+    <string name="task_deadline_volume">Учтено %1$d из %2$d мин · осталось по оценке %3$d мин</string>
+    <string name="task_deadline_estimate_exhausted">Оценка времени исчерпана, но задача ещё открыта. Завершите её или уточните оставшийся объём — потраченное время не равно готовности.</string>
+    <string name="task_deadline_overdue_plan">Срок уже прошёл. Перенесите его или пересмотрите объём — расчёт «успеть к сроку» больше не применим.</string>
+    <string name="task_deadline_not_enough_time">Оставшийся объём больше всего времени до срока, даже без перерывов. Нужно изменить объём или срок.</string>
+    <string name="task_deadline_no_date_plan">Срок не задан: объём учитывается, но темп по дням не рассчитывается.</string>
+    <string name="task_deadline_required_pace">Ориентир до срока: %1$d мин/день. Ваша дневная цель: %2$d мин.</string>
+    <string name="task_deadline_goal_below_pace">Текущая дневная цель ниже расчётного темпа. Можно увеличить её, сократить объём или перенести срок.</string>
+    <string name="task_deadline_pace_hint">Это равномерное распределение остатка по календарным дням, не гарантия свободного времени. Дневная цель и длительность занятия автоматически не меняются.</string>
+</resources>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="planned_activity_create">Запланировать активность</string>
+    <string name="planned_activity_edit">Изменить план активности</string>
+    <string name="planned_activity_day_title">Запланировано</string>
+    <string name="planned_activity_time_range">%1$s–%2$s · %3$d мин</string>
+    <string name="planned_activity_end_later">%1$s (+%2$d дн.)</string>
+    <string name="planned_activity_copy_title">Копировать название плана</string>
+    <string name="planned_activity_delete">Удалить план активности</string>
+    <string name="planned_activity_empty">На этот день пока ничего не запланировано</string>
+    <string name="planned_activity_fact_hint">План не учитывается как выполненная работа. Во время занятия запустите фокус или после него запишите фактическое время.</string>
+    <string name="planned_activity_explanation">Это план на выбранное время, а не выполненная работа. Он не прибавляет часы в историю и не завершает задачу. Факт появится после фокуса или ручной записи прошедшей активности.</string>
+    <string name="planned_activity_purpose">Что планируем</string>
+    <string name="planned_activity_title_label">Занятие или результат</string>
+    <string name="planned_activity_title_example">Например, подготовить черновик</string>
+    <string name="planned_activity_title_hint">Можно выбрать задачу ниже — её название подставится в пустое поле.</string>
+    <string name="planned_activity_task">Связанная задача · необязательно</string>
+    <string name="planned_activity_no_task">Без задачи</string>
+    <string name="planned_activity_task_unavailable">Связь сохранена · задача недоступна</string>
+    <string name="planned_activity_when">Когда и сколько времени</string>
+    <string name="planned_activity_date">Дата активности</string>
+    <string name="planned_activity_start_time">Начало активности</string>
+    <string name="planned_activity_duration">Запланированная длительность</string>
+    <string name="planned_activity_minutes">мин</string>
+    <string name="planned_activity_duration_value">%d мин</string>
+    <string name="planned_activity_finishes">Окончание: %s</string>
+    <string name="planned_activity_all_day_hint">План на весь календарный день без привязки ко времени. Это не означает 24 часа выполненной работы.</string>
+    <string name="planned_activity_reminder_label">Напомнить о плане</string>
+    <string name="planned_activity_reminder_hint">Напоминание отсчитывается от начала активности. Для повтора оно сработает перед следующим запланированным началом.</string>
+    <string name="planned_activity_reminder_all_day">Начало плана на весь день — в %s. Напоминание до начала может прийти вечером предыдущего дня.</string>
+    <string name="planned_activity_check_fields">Укажите занятие или выберите задачу, затем проверьте длительность.</string>
+    <string name="planned_activity_apply">Выбрать</string>
+    <string name="planned_activity_search">Поиск по названию</string>
+    <string name="planned_activity_no_matches">Подходящих задач нет</string>
+    <string name="planned_activity_selected">Выбрано</string>
+    <string name="planned_activity_discard_title">Выйти без сохранения?</string>
+    <string name="planned_activity_discard_message">Изменения плана активности ещё не сохранены.</string>
+    <string name="planned_activity_discard">Выйти</string>
+</resources>

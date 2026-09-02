@@ -2,6 +2,7 @@ package com.personal.sleepalarm.data.repository
 
 import com.personal.sleepalarm.data.db.dao.DDayDao
 import com.personal.sleepalarm.data.db.entity.DDayEntity
+import com.personal.sleepalarm.util.DeadlineLinks
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -24,6 +25,8 @@ class DDayRepository(
 
     fun observeAll(): Flow<List<DDayEntity>> = dao.observeAll()
 
+    fun observeMetadata(): Flow<List<DDayEntity>> = dao.observeMetadata()
+
     /** Ближайшее будущее событие (Flow, пересчитывается от текущей даты). */
     fun observeNearest(): Flow<DDayEntity?> =
         flow {
@@ -40,20 +43,33 @@ class DDayRepository(
         targetDate: String,
         projectId: Int? = null,
         taskId: Int? = null,
-        notes: String = ""
-    ): Long = dao.insert(
-        DDayEntity(
+        notes: String = "",
+        links: List<String> = emptyList()
+    ): Long {
+        require(taskId == null) { "Task deadlines must be saved through TaskEcosystemRepository" }
+        return dao.insert(DDayEntity(
             title = title.trim(),
             targetDate = targetDate,
             projectId = projectId,
             taskId = taskId,
-            notes = notes.trim()
-        )
-    )
+            notes = notes.trim(),
+            linksJson = DeadlineLinks.encode(links)
+        ))
+    }
 
-    suspend fun update(event: DDayEntity) = dao.update(event)
+    suspend fun update(event: DDayEntity) {
+        require(event.taskId == null) { "Task deadlines must be saved through TaskEcosystemRepository" }
+        dao.update(event.copy(
+            title = event.title.trim(),
+            notes = event.notes.trim(),
+            linksJson = DeadlineLinks.encode(DeadlineLinks.decode(event.linksJson))
+        ))
+    }
 
-    suspend fun delete(id: Int) = dao.deleteById(id)
+    suspend fun delete(id: Int) {
+        require(dao.getById(id)?.taskId == null) { "Clear task deadlines through TaskEcosystemRepository" }
+        dao.deleteById(id)
+    }
 
     /** Дней до события (0 = сегодня). Может быть отрицательным для прошедших. */
     fun daysUntil(event: DDayEntity): Int {

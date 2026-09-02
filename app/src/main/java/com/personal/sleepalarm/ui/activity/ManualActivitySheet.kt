@@ -24,6 +24,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,15 +50,19 @@ import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.repository.ActivityConflictStrategy
 import com.personal.sleepalarm.data.repository.ManualActivityInput
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.ActualActivityTimePolicy
+import com.personal.sleepalarm.domain.model.ActualActivityTimeError
+import com.personal.sleepalarm.domain.model.ManualActivityInterval
 import com.personal.sleepalarm.domain.model.focusActivityType
 import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
+import java.time.ZonedDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -75,10 +81,22 @@ fun ManualActivitySheet(
 ) {
     val tasks by viewModel.tasks.collectAsState()
     val conflicts by viewModel.conflicts.collectAsState()
+    val isSaving by viewModel.saving.collectAsState()
     val zone = ZoneId.systemDefault()
     val scope = rememberCoroutineScope()
-    val initialStart = editing?.startedAt ?: initialStartMillis ?: (System.currentTimeMillis() - 25L * 60_000L)
-    val initialEnd = editing?.endedAt ?: System.currentTimeMillis()
+    val initialStart = remember(editing?.id, initialStartMillis) {
+        editing?.startedAt ?: initialStartMillis ?: (System.currentTimeMillis() - 25L * 60_000L)
+    }
+    val initialEnd = remember(editing?.id, initialStartMillis) { editing?.endedAt ?: System.currentTimeMillis() }
+    val originalStart = Instant.ofEpochMilli(initialStart).atZone(zone)
+    val originalEnd = Instant.ofEpochMilli(initialEnd).atZone(zone)
+    val originalDurationText = ((initialEnd - initialStart) / 60_000L).toString()
+    val nowMillis by produceState(initialValue = System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
     var selectedTaskId by rememberSaveable(editing?.id, initialTaskId) {
         mutableStateOf(editing?.taskId ?: initialTaskId)
     }
@@ -96,9 +114,12 @@ fun ManualActivitySheet(
         mutableStateOf(Instant.ofEpochMilli(initialEnd).atZone(zone).toLocalTime().format(TIME_FORMAT))
     }
     var durationText by rememberSaveable(editing?.id) {
-        mutableStateOf(((initialEnd - initialStart) / 60_000L).coerceAtLeast(1L).toString())
+        mutableStateOf(originalDurationText)
     }
     var useDuration by rememberSaveable(editing?.id) { mutableStateOf(true) }
+    var endsNextDay by rememberSaveable(editing?.id) {
+        mutableStateOf(originalEnd.toLocalDate().isAfter(originalStart.toLocalDate()))
+    }
     var result by rememberSaveable(editing?.id) { mutableStateOf(editing?.result.orEmpty()) }
     var material by rememberSaveable(editing?.id) { mutableStateOf(editing?.material.orEmpty()) }
     var note by rememberSaveable(editing?.id) { mutableStateOf(editing?.note.orEmpty()) }
@@ -106,6 +127,12 @@ fun ManualActivitySheet(
     var pendingInput by remember { mutableStateOf<ManualActivityInput?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val selectedTask = tasks.firstOrNull { it.id == selectedTaskId }
+
+    LaunchedEffect(selectedDate, startText, endText, durationText, useDuration, endsNextDay, title) {
+        error = null
+        pendingInput = null
+        viewModel.clearConflicts()
+    }
 
     LaunchedEffect(tasks, selectedTaskId) {
         val task = tasks.firstOrNull { it.id == selectedTaskId }
@@ -126,20 +153,23 @@ fun ManualActivitySheet(
         }
     }
 
-    fun buildInput(): ManualActivityInput? {
-        val startTime = runCatching { LocalTime.parse(startText.trim(), FLEX_TIME_FORMAT) }.getOrNull()
-            ?: return null
-        val start = LocalDateTime.of(selectedDate, startTime).atZone(zone).toInstant().toEpochMilli()
-        val end = if (useDuration) {
-            val minutes = durationText.toIntOrNull()?.coerceIn(1, 24 * 60) ?: return null
-            start + minutes * 60_000L
-        } else {
-            val parsedEnd = runCatching { LocalTime.parse(endText.trim(), FLEX_TIME_FORMAT) }.getOrNull()
-                ?: return null
-            var value = LocalDateTime.of(selectedDate, parsedEnd).atZone(zone).toInstant().toEpochMilli()
-            if (value <= start) value += 24L * 60L * 60L * 1000L
-            value
+    fun buildInterval(): ManualActivityInterval? {
+        // Metadata-only history edits keep the recorded seconds/milliseconds.
+        // Minute-level fields must not silently round the original interval.
+        val unchangedStart = selectedDate == originalStart.toLocalDate() &&
+            startText == originalStart.toLocalTime().format(TIME_FORMAT)
+        val unchangedEnd = if (useDuration) durationText == originalDurationText else
+            endText == originalEnd.toLocalTime().format(TIME_FORMAT) &&
+                endsNextDay == originalEnd.toLocalDate().isAfter(originalStart.toLocalDate())
+        if (editing != null && unchangedStart && unchangedEnd) {
+            return ManualActivityInterval(initialStart, initialEnd)
         }
+        return ActualActivityTimePolicy.parse(
+            selectedDate, startText, endText, durationText, useDuration, endsNextDay, zone
+        )
+    }
+
+    fun buildInput(interval: ManualActivityInterval): ManualActivityInput {
         val task = tasks.firstOrNull { it.id == selectedTaskId }
         val resolvedActivityType = task?.focusActivityType() ?: activityType
         return ManualActivityInput(
@@ -154,15 +184,18 @@ fun ManualActivitySheet(
                 task == null && resolvedActivityType == FocusActivityType.OTHER
             },
             title = title.ifBlank { task?.primaryLabel().orEmpty() },
-            startedAt = start,
-            endedAt = end,
+            startedAt = interval.startedAt,
+            endedAt = interval.endedAt,
             result = result,
             material = material,
             note = note
         )
     }
+    val previewInterval = buildInterval()
+    val timeError = if (previewInterval == null) ActualActivityTimeError.INVALID_TIME.reason else
+        ActualActivityTimePolicy.validate(previewInterval.startedAt, previewInterval.endedAt, nowMillis)?.reason
 
-    ThemedModalBottomSheet(onDismissRequest = onDismiss) {
+    ThemedModalBottomSheet(onDismissRequest = { if (!isSaving) onDismiss() }) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -182,6 +215,11 @@ fun ManualActivitySheet(
                 text = stringResource(R.string.activity_manual_explanation),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(R.string.activity_actual_only_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.appAccents.info.color
             )
 
             Text(stringResource(R.string.activity_category), style = MaterialTheme.typography.labelLarge)
@@ -239,7 +277,7 @@ fun ManualActivitySheet(
                 if (useDuration) {
                     OutlinedTextField(
                         value = durationText,
-                        onValueChange = { durationText = it.filter(Char::isDigit).take(4) },
+                        onValueChange = { durationText = it.take(8) },
                         label = { Text(stringResource(R.string.activity_duration_input)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
@@ -258,6 +296,20 @@ fun ManualActivitySheet(
                 Text(stringResource(R.string.activity_enter_duration), modifier = Modifier.weight(1f))
                 Switch(checked = useDuration, onCheckedChange = { useDuration = it })
             }
+            if (!useDuration) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.activity_end_next_day), modifier = Modifier.weight(1f))
+                    Switch(checked = endsNextDay, onCheckedChange = { endsNextDay = it })
+                }
+            }
+            previewInterval?.takeIf { it.endedAt > it.startedAt }?.let { interval ->
+                val endDateTime = Instant.ofEpochMilli(interval.endedAt).atZone(zone)
+                Text(
+                    stringResource(R.string.activity_actual_end_at, endDateTime.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(15, 25, 45, 60).forEach { minutes ->
                     FilterChip(
@@ -273,12 +325,21 @@ fun ManualActivitySheet(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick = {
-                        val minutes = durationText.toIntOrNull()?.coerceIn(1, 24 * 60) ?: 25
-                        val now = LocalTime.now()
-                        startText = now.minusMinutes(minutes.toLong()).format(TIME_FORMAT)
-                        endText = now.format(TIME_FORMAT)
-                        selectedDate = LocalDate.now()
-                        useDuration = true
+                        val minutes = durationText.toLongOrNull()
+                        when {
+                            minutes == null -> error = ActualActivityTimeError.INVALID_TIME.reason
+                            minutes <= 0L -> error = ActualActivityTimeError.INVALID_DURATION.reason
+                            minutes > 24L * 60L -> error = ActualActivityTimeError.TOO_LONG.reason
+                            else -> {
+                                val end = ZonedDateTime.now(zone).withSecond(0).withNano(0)
+                                val start = end.minusMinutes(minutes)
+                                startText = start.format(TIME_FORMAT)
+                                endText = end.format(TIME_FORMAT)
+                                selectedDate = start.toLocalDate()
+                                endsNextDay = end.toLocalDate().isAfter(start.toLocalDate())
+                                useDuration = true
+                            }
+                        }
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text(stringResource(R.string.activity_working_since)) }
@@ -320,22 +381,30 @@ fun ManualActivitySheet(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2
             )
-            error?.let {
-                Text(stringResource(R.string.activity_invalid), color = MaterialTheme.appAccents.warning.color)
+            (timeError ?: error)?.let { reason ->
+                Text(
+                    stringResource(activityValidationMessage(reason)),
+                    color = MaterialTheme.appAccents.warning.color
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 if (editing != null) {
-                    TextButton(onClick = { viewModel.delete(editing.id) }) {
+                    TextButton(onClick = { viewModel.delete(editing.id) }, enabled = !isSaving) {
                         Text(stringResource(R.string.reminders_delete), color = MaterialTheme.appAccents.urgent.color)
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-                Button(onClick = {
-                    val input = buildInput()
-                    if (input == null) error = "invalid" else {
-                        pendingInput = input
-                        viewModel.save(input)
+                TextButton(onClick = onDismiss, enabled = !isSaving) { Text(stringResource(R.string.action_cancel)) }
+                Button(enabled = !isSaving, onClick = {
+                    val interval = buildInterval()
+                    val reason = if (interval == null) ActualActivityTimeError.INVALID_TIME.reason else
+                        ActualActivityTimePolicy.validate(interval.startedAt, interval.endedAt, System.currentTimeMillis())?.reason
+                    if (reason != null) error = reason else if (interval != null) {
+                        val input = buildInput(interval)
+                        if (input.title.isBlank()) error = "title" else {
+                            pendingInput = input
+                            viewModel.save(input)
+                        }
                     }
                 }) { Text(stringResource(R.string.task_save)) }
             }
@@ -343,15 +412,24 @@ fun ManualActivitySheet(
     }
 
     if (showDatePicker) {
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
         val picker = rememberDatePickerState(
-            initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+            initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate() <= today
+
+                override fun isSelectableYear(year: Int): Boolean = year <= today.year
+            }
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = picker.selectedDateMillis?.let {
+                    Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() <= today
+                } == true, onClick = {
                     picker.selectedDateMillis?.let {
-                        selectedDate = Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
+                        selectedDate = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
                     }
                     showDatePicker = false
                 }) { Text(stringResource(R.string.task_date_apply)) }
@@ -380,13 +458,13 @@ fun ManualActivitySheet(
             },
             confirmButton = {
                 Column(horizontalAlignment = Alignment.End) {
-                    TextButton(onClick = { viewModel.save(pendingInput!!, ActivityConflictStrategy.REPLACE) }) {
+                    TextButton(enabled = !isSaving, onClick = { viewModel.save(pendingInput!!, ActivityConflictStrategy.REPLACE) }) {
                         Text(stringResource(R.string.activity_overlap_replace))
                     }
-                    TextButton(onClick = { viewModel.save(pendingInput!!, ActivityConflictStrategy.MERGE) }) {
+                    TextButton(enabled = !isSaving, onClick = { viewModel.save(pendingInput!!, ActivityConflictStrategy.MERGE) }) {
                         Text(stringResource(R.string.activity_overlap_merge))
                     }
-                    TextButton(onClick = { viewModel.save(pendingInput!!, ActivityConflictStrategy.KEEP_PARALLEL) }) {
+                    TextButton(enabled = !isSaving, onClick = { viewModel.save(pendingInput!!, ActivityConflictStrategy.KEEP_PARALLEL) }) {
                         Text(stringResource(R.string.activity_overlap_parallel))
                     }
                 }
@@ -408,4 +486,14 @@ private fun activityTypeLabel(type: FocusActivityType): String = when (type) {
 }
 
 private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
-private val FLEX_TIME_FORMAT = DateTimeFormatter.ofPattern("H:mm")
+
+private fun activityValidationMessage(reason: String): Int = when (reason) {
+    "future" -> R.string.activity_actual_future_error
+    "duration" -> R.string.activity_actual_duration_error
+    "too_long" -> R.string.activity_actual_too_long_error
+    "time_format" -> R.string.activity_actual_time_format_error
+    "title" -> R.string.activity_actual_title_error
+    "missing_record", "not_manual" -> R.string.activity_actual_missing_record_error
+    "missing_task" -> R.string.activity_actual_missing_task_error
+    else -> R.string.activity_invalid
+}

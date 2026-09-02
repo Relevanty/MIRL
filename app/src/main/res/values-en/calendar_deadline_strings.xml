@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calendar_deadlines_title">Deadlines</string>
+    <string name="calendar_deadlines_count">Deadlines · %1$d</string>
+    <string name="calendar_create_deadline">Deadline</string>
+    <string name="calendar_deadline_on_date">Create a deadline for this date</string>
+    <string name="calendar_deadlines_upcoming">All · %1$d</string>
+    <string name="calendar_deadlines_past">History · %1$d</string>
+    <string name="calendar_deadlines_empty">No deadlines yet. Tap + to set a date, describe the outcome and add links.</string>
+    <string name="calendar_deadlines_empty_past">Past deadlines and completed tasks will appear here. You can still open and edit them.</string>
+    <string name="calendar_deadline_task_done">Linked task completed</string>
+    <string name="calendar_deadline_invalid">Check the deadline title and date</string>
+    <string name="calendar_deadline_stale">The deadline or linked task was deleted. Return to Calendar and reopen the editor.</string>
+    <string name="calendar_deadline_save_failed">Could not save the deadline. Please try again.</string>
+    <string name="calendar_deadline_delete_failed">Could not delete the deadline. Please try again.</string>
+    <string name="calendar_deadline_alarm_failed">Deadline saved, but task alerts could not be updated. Check alarm permissions.</string>
+</resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calendar_plan_title_required">Add a plan title</string>
+    <string name="calendar_plan_time_invalid">The end must be after the start</string>
+    <string name="calendar_plan_repeat_invalid">Choose a supported repeat option</string>
+    <string name="calendar_plan_reminder_invalid">The reminder cannot be after the plan starts</string>
+    <string name="calendar_plan_missing">This plan was deleted. Close the editor and create a new one.</string>
+    <string name="calendar_plan_task_missing">The linked task was deleted. Choose another task.</string>
+    <string name="calendar_plan_project_missing">The linked project was deleted. Choose another project.</string>
+    <string name="calendar_plan_save_failed">Could not save the plan. Your changes are still in the editor; try again.</string>
+    <string name="calendar_plan_alarm_failed">Plan saved, but the reminder could not be scheduled. Check notification permissions.</string>
+</resources>

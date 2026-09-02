@@ -2,13 +2,16 @@ package com.personal.sleepalarm.data.repository
 
 import androidx.room.withTransaction
 import com.personal.sleepalarm.data.db.AppDatabase
+import com.personal.sleepalarm.data.db.entity.DDayEntity
 import com.personal.sleepalarm.data.db.entity.ReminderEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.model.focusActivityType
 import com.personal.sleepalarm.domain.model.primaryLabel
 import com.personal.sleepalarm.domain.model.taskFocusItemId
+import com.personal.sleepalarm.util.DeadlineLinks
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -26,9 +29,9 @@ data class TaskDeleteResult(
  * The single write boundary for the live task graph.
  *
  * Historical Pomodoro/activity rows deliberately keep snapshots, but every
- * live projection (active focus, reminder, calendar plan and D-Day) follows
- * the canonical TaskEntity. This prevents screen-specific DAO writes from
- * creating several conflicting versions of the same task.
+ * live task projection (active focus, reminder, calendar plan and task-deadline
+ * D-Day) follows the canonical TaskEntity. A task-linked D-Day is only optional
+ * deadline metadata; standalone events own their independent dates.
  */
 class TaskEcosystemRepository(private val database: AppDatabase) {
     private val tasks = database.taskDao()
@@ -66,6 +69,64 @@ class TaskEcosystemRepository(private val database: AppDatabase) {
         val saved = tasks.getById(id) ?: candidate.copy(id = id)
         synchronizeLiveProjections(previous, saved)
         TaskSaveResult(saved, reminders.getLinkedToTask(id).filter(ReminderEntity::isEnabled))
+    }
+
+    /** Null taskDueAtMillis means metadata-only; cached dates cannot resurrect a cleared due date. */
+    suspend fun saveDeadline(event: DDayEntity, taskDueAtMillis: Long? = null): DDayEntity? = database.withTransaction {
+        if ((event.id < 0 && event.taskId != -event.id) || event.title.isBlank() ||
+            runCatching { LocalDate.parse(event.targetDate) }.isFailure
+        ) return@withTransaction null
+        val current = if (event.id <= 0) null else {
+            milestones.getById(event.id) ?: return@withTransaction null
+        }
+        val linkedTask = event.taskId?.let { tasks.getById(it) }
+        if (event.taskId != null && linkedTask == null) return@withTransaction null
+        if (linkedTask == null && event.projectId != null && projects.getById(event.projectId) == null) {
+            return@withTransaction null
+        }
+        val dueAt = taskDueAtMillis ?: linkedTask?.dueAtMillis
+        var normalized = normalizeDeadlineForSave(event, current).copy(
+            id = event.id.coerceAtLeast(0),
+            targetDate = if (linkedTask != null && dueAt != null) taskDeadlineLocalDate(dueAt) else event.targetDate
+        )
+        val destination = linkedTask?.let { milestones.getForTask(it.id) }
+        if (destination != null && destination.id != current?.id) {
+            // A create/relink action opens the one metadata row rather than
+            // replacing another row and losing its links or notes.
+            normalized = mergeDeadlineMetadata(
+                normalized.copy(id = destination.id, createdAt = destination.createdAt),
+                listOf(destination)
+            )
+            current?.let { milestones.deleteById(it.id) }
+        }
+        if (linkedTask != null) normalized = canonicalTaskDeadlineDetails(normalized, linkedTask)
+        val saved = if (normalized.id == 0) {
+            normalized.copy(id = milestones.insert(normalized).toInt())
+        } else {
+            milestones.update(normalized)
+            normalized
+        }
+        if (linkedTask != null && taskDueAtMillis != null && linkedTask.dueAtMillis != taskDueAtMillis) {
+            checkNotNull(save(linkedTask.copy(dueAtMillis = taskDueAtMillis)))
+        }
+        current?.taskId?.takeIf { it != saved.taskId }?.let { oldTaskId ->
+            tasks.getById(oldTaskId)?.let { synchronizeDeadlineMetadata(it) }
+        }
+        milestones.getById(saved.id) ?: saved
+    }
+
+    /** Linked removal clears the task due date but keeps notes/links for future reuse. */
+    suspend fun deleteDeadline(id: Int): Int? = database.withTransaction {
+        val row = if (id > 0) milestones.getById(id) else null
+        val taskId = row?.taskId ?: (-id).takeIf { id < 0 }
+        if (taskId != null) {
+            val task = tasks.getById(taskId) ?: return@withTransaction null
+            checkNotNull(save(task.copy(dueAtMillis = null)))
+            taskId
+        } else {
+            if (id > 0) milestones.deleteById(id)
+            null
+        }
     }
 
     suspend fun rename(taskId: Int, newTitle: String): TaskSaveResult? {
@@ -146,7 +207,9 @@ class TaskEcosystemRepository(private val database: AppDatabase) {
 
         reminders.deleteLinkedToTask(taskId)
         events.detachTask(taskId)
-        milestones.detachTask(taskId)
+        // A deleted task has no independent deadline. Detaching retained hidden
+        // metadata would incorrectly resurrect the previously cleared date.
+        milestones.deleteForTask(taskId)
         subtasks.deleteForTask(taskId)
         attachments.deleteForTask(taskId)
         libraryLinks.deleteForTask(taskId)
@@ -169,6 +232,7 @@ class TaskEcosystemRepository(private val database: AppDatabase) {
         libraryLinks.deleteOrphans()
         activities.rebuildAllTaskTotals()
         activities.rebuildAllProjectTotals()
+        tasks.getAll().forEach { synchronizeDeadlineMetadata(it) }
     }
 
     private suspend fun synchronizeLiveProjections(previous: TaskEntity?, saved: TaskEntity) {
@@ -178,15 +242,7 @@ class TaskEcosystemRepository(private val database: AppDatabase) {
         reminders.syncTaskTitle(saved.id, oldLabel, newLabel)
         events.syncTaskProjection(saved.id, oldLabel, newLabel, saved.projectId)
         milestones.syncTaskTitle(saved.id, oldLabel, newLabel)
-        milestones.syncTaskDeadline(
-            saved.id,
-            saved.dueAtMillis?.let { due ->
-                Instant.ofEpochMilli(due)
-                    .atZone(ZoneId.systemDefault())
-                    .toLocalDate()
-                    .format(DateTimeFormatter.ISO_LOCAL_DATE)
-            }
-        )
+        synchronizeDeadlineMetadata(saved)
         protocols.syncActiveTaskTarget(
             itemId = taskFocusItemId(saved.id),
             itemName = newLabel,
@@ -207,4 +263,37 @@ class TaskEcosystemRepository(private val database: AppDatabase) {
             projects.setSpent(projectId, activities.sumForProject(projectId))
         }
     }
+
+    private suspend fun synchronizeDeadlineMetadata(task: TaskEntity) {
+        val dueAt = task.dueAtMillis ?: return
+        val metadata = milestones.getForTask(task.id)
+        if (metadata == null) {
+            milestones.insert(taskDeadlineMetadata(task))
+        } else {
+            milestones.update(metadata.copy(
+                title = task.primaryLabel(),
+                targetDate = taskDeadlineLocalDate(dueAt),
+                projectId = task.projectId
+            ))
+        }
+    }
+}
+
+/** Normalization shared by both new and existing deadline saves. */
+internal fun normalizeDeadlineForSave(edited: DDayEntity, current: DDayEntity?): DDayEntity =
+    edited.copy(
+        title = edited.title.trim(),
+        notes = edited.notes.trim(),
+        linksJson = DeadlineLinks.encode(DeadlineLinks.decode(edited.linksJson)),
+        createdAt = current?.createdAt ?: edited.createdAt
+    )
+
+internal fun deadlineTaskDueAtMillis(
+    targetDate: String,
+    previousDueAtMillis: Long?,
+    zone: ZoneId = ZoneId.systemDefault()
+): Long {
+    val previous = previousDueAtMillis?.let { Instant.ofEpochMilli(it).atZone(zone) }
+    val time = previous?.toLocalTime() ?: LocalTime.of(23, 59, 59, 999_000_000)
+    return LocalDate.parse(targetDate).atTime(time).atZone(zone).toInstant().toEpochMilli()
 }

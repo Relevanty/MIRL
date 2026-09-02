@@ -7,11 +7,8 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.personal.sleepalarm.data.db.entity.TaskEntity
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
 
-/** Планирует одно системное событие на конец выбранного дня задачи. */
+/** Schedules the exact canonical task deadline, including the selected local time. */
 class TaskDeadlineScheduler(private val context: Context) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
@@ -19,7 +16,7 @@ class TaskDeadlineScheduler(private val context: Context) {
         cancel(task.id)
         if (task.id <= 0 || task.isDone || task.dueAtMillis == null) return
 
-        val triggerAt = endOfDeadlineDay(task.dueAtMillis)
+        val triggerAt = task.dueAtMillis
         if (triggerAt <= System.currentTimeMillis()) return
         val pending = pendingIntent(task.id, task.dueAtMillis)
         try {
@@ -54,12 +51,6 @@ class TaskDeadlineScheduler(private val context: Context) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-    }
-
-    private fun endOfDeadlineDay(dueAtMillis: Long): Long {
-        val zone = ZoneId.systemDefault()
-        val date = Instant.ofEpochMilli(dueAtMillis).atZone(zone).toLocalDate()
-        return date.atTime(LocalTime.of(18, 0)).atZone(zone).toInstant().toEpochMilli()
     }
 
     companion object {

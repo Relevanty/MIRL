@@ -335,16 +335,6 @@ fun HomeScreen(
                         onRejectDetectedOnset = viewModel::rejectDetectedSleepOnset
                     )
                 }
-                HomeToolTile(
-                    icon = Icons.Default.Flag,
-                    label = stringResource(R.string.misc_dday),
-                    tone = MaterialTheme.appAccents.schedule,
-                    onClick = {
-                        showHomeTools = false
-                        onOpenDDay()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)

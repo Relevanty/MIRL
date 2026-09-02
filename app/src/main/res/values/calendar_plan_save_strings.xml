@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calendar_plan_title_required">Добавьте название плана</string>
+    <string name="calendar_plan_time_invalid">Окончание должно быть позже начала</string>
+    <string name="calendar_plan_repeat_invalid">Выберите допустимое повторение</string>
+    <string name="calendar_plan_reminder_invalid">Напоминание не может быть позже начала плана</string>
+    <string name="calendar_plan_missing">Этот план уже удалён. Закройте редактор и создайте новый.</string>
+    <string name="calendar_plan_task_missing">Связанная задача уже удалена. Выберите другую задачу.</string>
+    <string name="calendar_plan_project_missing">Связанный проект уже удалён. Выберите другой проект.</string>
+    <string name="calendar_plan_save_failed">Не удалось сохранить план. Изменения остались в редакторе — попробуйте ещё раз.</string>
+    <string name="calendar_plan_alarm_failed">План сохранён, но напоминание настроить не удалось. Проверьте разрешения уведомлений.</string>
+</resources>

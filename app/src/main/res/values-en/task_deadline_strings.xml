@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="task_deadline_workload_title">Deadline and workload</string>
+    <string name="task_deadline_workload_hint">One task deadline, here and in Calendar. The total estimate, one session and daily goal are separate settings.</string>
+    <string name="task_deadline_total_help">Estimate for the entire task, not a single session. All recorded work is subtracted. Without an estimate, no deadline pace is calculated.</string>
+    <string name="task_deadline_plan_title">Plan from the shared deadline</string>
+    <string name="task_deadline_no_estimate">The total workload is unknown. A daily pace cannot be calculated without this estimate.</string>
+    <string name="task_deadline_volume">Recorded %1$d of %2$d min · estimated remaining: %3$d min</string>
+    <string name="task_deadline_estimate_exhausted">The time estimate is used up, but the task is still open. Complete it or revise the remaining work: time spent does not mean completion.</string>
+    <string name="task_deadline_overdue_plan">The deadline has passed. Reschedule it or revise the workload; an on-time pace no longer applies.</string>
+    <string name="task_deadline_not_enough_time">The remaining work exceeds all time before the deadline, even without breaks. Revise the workload or deadline.</string>
+    <string name="task_deadline_no_date_plan">No deadline set: workload is tracked, but no daily pace is calculated.</string>
+    <string name="task_deadline_required_pace">Suggested pace: %1$d min/day. Your daily goal: %2$d min.</string>
+    <string name="task_deadline_goal_below_pace">Your daily goal is below the calculated pace. Increase it, reduce the workload or reschedule.</string>
+    <string name="task_deadline_pace_hint">This evenly spreads remaining work over calendar days, not guaranteed availability. Your daily goal and session length are not changed automatically.</string>
+</resources>

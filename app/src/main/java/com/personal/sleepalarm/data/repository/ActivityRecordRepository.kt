@@ -6,6 +6,7 @@ import com.personal.sleepalarm.data.db.entity.ActivityRecordEntity
 import com.personal.sleepalarm.data.db.entity.PomodoroSessionEntity
 import com.personal.sleepalarm.data.db.entity.TaskEntity
 import com.personal.sleepalarm.domain.model.FocusActivityType
+import com.personal.sleepalarm.domain.model.ActualActivityTimePolicy
 import com.personal.sleepalarm.alarm.TaskLinkedReminderCoordinator
 import com.personal.sleepalarm.domain.model.focusActivityType
 import kotlinx.coroutines.flow.Flow
@@ -108,26 +109,28 @@ class ActivityRecordRepository(
         strategy: ActivityConflictStrategy = ActivityConflictStrategy.ASK
     ): SaveActivityResult {
         if (input.title.isBlank()) return SaveActivityResult.Invalid("title")
-        if (input.endedAt <= input.startedAt) return SaveActivityResult.Invalid("duration")
-        if (input.endedAt > System.currentTimeMillis() + 60_000L) {
-            return SaveActivityResult.Invalid("future")
-        }
-        val duration = input.endedAt - input.startedAt
-        if (duration > 24L * 60L * 60L * 1000L) return SaveActivityResult.Invalid("too_long")
-
-        val conflicts = activities.findOverlaps(input.startedAt, input.endedAt, input.id)
-        if (conflicts.isNotEmpty() && strategy == ActivityConflictStrategy.ASK) {
-            return SaveActivityResult.Conflicts(conflicts)
-        }
-        if (conflicts.isNotEmpty() && strategy == ActivityConflictStrategy.ADJUST) {
-            return SaveActivityResult.Conflicts(conflicts)
+        ActualActivityTimePolicy.validate(input.startedAt, input.endedAt, System.currentTimeMillis())?.let {
+            return SaveActivityResult.Invalid(it.reason)
         }
 
         val affectedTaskIds = linkedSetOf<Int>()
         val result = database.withTransaction {
+            // Re-check at the actual write boundary as the device clock may change
+            // while a conflict dialog is open. Future history is never normalized.
+            ActualActivityTimePolicy.validate(input.startedAt, input.endedAt, System.currentTimeMillis())?.let {
+                return@withTransaction SaveActivityResult.Invalid(it.reason)
+            }
             val old: ActivityRecordEntity? = if (input.id != 0) activities.getById(input.id) else null
             if (input.id != 0 && old == null) {
                 return@withTransaction SaveActivityResult.Invalid("missing_record")
+            }
+            if (old != null && old.source != "MANUAL") {
+                return@withTransaction SaveActivityResult.Invalid("not_manual")
+            }
+
+            val conflicts = activities.findOverlaps(input.startedAt, input.endedAt, input.id)
+            if (conflicts.isNotEmpty() && strategy in setOf(ActivityConflictStrategy.ASK, ActivityConflictStrategy.ADJUST)) {
+                return@withTransaction SaveActivityResult.Conflicts(conflicts)
             }
 
             val linkedTask = input.taskId?.let { taskId ->
@@ -146,6 +149,11 @@ class ActivityRecordRepository(
             if (conflicts.isNotEmpty() && strategy == ActivityConflictStrategy.MERGE) {
                 actualStart = minOf(actualStart, conflicts.minOf(ActivityRecordEntity::startedAt))
                 actualEnd = maxOf(actualEnd, conflicts.maxOf(ActivityRecordEntity::endedAt))
+            }
+            // A valid input can overlap a legacy future row. Validate the merged
+            // interval before deleting/replacing anything, including timer mirrors.
+            ActualActivityTimePolicy.validate(actualStart, actualEnd, System.currentTimeMillis())?.let {
+                return@withTransaction SaveActivityResult.Invalid(it.reason)
             }
             if (conflicts.isNotEmpty() && strategy in setOf(ActivityConflictStrategy.REPLACE, ActivityConflictStrategy.MERGE)) {
                 conflicts.forEach { conflict ->
@@ -218,7 +226,9 @@ class ActivityRecordRepository(
             rebuildTotals(affectedTasks, affectedProjects)
             SaveActivityResult.Saved(id)
         }
-        affectedTaskIds.forEach { reminderCoordinator?.taskChanged(it) }
+        if (result is SaveActivityResult.Saved) {
+            affectedTaskIds.forEach { reminderCoordinator?.taskChanged(it) }
+        }
         return result
     }
 

@@ -88,6 +88,10 @@ import com.personal.sleepalarm.ui.theme.ThemedModalBottomSheet
 import com.personal.sleepalarm.ui.theme.appAccents
 import com.personal.sleepalarm.ui.theme.AppAccentTone
 import java.time.ZoneId
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.delay
+import com.personal.sleepalarm.domain.calculator.TaskDeadlinePlanCalculator
+import com.personal.sleepalarm.ui.components.TaskDeadlinePlanSummary
 
 /** Живая матрица задач, полная карточка и доска завершённого. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -484,6 +488,12 @@ private fun TaskDetailSheet(
     onDelete: () -> Unit,
     onToggleChecklistItem: (Int) -> Unit
 ) {
+    val deadlineNow by produceState(initialValue = System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(30_000L)
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -571,6 +581,9 @@ private fun TaskDetailSheet(
             )
             task.dueAtMillis?.let { TaskMetaChip(formatDetailDate(it)) }
             if (task.contextTag.isNotBlank()) TaskMetaChip(task.contextTag)
+        }
+        if (task.dueAtMillis != null) {
+            TaskDeadlinePlanSummary(TaskDeadlinePlanCalculator.calculate(task, deadlineNow, ZoneId.systemDefault()))
         }
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -1080,5 +1093,4 @@ private fun TaskEnergy.detailName(): String = when (this) {
 
 private fun formatDetailDate(millis: Long): String = java.time.Instant.ofEpochMilli(millis)
     .atZone(java.time.ZoneId.systemDefault())
-    .toLocalDate()
-    .format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.SHORT))
+    .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy · HH:mm"))

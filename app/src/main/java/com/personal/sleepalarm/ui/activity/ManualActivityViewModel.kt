@@ -35,19 +35,30 @@ class ManualActivityViewModel(application: Application) : AndroidViewModel(appli
 
     private val _conflicts = MutableStateFlow<List<ActivityRecordEntity>>(emptyList())
     val conflicts: StateFlow<List<ActivityRecordEntity>> = _conflicts
+    private val _saving = MutableStateFlow(false)
+    val saving: StateFlow<Boolean> = _saving
 
     private val _events = MutableSharedFlow<ManualActivityEvent>(extraBufferCapacity = 1)
     val events = _events.asSharedFlow()
 
     fun save(input: ManualActivityInput, strategy: ActivityConflictStrategy = ActivityConflictStrategy.ASK) {
+        if (_saving.value) return
+        _saving.value = true
         viewModelScope.launch {
-            when (val result = repository.saveManual(input, strategy)) {
-                is SaveActivityResult.Saved -> {
-                    _conflicts.value = emptyList()
-                    _events.emit(ManualActivityEvent.Saved(result.id))
+            try {
+                when (val result = repository.saveManual(input, strategy)) {
+                    is SaveActivityResult.Saved -> {
+                        _conflicts.value = emptyList()
+                        _events.emit(ManualActivityEvent.Saved(result.id))
+                    }
+                    is SaveActivityResult.Conflicts -> _conflicts.value = result.records
+                    is SaveActivityResult.Invalid -> {
+                        _conflicts.value = emptyList()
+                        _events.emit(ManualActivityEvent.Error(result.reason))
+                    }
                 }
-                is SaveActivityResult.Conflicts -> _conflicts.value = result.records
-                is SaveActivityResult.Invalid -> _events.emit(ManualActivityEvent.Error(result.reason))
+            } finally {
+                _saving.value = false
             }
         }
     }
@@ -59,8 +70,14 @@ class ManualActivityViewModel(application: Application) : AndroidViewModel(appli
     suspend fun latestManual(): ActivityRecordEntity? = repository.latestManual()
 
     fun delete(recordId: Int) {
+        if (_saving.value) return
+        _saving.value = true
         viewModelScope.launch {
-            if (repository.deleteManual(recordId)) _events.emit(ManualActivityEvent.Deleted)
+            try {
+                if (repository.deleteManual(recordId)) _events.emit(ManualActivityEvent.Deleted)
+            } finally {
+                _saving.value = false
+            }
         }
     }
 }

@@ -35,17 +35,33 @@ interface DDayDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(events: List<DDayEntity>)
 
-    /** Все события, ближайшие сверху. */
+    /** Raw optional metadata, including materials retained after a task due date is cleared. */
     @Query("SELECT * FROM dday_events ORDER BY targetDate ASC")
+    fun observeMetadata(): Flow<List<DDayEntity>>
+
+    /** Visible deadlines use the task's current local date, never the metadata cache. */
+    @Query("""
+        SELECT d.id, d.title,
+            CASE WHEN d.taskId IS NULL THEN d.targetDate
+                ELSE strftime('%Y-%m-%d', t.dueAtMillis / 1000, 'unixepoch', 'localtime') END AS targetDate,
+            d.projectId, d.taskId, d.notes, d.linksJson, d.createdAt
+        FROM dday_events d LEFT JOIN tasks t ON t.id = d.taskId
+        WHERE d.taskId IS NULL OR t.dueAtMillis IS NOT NULL
+        ORDER BY targetDate ASC
+    """)
     fun observeAll(): Flow<List<DDayEntity>>
 
     /** Ближайшее событие, которое ещё не прошло (targetDate >= сегодня). */
     @Query(
         """
-        SELECT dday_events.* FROM dday_events
-        LEFT JOIN tasks ON tasks.id = dday_events.taskId
-        WHERE targetDate >= :today
-          AND (dday_events.taskId IS NULL OR tasks.isDone = 0)
+        SELECT d.id, d.title,
+            CASE WHEN d.taskId IS NULL THEN d.targetDate
+                ELSE strftime('%Y-%m-%d', t.dueAtMillis / 1000, 'unixepoch', 'localtime') END AS targetDate,
+            d.projectId, d.taskId, d.notes, d.linksJson, d.createdAt
+        FROM dday_events d LEFT JOIN tasks t ON t.id = d.taskId
+        WHERE (d.taskId IS NULL AND d.targetDate >= :today)
+           OR (d.taskId IS NOT NULL AND t.isDone = 0 AND t.dueAtMillis IS NOT NULL
+               AND strftime('%Y-%m-%d', t.dueAtMillis / 1000, 'unixepoch', 'localtime') >= :today)
         ORDER BY targetDate ASC
         LIMIT 1
         """
@@ -55,10 +71,14 @@ interface DDayDao {
     /** Ближайшее будущее событие (для брифинга). */
     @Query(
         """
-        SELECT dday_events.* FROM dday_events
-        LEFT JOIN tasks ON tasks.id = dday_events.taskId
-        WHERE targetDate >= :today
-          AND (dday_events.taskId IS NULL OR tasks.isDone = 0)
+        SELECT d.id, d.title,
+            CASE WHEN d.taskId IS NULL THEN d.targetDate
+                ELSE strftime('%Y-%m-%d', t.dueAtMillis / 1000, 'unixepoch', 'localtime') END AS targetDate,
+            d.projectId, d.taskId, d.notes, d.linksJson, d.createdAt
+        FROM dday_events d LEFT JOIN tasks t ON t.id = d.taskId
+        WHERE (d.taskId IS NULL AND d.targetDate >= :today)
+           OR (d.taskId IS NOT NULL AND t.isDone = 0 AND t.dueAtMillis IS NOT NULL
+               AND strftime('%Y-%m-%d', t.dueAtMillis / 1000, 'unixepoch', 'localtime') >= :today)
         ORDER BY targetDate ASC
         LIMIT 1
         """
@@ -67,6 +87,9 @@ interface DDayDao {
 
     @Query("SELECT * FROM dday_events WHERE id = :id")
     suspend fun getById(id: Int): DDayEntity?
+
+    @Query("SELECT * FROM dday_events WHERE taskId = :taskId LIMIT 1")
+    suspend fun getForTask(taskId: Int): DDayEntity?
 
     @Query(
         """
@@ -80,17 +103,19 @@ interface DDayDao {
     )
     suspend fun syncTaskTitle(taskId: Int, oldTaskLabel: String, newTaskLabel: String)
 
+    /** A linked row is always optional metadata of the one canonical task deadline. */
     @Query(
         """
         UPDATE dday_events
         SET targetDate = :targetDate
-        WHERE taskId = :taskId AND :targetDate IS NOT NULL
+        WHERE taskId = :taskId
         """
     )
-    suspend fun syncTaskDeadline(taskId: Int, targetDate: String?)
+    suspend fun syncTaskDeadline(taskId: Int, targetDate: String)
 
-    @Query("UPDATE dday_events SET taskId = NULL WHERE taskId = :taskId")
-    suspend fun detachTask(taskId: Int)
+    /** Deleting a task also deletes its optional deadline materials; clearing its date does not. */
+    @Query("DELETE FROM dday_events WHERE taskId = :taskId")
+    suspend fun deleteForTask(taskId: Int)
 
     @Query(
         """

@@ -9,7 +9,7 @@ import org.junit.Test
 class EnglishStudyContentMigrationTest {
     @Test
     fun `english content migration remains twenty five to twenty six`() {
-        assertEquals(28, APP_DATABASE_VERSION)
+        assertTrue(APP_DATABASE_VERSION >= 26)
         assertEquals(25, AppDatabase.MIGRATION_25_26.startVersion)
         assertEquals(26, AppDatabase.MIGRATION_25_26.endVersion)
         assertEquals(24, AppDatabase.MIGRATION_24_25.startVersion)

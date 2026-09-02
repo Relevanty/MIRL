@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="planned_activity_create">Plan an activity</string>
+    <string name="planned_activity_edit">Edit activity plan</string>
+    <string name="planned_activity_day_title">Planned</string>
+    <string name="planned_activity_time_range">%1$s–%2$s · %3$d min</string>
+    <string name="planned_activity_end_later">%1$s (+%2$d days)</string>
+    <string name="planned_activity_copy_title">Copy plan title</string>
+    <string name="planned_activity_delete">Delete activity plan</string>
+    <string name="planned_activity_empty">Nothing is planned for this day yet</string>
+    <string name="planned_activity_fact_hint">A plan does not count as completed work. Start focus during the activity or log the actual time afterwards.</string>
+    <string name="planned_activity_explanation">This is a plan for a time slot, not completed work. It does not add hours to history or complete the task. Actual time is recorded after focus or a manual entry for a past activity.</string>
+    <string name="planned_activity_purpose">What to plan</string>
+    <string name="planned_activity_title_label">Activity or outcome</string>
+    <string name="planned_activity_title_example">For example, prepare a draft</string>
+    <string name="planned_activity_title_hint">Choose a task below to fill an empty title with its name.</string>
+    <string name="planned_activity_task">Linked task · optional</string>
+    <string name="planned_activity_no_task">No task</string>
+    <string name="planned_activity_task_unavailable">Connection saved · task unavailable</string>
+    <string name="planned_activity_when">When and for how long</string>
+    <string name="planned_activity_date">Activity date</string>
+    <string name="planned_activity_start_time">Activity start</string>
+    <string name="planned_activity_duration">Planned duration</string>
+    <string name="planned_activity_minutes">min</string>
+    <string name="planned_activity_duration_value">%d min</string>
+    <string name="planned_activity_finishes">Ends: %s</string>
+    <string name="planned_activity_all_day_hint">A plan for the whole calendar day, without a set time. This does not mean 24 hours of completed work.</string>
+    <string name="planned_activity_reminder_label">Remind me about the plan</string>
+    <string name="planned_activity_reminder_hint">The reminder is relative to the activity start. Repeating plans trigger it before their next scheduled start.</string>
+    <string name="planned_activity_reminder_all_day">This all-day plan starts at %s. A reminder before it may arrive on the previous evening.</string>
+    <string name="planned_activity_check_fields">Enter an activity or choose a task, then check its duration.</string>
+    <string name="planned_activity_apply">Choose</string>
+    <string name="planned_activity_search">Search by name</string>
+    <string name="planned_activity_no_matches">No matching tasks</string>
+    <string name="planned_activity_selected">Selected</string>
+    <string name="planned_activity_discard_title">Leave without saving?</string>
+    <string name="planned_activity_discard_message">Changes to the activity plan have not been saved.</string>
+    <string name="planned_activity_discard">Leave</string>
+</resources>

@@ -57,7 +57,6 @@ import com.personal.sleepalarm.R
 import com.personal.sleepalarm.app.App
 import com.personal.sleepalarm.ui.assistant.AssistantScreen
 import com.personal.sleepalarm.ui.components.RequiredPermissionsScreen
-import com.personal.sleepalarm.ui.dday.DDayScreen
 import com.personal.sleepalarm.ui.english.EnglishVocabularyRoute
 import com.personal.sleepalarm.ui.home.HomeScreen
 import com.personal.sleepalarm.ui.home.HomeViewModel
@@ -247,7 +246,6 @@ private const val TAB_SETTINGS = 4
 private enum class SecondaryScreen {
     LIBRARY,
     REMINDERS,
-    D_DAY,
     ASSISTANT
 }
 
@@ -281,6 +279,8 @@ private fun SleepAlarmRoot(
     var requestedTaskId by rememberSaveable { mutableStateOf<Int?>(null) }
     var requestedNewTaskCategory by rememberSaveable { mutableStateOf<String?>(null) }
     var requestedLibraryItemId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var requestedDeadlines by rememberSaveable { mutableStateOf(false) }
+    var deadlineEditorActive by remember { mutableStateOf(false) }
     var handledNavigationRequestToken by rememberSaveable { mutableIntStateOf(-1) }
 
     LaunchedEffect(navigationDestination, navigationTaskId, navigationRequestToken) {
@@ -393,7 +393,6 @@ private fun SleepAlarmRoot(
                     onOpenItemConsumed = { requestedLibraryItemId = null }
                 )
                 SecondaryScreen.REMINDERS -> RemindersScreen(onBack = { secondaryScreen = null })
-                SecondaryScreen.D_DAY -> DDayScreen(onBack = { secondaryScreen = null })
                 SecondaryScreen.ASSISTANT -> AssistantScreen(
                     onBack = { secondaryScreen = null },
                     onStartTaskFocus = { taskId ->
@@ -414,7 +413,8 @@ private fun SleepAlarmRoot(
     // === Основной контент с нижней панелью ===
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        bottomBar = {
+        bottomBar = navigation@{
+            if (deadlineEditorActive) return@navigation
             val navigationLabels = listOf(
                 stringResource(R.string.tab_today),
                 stringResource(R.string.tab_plan),
@@ -485,7 +485,7 @@ private fun SleepAlarmRoot(
                     onOpenDiary = { showDiary = true },
                     onOpenTasks = { selectedTab = TAB_TASKS },
                     onOpenStats = { showAnalytics = true },
-                    onOpenDDay = { secondaryScreen = SecondaryScreen.D_DAY },
+                    onOpenDDay = { requestedDeadlines = true; selectedTab = TAB_CALENDAR },
                     onOpenAssistant = { secondaryScreen = SecondaryScreen.ASSISTANT },
                     onOpenMathPractice = { showMathPractice = true },
                     onOpenEnglishLearning = { showEnglishLearning = true },
@@ -528,6 +528,9 @@ private fun SleepAlarmRoot(
                     }
                 )
                 TAB_CALENDAR -> CalendarScreen(
+                    openDeadlines = requestedDeadlines,
+                    onOpenDeadlinesConsumed = { requestedDeadlines = false },
+                    onEditorActive = { deadlineEditorActive = it },
                     openEventId = navigationEventId,
                     openOccurrenceStart = navigationEventStart,
                     openRequestToken = navigationRequestToken,
@@ -548,7 +551,7 @@ private fun SleepAlarmRoot(
                     onOpenDiary = { showDiary = true },
                     onOpenTasks = { selectedTab = TAB_TASKS },
                     onOpenStats = { showAnalytics = true },
-                    onOpenDDay = { secondaryScreen = SecondaryScreen.D_DAY },
+                    onOpenDDay = { requestedDeadlines = true; selectedTab = TAB_CALENDAR },
                     onOpenAssistant = { secondaryScreen = SecondaryScreen.ASSISTANT },
                     onOpenMathPractice = { showMathPractice = true },
                     onOpenEnglishLearning = { showEnglishLearning = true },
